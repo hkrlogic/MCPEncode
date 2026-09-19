@@ -1,0 +1,38 @@
+{
+  "name": "mpos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OAuth 2.1 MCP resource server with a shared Markdown note store",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/express": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@tursodatabase/database": "^0.7.2",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jose": "^6.2.12",
+    "jspreadsheet-ce": "^5.0.4",
+    "marked": "^18.0.13",
+    "sanitize-html": "^2.17.7",
+    "turndown": "^7.2.4",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.3",
+    "@types/sanitize-html": "^2.16.1",
+    "@types/turndown": "^5.0.6",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

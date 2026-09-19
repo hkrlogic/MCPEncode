@@ -1,0 +1,22 @@
+# Secrets and local machine config (keep .env.example)
+.env
+.env.*
+!.env.example
+
+# SQLite / Turso local store (libraries and items)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Logs and scratch
+*.log
+tmp/
+
+# OS
+.DS_Store

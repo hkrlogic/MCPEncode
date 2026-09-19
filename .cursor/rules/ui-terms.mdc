@@ -1,0 +1,35 @@
+---
+description: Locked end-user vocabulary (library, item, section). Use in UI and copy.
+alwaysApply: true
+---
+
+# Locked UI terms
+
+Do not invent synonyms. MCP/tool names may stay `*_record` until explicitly edited.
+
+## Objects
+
+- **Library** — published MCP; a named set of business info. There are **many libraries**, not one global pile. Access (who can list/open) and Lookups (call names) belong to the library. Never: dataset, database, store, catalog, MCP server, vault, notebook.
+- **Item** — one thing in a library (add / open / agent fetch). May contain several sections. Never: note, record, entry, document, page, card, skill.
+- **Section** — typed chunk on an item. Never: block, module, widget.
+
+## Item fields
+
+- **Name** — not title
+- **Labels** — not tags in the UI (`tags` in the API is OK until renamed)
+- **Summary** — required one-liner; this is the list/search excerpt; store it first in the body
+
+## Section types (do not add more without asking)
+
+- **Table** — grid
+- **Checklist** — ordered steps
+- **Details** — label → value
+- **Description** — short prose
+
+## Actions
+
+Add item, Open item, Add section, Publish library
+
+## Product sentence
+
+You keep **libraries** of items. Auth is to a library. Each item has a name, labels, a summary, and sections. Publish a library so people and agents can look its items up.
