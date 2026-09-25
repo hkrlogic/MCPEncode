@@ -169,7 +169,7 @@ export function buildMcpServer(db: Database, authInfo: AuthInfo): McpServer {
           });
           return deny(MISSING_LIBRARY_LIST);
         }
-        const rows = await listRecords(db, query);
+        const rows = await listRecords(db, query, { publishedOnly: access.role === "readonly" });
         await writeAudit(db, {
           actorSub: access.sub,
           tool: "list_records",
@@ -194,12 +194,27 @@ export function buildMcpServer(db: Database, authInfo: AuthInfo): McpServer {
       {
         title: "Open item",
         description:
-          "Open one library item by id, including the full Markdown body. If there is no item, say so; do not invent.",
-        inputSchema: z.object({ id: z.string().uuid() }),
+          "Open one library item by id, including the full Markdown body. Readers must pass library_id and only receive published items. If there is no item, say so; do not invent.",
+        inputSchema: z.object({
+          id: z.string().uuid(),
+          library_id: z.string().uuid().optional(),
+        }),
         annotations: { readOnlyHint: true },
       },
-      async ({ id }) => {
-        const row = await getRecord(db, id);
+      async ({ id, library_id }) => {
+        if (access.role === "readonly" && missingLibraryId(library_id)) {
+          await writeAudit(db, {
+            actorSub: access.sub,
+            tool: "get_record",
+            success: false,
+            detail: "missing library_id",
+          });
+          return deny(MISSING_LIBRARY_LIST);
+        }
+        const row = await getRecord(db, id, {
+          publishedOnly: access.role === "readonly",
+          libraryId: library_id,
+        });
         if (!row) {
           await writeAudit(db, {
             actorSub: access.sub,

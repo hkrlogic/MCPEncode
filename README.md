@@ -13,7 +13,7 @@ By default the POC runs a **development identity provider** in the same process 
 | Identity | OAuth 2.1 authorization code + PKCE. Mpos never stores passwords. |
 | Roles | **read-only** and **edit**. Edit includes delete. |
 | Permissions | Tools and the UI check `records.read` / `records.write` / `records.delete` / `audit.read`, not the role name. |
-| Store | One shared file (`data/mpos.db`). Title and tags are query metadata; notes are Markdown source. |
+| Store | One shared file (`data/mpos.db`). Each item belongs to a library and has a required summary and a status (`draft` or `published`). Reads use `items`. The older `records` table is kept (not dropped). |
 | Cursor | Streamable HTTP MCP at `http://127.0.0.1:3000/mcp`. |
 | Browser | `http://127.0.0.1:3000/` — Jspreadsheet CE grid (first row = titles) saved as Markdown tables. |
 
@@ -99,6 +99,7 @@ Verifier tests mint local JWTs. They do not need Docker.
 ## Layout
 
 - `src/auth/` — JWKS verifier, role → permission map, UI session
+- `migrations/` — SQL applied once on startup. Adds `items` and `publish_audit`. Does not drop `records`.
 - `src/db/` — Turso embedded engine (SQLite-compatible file)
 - `src/mcp/` — tools
 - `src/http/` — HTML UI and OAuth callback

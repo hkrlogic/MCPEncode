@@ -273,7 +273,11 @@ export function createApp(input: {
       return;
     }
     const q = typeof req.query.q === "string" ? req.query.q : undefined;
-    const records = await listRecords(db, { library_id: library.id, q, limit: 50 });
+    const records = await listRecords(
+      db,
+      { library_id: library.id, q, limit: 50 },
+      { publishedOnly: access.role === "readonly" },
+    );
     res.send(libraryPage({ access, csrf: access.csrf, library, records, q }));
   });
 
@@ -294,7 +298,11 @@ export function createApp(input: {
     }
     const parsed = parseItem(req.body);
     if (!parsed.success) {
-      const records = await listRecords(db, { library_id: library.id, limit: 50 });
+      const records = await listRecords(
+        db,
+        { library_id: library.id, limit: 50 },
+        { publishedOnly: access.role === "readonly" },
+      );
       res.status(400).send(
         libraryPage({
           access,
@@ -317,7 +325,11 @@ export function createApp(input: {
       res.redirect("/login");
       return;
     }
-    const record = await getRecord(db, req.params.id);
+    const libraryId = typeof req.query.library === "string" ? req.query.library : undefined;
+    const record = await getRecord(db, req.params.id, {
+      publishedOnly: access.role === "readonly",
+      libraryId,
+    }).catch(() => undefined);
     if (!record) {
       res.status(404).send(errorPage("Item not found."));
       return;
@@ -341,7 +353,7 @@ export function createApp(input: {
       res.status(403).send(errorPage("Read-only accounts cannot edit items."));
       return;
     }
-    const record = await getRecord(db, req.params.id);
+    const record = await getRecord(db, req.params.id, { publishedOnly: false });
     if (!record) {
       res.status(404).send(errorPage("Item not found."));
       return;
@@ -362,7 +374,7 @@ export function createApp(input: {
     }
     const parsed = parseItem(req.body);
     if (!parsed.success) {
-      const record = await getRecord(db, req.params.id);
+      const record = await getRecord(db, req.params.id, { publishedOnly: false });
       if (!record) {
         res.status(404).send(errorPage("Item not found."));
         return;
@@ -398,7 +410,7 @@ export function createApp(input: {
       res.status(403).send(errorPage("You cannot delete items with this account."));
       return;
     }
-    const existing = await getRecord(db, req.params.id);
+    const existing = await getRecord(db, req.params.id, { publishedOnly: false });
     const libraryId = existing?.library_id;
     const removed = await deleteRecord(db, req.params.id);
     await writeAudit(db, {

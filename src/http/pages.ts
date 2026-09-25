@@ -217,7 +217,7 @@ export function libraryPage(input: {
             .map(
               (row) => `
             <li>
-              <a href="/items/${esc(row.id)}">
+              <a href="/items/${esc(row.id)}?library=${esc(input.library.id)}">
                 <h3>${esc(row.title)}</h3>
                 <p class="excerpt">${esc(row.excerpt) || "—"}</p>
                 <p class="meta">${row.tags.map((tag) => `<span class="tag">${esc(tag)}</span>`).join("") || "no labels"}</p>
