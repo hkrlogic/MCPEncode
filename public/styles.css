@@ -21,8 +21,13 @@ h1, h2, h3 { font-family: "Source Sans 3", "Segoe UI", sans-serif; letter-spacin
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; margin-bottom: 2rem; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 label { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.75rem 0; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-size: 0.9rem; font-weight: 650; }
-input, textarea { font: inherit; padding: 0.55rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
-input:focus, textarea:focus, button:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+input, textarea, select { font: inherit; padding: 0.55rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+input:focus, textarea:focus, select:focus, button:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+dl.details { display: grid; gap: 0.35rem; margin: 0.75rem 0 1rem; }
+dl.details div { display: grid; grid-template-columns: 11rem 1fr; gap: 0.75rem; }
+dl.details dt { color: var(--muted); }
+fieldset.policy-group { border: 1px solid var(--line); border-radius: 10px; margin: 1.25rem 0; padding: 0.35rem 1rem 0.85rem; }
+fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; padding: 0 0.35rem; }
 .editor { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; min-height: 16rem; }
 .editor textarea, .preview { min-height: 16rem; }
 .section-data .editor textarea, .section-data .preview { min-height: 22rem; }
@@ -54,6 +59,88 @@ input:focus, textarea:focus, button:focus { outline: 2px solid var(--focus); out
 .prose table, .preview table { width: 100%; border-collapse: collapse; }
 .prose th, .prose td, .preview th, .preview td { border: 1px solid var(--line); padding: 0.45rem 0.6rem; text-align: left; }
 .prose thead, .preview thead { background: #f7f3ea; }
+.library-view {
+  font-family: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+}
+.library-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1.5rem;
+  margin: 0.25rem 0 2rem;
+}
+.library-head h1 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.15;
+  font-weight: 650;
+}
+.kicker {
+  margin: 0 0 0.2rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.library-id {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.library-id code {
+  font-size: 0.8rem;
+}
+.library-view .search {
+  margin: 0;
+  min-width: min(100%, 22rem);
+  align-items: center;
+}
+.library-view .search input {
+  border-radius: 999px;
+  padding: 0.65rem 0.9rem;
+  background: var(--panel);
+}
+.section-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+}
+.section-row h2 { margin: 0; font-size: 1rem; }
+.section-actions { display: flex; align-items: center; gap: 0.85rem; }
+.count { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.library-view .btn { min-height: 44px; display: inline-flex; align-items: center; }
+.library-danger { margin-top: 2.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
+.item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+.item-list a {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.7fr) minmax(0, 1.6fr) auto;
+  gap: 0.75rem 1.25rem;
+  align-items: baseline;
+  padding: 0.85rem 0.35rem;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+  min-height: 44px;
+}
+.item-list a:hover { background: rgba(31, 77, 58, 0.05); }
+.item-list a:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.item-name { font-weight: 650; }
+.item-list .excerpt { margin: 0; }
+.item-labels { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
+.library-view .panel { margin-top: 2.5rem; }
+.library-view .panel h2 { font-size: 1.15rem; }
 @media (max-width: 720px) {
   .row, .editor { grid-template-columns: 1fr; }
+  dl.details div { grid-template-columns: 1fr; gap: 0.1rem; }
+  .library-head { flex-direction: column; align-items: stretch; }
+  .item-list a { grid-template-columns: 1fr; gap: 0.2rem; padding: 0.9rem 0.15rem; }
+  .item-labels { justify-content: flex-start; }
 }

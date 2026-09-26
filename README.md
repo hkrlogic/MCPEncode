@@ -1,6 +1,8 @@
 # Mpos
 
-A **POC** of a Model Context Protocol (MCP) datastore with real OAuth 2.1 login, two roles, a shared SQLite-compatible store, and a localhost Markdown UI.
+This is the MCP. It lives in `~/organization-chat` next to `ollama-mcp-chat`, the chat people use. See `../AGENTS.md`.
+
+A **POC** of a Model Context Protocol (MCP) server with real OAuth 2.1 login, two roles, libraries of items in MariaDB, and a localhost Markdown UI.
 
 OAuth 2.1 proves who you are. **Mpos** only checks the access token, maps the role to permissions, then lets Cursor and the browser use the same notes.
 
@@ -13,7 +15,7 @@ By default the POC runs a **development identity provider** in the same process 
 | Identity | OAuth 2.1 authorization code + PKCE. Mpos never stores passwords. |
 | Roles | **read-only** and **edit**. Edit includes delete. |
 | Permissions | Tools and the UI check `records.read` / `records.write` / `records.delete` / `audit.read`, not the role name. |
-| Store | One shared file (`data/mpos.db`). Each item belongs to a library and has a required summary and a status (`draft` or `published`). Reads use `items`. The older `records` table is kept (not dropped). |
+| MariaDB | Libraries and items live in database `mpos`. Each item belongs to a library and has a required summary and a status (`draft` or `published`). Reads use `items`. The older `records` table is kept (not dropped). |
 | Cursor | Streamable HTTP MCP at `http://127.0.0.1:3000/mcp`. |
 | Browser | `http://127.0.0.1:3000/` — Jspreadsheet CE grid (first row = titles) saved as Markdown tables. |
 
@@ -22,17 +24,18 @@ Read-only callers never see write tools in Cursor, and the add/edit forms are om
 ## Prerequisites
 
 - Node.js 22+
-- Docker Desktop (optional — only if you switch `AUTH_MODE=oidc`)
+- Docker Desktop (MariaDB). Also used if you switch `AUTH_MODE=oidc` for Keycloak.
 
 ## Run
 
 ```bash
-cd ~/Mpos
+cd ~/organization-chat/Mpos
+docker compose up -d mariadb
 npm install
 npm start
 ```
 
-Open [http://127.0.0.1:3000/](http://127.0.0.1:3000/) and sign in. Docker is **not** required for this default.
+Open [http://127.0.0.1:3000/](http://127.0.0.1:3000/) and sign in. MariaDB listens on `127.0.0.1:3306` only. Connection settings are in `.env` (see `.env.example`).
 
 Demo users (change these before this is more than a laptop demo):
 
@@ -69,7 +72,7 @@ Keycloak admin: [http://127.0.0.1:8080](http://127.0.0.1:8080) (`admin` / `admin
 | Tool | Permission | Returns |
 | --- | --- | --- |
 | `whoami` | any role | sub, role, permissions |
-| `list_records` | `records.read` | summaries only (id, title, tags, excerpt). Optional `tag`, `q`, `limit`, `offset` (max 50). |
+| `list_records` | `records.read` | One library plus a question (`library_name` or `library_id`, and `q`). One clear match returns the full item. Several matches return short summaries. |
 | `get_record` | `records.read` | full Markdown for one id |
 | `create_record` / `update_record` | `records.write` | title, Markdown notes, tags |
 | `delete_record` | `records.delete` | by id only |
@@ -81,12 +84,12 @@ There is no `run_sql` tool. Queries are parameterized in code.
 
 - In **oidc** mode Mpos is only a resource server and does not issue tokens. The default **embedded** mode runs a development IdP in-process (OAuth 2.1 + PKCE). Do not expose that to a network.
 - Access tokens must pass signature, issuer, expiry, and **audience** = `MCP_RESOURCE_URL`.
-- The access token is never written to SQLite. Only the user id (`sub`) is stored as `created_by` / `updated_by`.
+- The access token is never written to MariaDB. Only the user id (`sub`) is stored as `created_by` / `updated_by`.
 - Tool results label store content as **data**, not instructions (indirect prompt injection).
 - The Markdown preview **does not execute raw HTML** in notes.
 - Pasted Word/Docs HTML is converted to Markdown before save.
 - The UI session is an httpOnly cookie. Forms carry a CSRF token.
-- The HTTP server binds to `127.0.0.1` by default. The database file is gitignored; chmod 600 is attempted at create.
+- The HTTP server binds to `127.0.0.1` by default. MariaDB is published on `127.0.0.1:3306`. The app connects as user `mpos`, not root. Queries stay parameterized. `LOAD DATA LOCAL` is off.
 
 ## Tests
 
@@ -94,17 +97,17 @@ There is no `run_sql` tool. Queries are parameterized in code.
 npm test
 ```
 
-Verifier tests mint local JWTs. They do not need Docker.
+Verifier tests mint local JWTs and do not need Docker. Tests that touch libraries or items need MariaDB (`docker compose up -d mariadb`).
 
 ## Layout
 
 - `src/auth/` — JWKS verifier, role → permission map, UI session
 - `migrations/` — SQL applied once on startup. Adds `items` and `publish_audit`. Does not drop `records`.
-- `src/db/` — Turso embedded engine (SQLite-compatible file)
+- `src/db/` — MariaDB connection, migrations, and queries
 - `src/mcp/` — tools
 - `src/http/` — HTML UI and OAuth callback
 - `keycloak/` — realm import (two users, two clients, audience mapper)
 
 ## Later (not this POC)
 
-TLS on a public bind, encryption at rest, Turso Cloud, a third admin role, optimistic concurrency, soft-delete.
+TLS on a public bind, TLS to MariaDB when it is not on this machine, a third admin role, optimistic concurrency, soft-delete.

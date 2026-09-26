@@ -18,6 +18,7 @@ export type ItemInput = z.infer<typeof itemInputSchema>;
 
 export const listQuerySchema = z.object({
   library_id: z.string().uuid().optional(),
+  library_name: z.string().trim().min(1).max(200).optional(),
   tag: z.string().trim().min(1).max(40).optional(),
   q: z.string().trim().min(1).max(200).optional(),
   limit: z.number().int().min(1).max(50).optional(),

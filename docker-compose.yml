@@ -1,4 +1,27 @@
 services:
+  # Local MariaDB only. Published on 127.0.0.1 so it is not reachable from the network.
+  # Passwords match .env.example. Change both before this machine is shared.
+  mariadb:
+    image: mariadb:11.8
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "127.0.0.1:3306:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: mpos-root-local
+      MARIADB_DATABASE: mpos
+      MARIADB_USER: mpos
+      MARIADB_PASSWORD: mpos-local-dev
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.3
     command:
@@ -17,3 +40,6 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
+
+volumes:
+  mariadb_data:

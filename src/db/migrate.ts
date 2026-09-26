@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Database } from "@tursodatabase/database";
+import type { Database } from "./types.ts";
 
 /** Known id/name inserted only when a database has no library yet. */
 export const DEFAULT_LIBRARY_ID = "00000000-0000-4000-8000-000000000001";
@@ -16,9 +16,10 @@ const migrationsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
 export async function applyMigrations(db: Database): Promise<void> {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
-      version TEXT PRIMARY KEY,
-      applied_at INTEGER NOT NULL
-    );
+      version VARCHAR(255) NOT NULL,
+      applied_at BIGINT NOT NULL,
+      PRIMARY KEY (version)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
   const appliedRows = (await db.all("SELECT version FROM schema_migrations")) as { version: string }[];
   const applied = new Set(appliedRows.map((row) => row.version));
@@ -39,16 +40,24 @@ export async function applyMigrations(db: Database): Promise<void> {
 }
 
 /**
- * Older POC files created records before library_id existed.
+ * Older databases created records before library_id existed.
  * ADD COLUMN has no safe IF NOT EXISTS here, so this runs only when needed.
  * The statement is also written in migrations/002_items.sql.
  */
 async function ensureRecordsLibraryId(db: Database): Promise<void> {
   const tables = (await db.all(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'records'",
+    `SELECT table_name AS name
+     FROM information_schema.tables
+     WHERE table_schema = DATABASE() AND table_name = 'records'`,
   )) as { name: string }[];
   if (tables.length === 0) return;
-  const columns = (await db.all("PRAGMA table_info(records)")) as { name: string }[];
-  if (columns.some((column) => column.name === "library_id")) return;
-  await db.exec("ALTER TABLE records ADD COLUMN library_id TEXT NOT NULL DEFAULT ''");
+  const columns = (await db.all(
+    `SELECT column_name AS name
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'records'
+       AND column_name = 'library_id'`,
+  )) as { name: string }[];
+  if (columns.length > 0) return;
+  await db.exec("ALTER TABLE records ADD COLUMN library_id VARCHAR(36) NOT NULL DEFAULT ''");
 }

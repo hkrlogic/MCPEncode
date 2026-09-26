@@ -1,10 +1,18 @@
-import type { Database } from "@tursodatabase/database";
+import type { Database } from "./types.ts";
 import { excerptOf, type ItemInput, type ListQuery } from "../items/schema.ts";
+import {
+  parsePolicyDetails,
+  parseProcedureDetails,
+  type LibraryTemplate,
+  type PolicyDetails,
+  type ProcedureDetails,
+} from "../items/templates.ts";
 import { splitSummaryAndTable } from "../markdown/table.ts";
 
 export type LibraryRow = {
   id: string;
   name: string;
+  template: LibraryTemplate;
   created_by: string;
   updated_by: string;
   created_at: number;
@@ -22,6 +30,8 @@ export type RecordRow = {
   tags: string[];
   summary: string;
   status: ItemStatus;
+  policy?: PolicyDetails;
+  procedure?: ProcedureDetails;
   created_by: string;
   updated_by: string;
   created_at: number;
@@ -53,6 +63,7 @@ type SqlItem = {
   labels: string;
   summary: string;
   data: string;
+  details: string | null;
   status: string;
   created_by: string;
   updated_by: string;
@@ -88,6 +99,8 @@ function toRecord(row: SqlItem): RecordRow {
     tags: parseTags(row.labels),
     summary: row.summary,
     status: asStatus(row.status),
+    policy: parsePolicyDetails(row.details),
+    procedure: parseProcedureDetails(row.details),
     created_by: row.created_by,
     updated_by: row.updated_by,
     created_at: row.created_at,
@@ -130,23 +143,44 @@ async function runSql(db: Database, sql: string, ...params: unknown[]): Promise<
   await stmt.run(...params);
 }
 
+function libraryTemplate(value: string | undefined): LibraryTemplate {
+  if (value === "policy" || value === "procedure") return value;
+  return "general";
+}
+
 export async function listLibraries(db: Database): Promise<LibraryRow[]> {
-  return allRows<LibraryRow>(db, "SELECT * FROM libraries ORDER BY name COLLATE NOCASE ASC");
+  // utf8mb4_unicode_ci is case-insensitive, so name order matches the old NOCASE sort.
+  const rows = await allRows<LibraryRow & { template?: string }>(
+    db,
+    "SELECT * FROM libraries ORDER BY name ASC",
+  );
+  return rows.map((row) => ({
+    ...row,
+    template: libraryTemplate(row.template),
+  }));
 }
 
 export async function getLibrary(db: Database, id: string): Promise<LibraryRow | undefined> {
-  return getRow<LibraryRow>(db, "SELECT * FROM libraries WHERE id = ?", id);
+  const row = await getRow<LibraryRow & { template?: string }>(db, "SELECT * FROM libraries WHERE id = ?", id);
+  if (!row) return undefined;
+  return { ...row, template: libraryTemplate(row.template) };
 }
 
-export async function createLibrary(db: Database, name: string, actorSub: string): Promise<LibraryRow> {
+export async function createLibrary(
+  db: Database,
+  name: string,
+  actorSub: string,
+  template: LibraryTemplate = "general",
+): Promise<LibraryRow> {
   const now = Date.now();
   const id = crypto.randomUUID();
   await runSql(
     db,
-    `INSERT INTO libraries (id, name, created_by, updated_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO libraries (id, name, template, created_by, updated_by, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     id,
     name.trim(),
+    template,
     actorSub,
     actorSub,
     now,
@@ -155,6 +189,109 @@ export async function createLibrary(db: Database, name: string, actorSub: string
   const created = await getLibrary(db, id);
   if (!created) throw new Error("failed to read library after insert");
   return created;
+}
+
+const LOOKUP_STOP_WORDS = new Set([
+  "a", "an", "the", "what", "whats", "is", "are", "was", "for", "of", "to", "in", "on", "at",
+  "how", "do", "does", "me", "please", "and", "or", "with", "who", "where", "when", "which",
+  "that", "this", "from", "about", "tell", "give",
+]);
+
+/** Words that identify an item. Drops filler so "what is the phone for X" can match X. */
+function searchTokens(q: string): string[] {
+  const raw = q.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  return [...new Set(raw.filter((token) => token.length > 1 && !LOOKUP_STOP_WORDS.has(token)))];
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+function scoreItem(row: SqlItem, tokens: string[]): number {
+  const name = row.name.toLowerCase();
+  const summary = row.summary.toLowerCase();
+  const data = row.data.toLowerCase();
+  let score = 0;
+  let nameHits = 0;
+  for (const token of tokens) {
+    if (name.includes(token)) {
+      score += 8;
+      nameHits += 1;
+    } else if (summary.includes(token)) {
+      score += 3;
+    } else if (data.includes(token)) {
+      score += 1;
+    }
+  }
+  if (tokens.length > 0 && nameHits === tokens.length) score += 10;
+  return score;
+}
+
+export type LookupResult =
+  | { kind: "choices"; libraries: { id: string; name: string }[] }
+  | { kind: "none" }
+  | { kind: "item"; item: RecordRow }
+  | { kind: "list"; records: RecordSummary[] };
+
+/**
+ * One library, one question. A clear match returns the full item so the agent
+ * does not need a second call. A tie returns a few summaries.
+ */
+export async function lookupItems(
+  db: Database,
+  query: { library_id?: string; library_name?: string; q: string },
+  scope: ReadScope = { publishedOnly: true },
+): Promise<LookupResult> {
+  const library = await resolveLibrary(db, query);
+  if (!library) return { kind: "none" };
+  if ("choices" in library) return { kind: "choices", libraries: library.choices };
+
+  const sql = scope.publishedOnly
+    ? "SELECT * FROM items WHERE library_id = ? AND status = 'published' ORDER BY updated_at DESC"
+    : "SELECT * FROM items WHERE library_id = ? ORDER BY updated_at DESC";
+  const rows = await allRows<SqlItem>(db, sql, library.id);
+  const tokens = searchTokens(query.q);
+  const ranked = rows
+    .map((row) => ({ row, score: scoreItem(row, tokens) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || b.row.updated_at - a.row.updated_at);
+  if (ranked.length === 0) return { kind: "none" };
+
+  const best = ranked[0];
+  const second = ranked[1]?.score ?? 0;
+  const clearWinner = best !== undefined && (ranked.length === 1 || best.score >= second + 4);
+  if (clearWinner && best) return { kind: "item", item: toRecord(best.row) };
+  return { kind: "list", records: ranked.slice(0, 5).map((entry) => toSummary(entry.row)) };
+}
+
+/** Exact library name wins. A partial name is used only when it matches one library. */
+async function resolveLibrary(
+  db: Database,
+  input: { library_id?: string; library_name?: string },
+): Promise<{ id: string } | { choices: { id: string; name: string }[] } | undefined> {
+  if (input.library_id) {
+    const row = await getLibrary(db, input.library_id);
+    return row ? { id: row.id } : undefined;
+  }
+  const name = input.library_name?.trim();
+  if (!name) return undefined;
+  const exact = await allRows<{ id: string; name: string }>(
+    db,
+    "SELECT id, name FROM libraries WHERE name = ?",
+    name,
+  );
+  if (exact.length === 1) return { id: exact[0].id };
+  if (exact.length > 1) return { choices: exact };
+  const partial = await allRows<{ id: string; name: string }>(
+    db,
+    // JavaScript and MariaDB each treat backslash as an escape, so four
+    // slashes here become the single ESCAPE '\' character.
+    "SELECT id, name FROM libraries WHERE name LIKE ? ESCAPE '\\\\' ORDER BY name ASC",
+    `%${escapeLike(name)}%`,
+  );
+  if (partial.length === 1) return { id: partial[0].id };
+  if (partial.length > 1) return { choices: partial };
+  return undefined;
 }
 
 export async function defaultLibraryId(db: Database): Promise<string> {
@@ -213,9 +350,11 @@ export async function getRecord(
   return row ? toRecord(row) : undefined;
 }
 
+type ItemSave = ItemInput & { summary?: string; details?: string | null };
+
 export async function createRecord(
   db: Database,
-  input: ItemInput,
+  input: ItemSave,
   actorSub: string,
   libraryId?: string,
 ): Promise<RecordRow> {
@@ -226,15 +365,16 @@ export async function createRecord(
   await runSql(
     db,
     `INSERT INTO items (
-       id, library_id, name, labels, summary, data, status,
+       id, library_id, name, labels, summary, data, details, status,
        created_by, updated_by, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`,
     id,
     library_id,
     input.title,
     JSON.stringify(input.tags),
-    summaryFor(input.title, input.notes),
+    input.summary?.trim() || summaryFor(input.title, input.notes),
     input.notes,
+    input.details ?? null,
     actorSub,
     actorSub,
     now,
@@ -248,7 +388,7 @@ export async function createRecord(
 export async function updateRecord(
   db: Database,
   id: string,
-  input: ItemInput,
+  input: ItemSave,
   actorSub: string,
 ): Promise<RecordRow | undefined> {
   const existing = await getRecord(db, id, { publishedOnly: false });
@@ -257,17 +397,39 @@ export async function updateRecord(
   await runSql(
     db,
     `UPDATE items
-     SET name = ?, labels = ?, summary = ?, data = ?, updated_by = ?, updated_at = ?
+     SET name = ?, labels = ?, summary = ?, data = ?, details = ?, updated_by = ?, updated_at = ?
      WHERE id = ?`,
     input.title,
     JSON.stringify(input.tags),
-    summaryFor(input.title, input.notes),
+    input.summary?.trim() || summaryFor(input.title, input.notes),
     input.notes,
+    input.details ?? null,
     actorSub,
     now,
     id,
   );
   return getRecord(db, id, { publishedOnly: false });
+}
+
+/**
+ * Remove one library and the items in it.
+ * publish_audit rows go first because they point at both the library and the items.
+ * The notes table (records) is left in place.
+ * The last library stays, so the app always has one.
+ */
+export async function deleteLibrary(db: Database, id: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const existing = await getRow<{ id: string }>(tx, "SELECT id FROM libraries WHERE id = ?", id);
+    if (!existing) return false;
+    const count = await getRow<{ n: number }>(tx, "SELECT COUNT(*) AS n FROM libraries");
+    if (Number(count?.n ?? 0) <= 1) {
+      throw new Error("Keep at least one library");
+    }
+    await runSql(tx, "DELETE FROM publish_audit WHERE library_id = ?", id);
+    await runSql(tx, "DELETE FROM items WHERE library_id = ?", id);
+    await runSql(tx, "DELETE FROM libraries WHERE id = ?", id);
+    return true;
+  });
 }
 
 export async function deleteRecord(db: Database, id: string): Promise<boolean> {
@@ -307,7 +469,7 @@ export async function listAudit(db: Database, limit = 50): Promise<AuditRow[]> {
     id: row.id,
     actor_sub: row.actor_sub,
     tool: row.tool,
-    success: row.success === 1,
+    success: Number(row.success) === 1,
     detail: row.detail,
     created_at: row.created_at,
   }));

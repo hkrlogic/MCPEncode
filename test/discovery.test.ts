@@ -14,7 +14,14 @@ const config: AppConfig = {
   authAudience: "http://127.0.0.1:3000/mcp",
   webClientId: "mpos-web",
   sessionSecret: "x".repeat(32),
-  databasePath: "./data/mpos.db",
+  database: {
+    host: "127.0.0.1",
+    port: 3306,
+    user: "mpos",
+    password: "local-test-only",
+    database: "mpos",
+    ssl: false,
+  },
 };
 
 test("OpenID discovery includes fields Cursor requires", async () => {

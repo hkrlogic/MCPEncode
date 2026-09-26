@@ -3,7 +3,7 @@
 .env.*
 !.env.example
 
-# SQLite / Turso local store (libraries and items)
+# Old SQLite file, if it is still on disk. MariaDB data lives in the Docker volume.
 data/
 *.db
 *.db-wal
