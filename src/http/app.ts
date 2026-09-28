@@ -147,11 +147,20 @@ export function createApp(input: {
   });
 
   const originHost = new URL(config.publicBaseUrl).hostname;
+  const resourceHost = new URL(config.mcpResourceUrl).hostname;
+  // Hostnames only. A full URL here makes the SDK reject the browser Host header.
+  // The Railway hostname must be listed or the public site returns Invalid Host.
+  const allowedNames = [
+    ...new Set(
+      [config.bindHost, originHost, resourceHost, "127.0.0.1", "localhost", "[::1]"].filter(
+        (name) => name.length > 0,
+      ),
+    ),
+  ];
   const app = createMcpExpressApp({
     host: config.bindHost,
-    allowedHosts: [config.bindHost, "127.0.0.1", "localhost", "[::1]"],
-    // Hostnames only — a full URL here makes the SDK reject Origin: 127.0.0.1.
-    allowedOrigins: [originHost, "127.0.0.1", "localhost", "[::1]"],
+    allowedHosts: allowedNames,
+    allowedOrigins: allowedNames,
   });
   app.use(express.urlencoded({ extended: false }));
 
