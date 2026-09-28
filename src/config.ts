@@ -49,6 +49,16 @@ function required(name: string): string {
   return value;
 }
 
+/**
+ * Railway sets RAILWAY_PUBLIC_DOMAIN to the public hostname, with no scheme.
+ * Used when MCP_RESOURCE_URL and PUBLIC_BASE_URL were not typed in by hand.
+ */
+function railwayPublicOrigin(): string | undefined {
+  const domain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (!domain || domain.length > 253 || /[\s/]/.test(domain)) return undefined;
+  return `https://${domain}`;
+}
+
 export function loadDatabaseConfig(): DatabaseConfig {
   const port = Number(process.env.MARIADB_PORT ?? "3306");
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -74,11 +84,22 @@ export function loadDatabaseConfig(): DatabaseConfig {
 }
 
 export function loadConfig(): AppConfig {
-  const mcpResourceUrl = required("MCP_RESOURCE_URL").replace(/\/$/, "");
-  const publicBaseUrl = (process.env.PUBLIC_BASE_URL ?? "http://127.0.0.1:3000").replace(
+  const origin = railwayPublicOrigin();
+  const mcpResourceUrl = (process.env.MCP_RESOURCE_URL?.trim() || (origin ? `${origin}/mcp` : "")).replace(
     /\/$/,
     "",
   );
+  if (!mcpResourceUrl) {
+    throw new Error(
+      "Missing MCP_RESOURCE_URL. On Railway, generate a public domain under Networking. Locally, set MCP_RESOURCE_URL.",
+    );
+  }
+  const publicBaseUrl = (
+    process.env.PUBLIC_BASE_URL?.trim() ||
+    origin ||
+    "http://127.0.0.1:3000"
+  ).replace(/\/$/, "");
+  const onRailway = Boolean(process.env.RAILWAY_ENVIRONMENT?.trim() || origin);
   const authMode: AuthMode = process.env.AUTH_MODE === "oidc" ? "oidc" : "embedded";
   const authIssuer = (
     authMode === "embedded"
@@ -95,7 +116,7 @@ export function loadConfig(): AppConfig {
 
   return {
     port: Number(process.env.PORT ?? "3000"),
-    bindHost: process.env.BIND_HOST ?? "127.0.0.1",
+    bindHost: process.env.BIND_HOST?.trim() || (onRailway ? "0.0.0.0" : "127.0.0.1"),
     mcpResourceUrl,
     publicBaseUrl,
     authMode,
