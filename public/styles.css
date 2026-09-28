@@ -13,6 +13,14 @@
 html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 "Iowan Old Style", "Palatino Linotype", Palatino, serif; }
 a { color: var(--accent); }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+.sign-in {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 1.25rem;
+}
+.sign-in .panel { width: min(28rem, 100%); margin: 0; }
 .nav { display: flex; gap: 1rem; align-items: center; padding: 0.75rem 1.25rem; border-bottom: 1px solid var(--line); background: var(--panel); }
 .nav .who { margin-left: auto; color: var(--muted); font-size: 0.9rem; }
 .brand { font-weight: 650; }

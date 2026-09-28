@@ -96,10 +96,9 @@ function loginPage(input: { error?: string; hidden: Record<string, string> }): s
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <main class="wrap">
-    <section class="panel" style="max-width:28rem">
+  <main class="sign-in">
+    <section class="panel">
       <h1>Sign in</h1>
-      <p class="hint">Development identity provider (OAuth 2.1 + PKCE). Not for production.</p>
       ${input.error ? `<p class="error" role="alert">${input.error}</p>` : ""}
       <form method="post" action="/id/authorize">
         ${fields}
@@ -107,7 +106,6 @@ function loginPage(input: { error?: string; hidden: Record<string, string> }): s
         <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
         <button class="btn" type="submit">Continue</button>
       </form>
-      <p class="hint">editor / editor-pass (edit) · reader / reader-pass (read-only)</p>
     </section>
   </main>
 </body>

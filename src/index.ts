@@ -31,9 +31,6 @@ async function main(): Promise<void> {
     if (legacySqliteFilePresent()) {
       console.log("data/mpos.db is unused. Delete the data folder when you want the space back.");
     }
-    if (config.authMode === "embedded") {
-      console.log("Sign in  editor / editor-pass  or  reader / reader-pass");
-    }
   });
 }
 
