@@ -79,7 +79,10 @@ function form(req: Request, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-function redirectAllowed(uri: string): boolean {
+function redirectAllowed(uri: string, publicBaseUrl: string): boolean {
+  // The deployed site returns to its own /callback. Local and Cursor
+  // addresses stay on the fixed list above.
+  if (uri === `${publicBaseUrl}/callback`) return true;
   return ALLOWED_REDIRECTS.includes(uri);
 }
 
@@ -231,7 +234,7 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
         scope: form(req, "scope") || q(req, "scope"),
         nonce: form(req, "nonce") || q(req, "nonce"),
       };
-      if (!redirectAllowed(hidden.redirect_uri)) {
+      if (!redirectAllowed(hidden.redirect_uri, config.publicBaseUrl)) {
         res.status(400).send("invalid redirect_uri");
         return;
       }
@@ -255,7 +258,7 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
         return;
       }
       const redirectUri = form(req, "redirect_uri");
-      if (!redirectAllowed(redirectUri)) {
+      if (!redirectAllowed(redirectUri, config.publicBaseUrl)) {
         res.status(400).send("invalid redirect_uri");
         return;
       }
