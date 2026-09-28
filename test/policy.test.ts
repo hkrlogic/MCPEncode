@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createLibrary, createRecord, getRecord, listRecords } from "../src/db/queries.ts";
+import { createLibrary, createItem, getItem, listItems } from "../src/db/queries.ts";
 import { formatPolicy, itemForLibrary, parsePolicyDetails } from "../src/items/templates.ts";
 import { withTestDatabase } from "./db.ts";
 
@@ -27,10 +27,10 @@ test("policy text uses the fixed labels and no extra fields", () => {
   assert.match(text, /Policy:\nGuests use the gateway/);
   assert.match(text, /Exceptions:\n\nReferences:$/);
   assert.doesNotMatch(text, /Rule:/);
-  const rejected = itemForLibrary("policy", { title: "Remote access", notes: "free text" });
+  const rejected = itemForLibrary("policy", { name: "Remote access", body: "free text" });
   assert.equal(rejected.ok, false);
   if (!rejected.ok) assert.match(rejected.message, /purpose/);
-  const earlyReview = itemForLibrary("policy", { ...remoteAccess, title: "Remote access", summary: "Guest network.", review_date: "2026-01-01" });
+  const earlyReview = itemForLibrary("policy", { ...remoteAccess, name: "Remote access", summary: "Guest network.", review_date: "2026-01-01" });
   assert.equal(earlyReview.ok, false);
 });
 
@@ -47,22 +47,22 @@ test("a policy library stores the document fields, and a reader does not see the
     const library = await createLibrary(db, "Approved policies", "alice", "policy");
     assert.equal(library.template, "policy");
     const saved = itemForLibrary("policy", {
-      title: "Remote access",
+      name: "Remote access",
       summary: "How guests reach the office network.",
-      tags: ["remote"],
+      labels: ["remote"],
       ...remoteAccess,
     });
     assert.equal(saved.ok, true);
     if (!saved.ok) return;
-    const created = await createRecord(db, saved.item, "alice", library.id);
-    const opened = await getRecord(db, created.id, { publishedOnly: false });
+    const created = await createItem(db, saved.item, "alice", library.id);
+    const opened = await getItem(db, created.id, { publishedOnly: false });
     assert.equal(opened?.policy?.owner, "Office Lead");
     assert.equal(opened?.policy?.version, "1.0");
     assert.equal(opened?.policy?.review_date, "2027-09-01");
     assert.equal(opened?.policy?.purpose, remoteAccess.purpose);
-    assert.match(opened?.notes ?? "", /Template: Policy/);
+    assert.match(opened?.body ?? "", /Template: Policy/);
     assert.equal(opened?.summary, "How guests reach the office network.");
-    const hidden = await listRecords(db, { library_id: library.id }, { publishedOnly: true });
+    const hidden = await listItems(db, { library_id: library.id }, { publishedOnly: true });
     assert.equal(hidden.length, 0);
   });
 });

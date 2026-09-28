@@ -21,14 +21,14 @@ export type LibraryRow = {
 
 export type ItemStatus = "draft" | "published";
 
-/** App-facing item. Columns on disk are name, labels, summary, data, status. */
-export type RecordRow = {
+/** App-facing item. Columns on disk are name, labels, summary, body, status. */
+export type ItemRow = {
   id: string;
   library_id: string;
-  title: string;
-  notes: string;
-  tags: string[];
+  name: string;
+  labels: string[];
   summary: string;
+  body: string;
   status: ItemStatus;
   policy?: PolicyDetails;
   procedure?: ProcedureDetails;
@@ -38,14 +38,20 @@ export type RecordRow = {
   updated_at: number;
 };
 
-export type RecordSummary = {
+/** @deprecated Use ItemRow. */
+export type RecordRow = ItemRow;
+
+export type ItemSummary = {
   id: string;
   library_id: string;
-  title: string;
-  tags: string[];
+  name: string;
+  labels: string[];
+  summary: string;
   updated_at: number;
-  excerpt: string;
 };
+
+/** @deprecated Use ItemSummary. */
+export type RecordSummary = ItemSummary;
 
 export type AuditRow = {
   id: string;
@@ -62,7 +68,7 @@ type SqlItem = {
   name: string;
   labels: string;
   summary: string;
-  data: string;
+  body: string;
   details: string | null;
   status: string;
   created_by: string;
@@ -76,7 +82,7 @@ export type ReadScope = {
   publishedOnly: boolean;
 };
 
-function parseTags(raw: string): string[] {
+function parseLabels(raw: string): string[] {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -90,14 +96,14 @@ function asStatus(value: string): ItemStatus {
   return value === "published" ? "published" : "draft";
 }
 
-function toRecord(row: SqlItem): RecordRow {
+function toItem(row: SqlItem): ItemRow {
   return {
     id: row.id,
     library_id: row.library_id,
-    title: row.name,
-    notes: row.data,
-    tags: parseTags(row.labels),
+    name: row.name,
+    labels: parseLabels(row.labels),
     summary: row.summary,
+    body: row.body,
     status: asStatus(row.status),
     policy: parsePolicyDetails(row.details),
     procedure: parseProcedureDetails(row.details),
@@ -108,24 +114,13 @@ function toRecord(row: SqlItem): RecordRow {
   };
 }
 
-function toSummary(row: SqlItem): RecordSummary {
-  return {
-    id: row.id,
-    library_id: row.library_id,
-    title: row.name,
-    tags: parseTags(row.labels),
-    updated_at: row.updated_at,
-    excerpt: excerptOf(row.summary),
-  };
-}
-
 /** Summary is required. Prefer the leading prose; otherwise the name. */
-function summaryFor(title: string, notes: string): string {
-  const lead = splitSummaryAndTable(notes).summary.replace(/\s+/g, " ").trim();
+function summaryFor(name: string, body: string): string {
+  const lead = splitSummaryAndTable(body).summary.replace(/\s+/g, " ").trim();
   if (lead) return lead.slice(0, 500);
-  const flat = notes.replace(/\s+/g, " ").trim();
+  const flat = body.replace(/\s+/g, " ").trim();
   if (flat) return flat.slice(0, 500);
-  return title.trim().slice(0, 500);
+  return name.trim().slice(0, 500);
 }
 
 async function allRows<T>(db: Database, sql: string, ...params: unknown[]): Promise<T[]> {
@@ -197,6 +192,15 @@ const LOOKUP_STOP_WORDS = new Set([
   "that", "this", "from", "about", "tell", "give",
 ]);
 
+/**
+ * InnoDB full-text ignores words shorter than innodb_ft_min_token_size.
+ * The server default is 3. Two-letter words are matched on name and summary only.
+ */
+const FULLTEXT_MIN_TOKEN = 3;
+
+/** Index hits to re-rank. The rest of the library stays in the table. */
+const LOOKUP_CANDIDATE_LIMIT = 25;
+
 /** Words that identify an item. Drops filler so "what is the phone for X" can match X. */
 function searchTokens(q: string): string[] {
   const raw = q.toLowerCase().match(/[a-z0-9]+/g) ?? [];
@@ -207,19 +211,24 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
-function scoreItem(row: SqlItem, tokens: string[]): number {
+/** Whole word, so a hit lines up with the full-text index. */
+function hasWord(lowerText: string, token: string): boolean {
+  return new RegExp(`(?:^|[^a-z0-9])${token}(?:[^a-z0-9]|$)`).test(lowerText);
+}
+
+function scoreItem(row: { name: string; summary: string; body: string }, tokens: string[]): number {
   const name = row.name.toLowerCase();
   const summary = row.summary.toLowerCase();
-  const data = row.data.toLowerCase();
+  const body = row.body.toLowerCase();
   let score = 0;
   let nameHits = 0;
   for (const token of tokens) {
-    if (name.includes(token)) {
+    if (hasWord(name, token)) {
       score += 8;
       nameHits += 1;
-    } else if (summary.includes(token)) {
+    } else if (hasWord(summary, token)) {
       score += 3;
-    } else if (data.includes(token)) {
+    } else if (token.length >= FULLTEXT_MIN_TOKEN && hasWord(body, token)) {
       score += 1;
     }
   }
@@ -230,12 +239,172 @@ function scoreItem(row: SqlItem, tokens: string[]): number {
 export type LookupResult =
   | { kind: "choices"; libraries: { id: string; name: string }[] }
   | { kind: "none" }
-  | { kind: "item"; item: RecordRow }
-  | { kind: "list"; records: RecordSummary[] };
+  | { kind: "item"; item: ItemRow }
+  | { kind: "list"; items: ItemSummary[] };
+
+/** Columns the index search returns. Body is filled in only for the short candidate list. */
+type LookupHit = {
+  id: string;
+  library_id: string;
+  name: string;
+  labels: string;
+  summary: string;
+  body: string;
+  updated_at: number;
+};
+
+type RankedHit = { hit: LookupHit; score: number };
+
+function libraryWhere(scope: ReadScope): string {
+  // Two fixed clauses. The library id is always a bound parameter.
+  return scope.publishedOnly ? "library_id = ? AND status = 'published'" : "library_id = ?";
+}
+
+function fulltextPhrase(tokens: string[]): string {
+  return tokens.filter((token) => token.length >= FULLTEXT_MIN_TOKEN).join(" ");
+}
+
+function rankHits(hits: LookupHit[], tokens: string[]): RankedHit[] {
+  return hits
+    .map((hit) => ({ hit, score: scoreItem(hit, tokens) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || b.hit.updated_at - a.hit.updated_at);
+}
+
+function isClearWinner(ranked: RankedHit[]): boolean {
+  const best = ranked[0];
+  if (!best) return false;
+  const second = ranked[1]?.score ?? 0;
+  return ranked.length === 1 || best.score >= second + 4;
+}
+
+/**
+ * A body-only hit scores at most one point per word, and the next name hit
+ * can pick up those same points. Skip the body search when that cannot
+ * close the gap of 4 that makes a clear winner.
+ */
+function nameIsEnough(ranked: RankedHit[], tokenCount: number): boolean {
+  const best = ranked[0];
+  if (!best || tokenCount === 0) return false;
+  const second = ranked[1]?.score ?? 0;
+  const rival = Math.max(second + tokenCount, tokenCount);
+  return best.score >= rival + 4;
+}
+
+function mergeHits(groups: LookupHit[][]): LookupHit[] {
+  const byId = new Map<string, LookupHit>();
+  for (const hit of groups.flat()) {
+    const existing = byId.get(hit.id);
+    if (!existing || hit.body.length > existing.body.length) byId.set(hit.id, hit);
+  }
+  return [...byId.values()];
+}
+
+function summaryFromHit(hit: LookupHit): ItemSummary {
+  return {
+    id: hit.id,
+    library_id: hit.library_id,
+    name: hit.name,
+    labels: parseLabels(hit.labels),
+    summary: excerptOf(hit.summary),
+    updated_at: hit.updated_at,
+  };
+}
+
+async function findNameSummaryHits(
+  db: Database,
+  libraryId: string,
+  scope: ReadScope,
+  phrase: string,
+  shortTokens: string[],
+): Promise<LookupHit[]> {
+  const groups: LookupHit[][] = [];
+  if (phrase) {
+    const rows = await allRows<Omit<LookupHit, "body"> & { relevance: number }>(
+      db,
+      `SELECT id, library_id, name, labels, summary, updated_at,
+              MATCH(name, summary) AGAINST (? IN BOOLEAN MODE) AS relevance
+       FROM items
+       WHERE ${libraryWhere(scope)}
+         AND MATCH(name, summary) AGAINST (? IN BOOLEAN MODE)
+       ORDER BY relevance DESC, updated_at DESC
+       LIMIT ${LOOKUP_CANDIDATE_LIMIT}`,
+      phrase,
+      libraryId,
+      phrase,
+    );
+    groups.push(rows.map((row) => ({ ...row, body: "" })));
+  }
+  const safeShort = shortTokens.filter((token) => /^[a-z0-9]{2}$/.test(token));
+  if (safeShort.length > 0) {
+    // Bound as a parameter. Tokens are two letters or digits, so the pattern
+    // cannot change the SQL or carry a regex operator from the question.
+    const pattern = `(^|[^a-z0-9])(${safeShort.join("|")})([^a-z0-9]|$)`;
+    const rows = await allRows<Omit<LookupHit, "body">>(
+      db,
+      `SELECT id, library_id, name, labels, summary, updated_at
+       FROM items
+       WHERE ${libraryWhere(scope)}
+         AND (LOWER(name) REGEXP ? OR LOWER(summary) REGEXP ?)
+       ORDER BY updated_at DESC
+       LIMIT ${LOOKUP_CANDIDATE_LIMIT}`,
+      libraryId,
+      pattern,
+      pattern,
+    );
+    groups.push(rows.map((row) => ({ ...row, body: "" })));
+  }
+  return mergeHits(groups);
+}
+
+async function findBodyHitIds(
+  db: Database,
+  libraryId: string,
+  scope: ReadScope,
+  phrase: string,
+): Promise<string[]> {
+  if (!phrase) return [];
+  const rows = await allRows<{ id: string }>(
+    db,
+    `SELECT id
+     FROM items
+     WHERE ${libraryWhere(scope)}
+       AND MATCH(body) AGAINST (? IN BOOLEAN MODE)
+     ORDER BY MATCH(body) AGAINST (? IN BOOLEAN MODE) DESC, updated_at DESC
+     LIMIT ${LOOKUP_CANDIDATE_LIMIT}`,
+    libraryId,
+    phrase,
+    phrase,
+  );
+  return rows.map((row) => row.id);
+}
+
+async function loadLookupHits(
+  db: Database,
+  libraryId: string,
+  scope: ReadScope,
+  ids: string[],
+): Promise<LookupHit[]> {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  return allRows<LookupHit>(
+    db,
+    `SELECT id, library_id, name, labels, summary, body, updated_at
+     FROM items
+     WHERE ${libraryWhere(scope)}
+       AND id IN (${placeholders})`,
+    libraryId,
+    ...ids,
+  );
+}
 
 /**
  * One library, one question. A clear match returns the full item so the agent
  * does not need a second call. A tie returns a few summaries.
+ *
+ * The database full-text index finds the candidate rows. Name and summary
+ * are searched first. The body is read only for that short list, or for the
+ * one item that is returned.
  */
 export async function lookupItems(
   db: Database,
@@ -246,22 +415,34 @@ export async function lookupItems(
   if (!library) return { kind: "none" };
   if ("choices" in library) return { kind: "choices", libraries: library.choices };
 
-  const sql = scope.publishedOnly
-    ? "SELECT * FROM items WHERE library_id = ? AND status = 'published' ORDER BY updated_at DESC"
-    : "SELECT * FROM items WHERE library_id = ? ORDER BY updated_at DESC";
-  const rows = await allRows<SqlItem>(db, sql, library.id);
   const tokens = searchTokens(query.q);
-  const ranked = rows
-    .map((row) => ({ row, score: scoreItem(row, tokens) }))
-    .filter((entry) => entry.score > 0)
-    .sort((a, b) => b.score - a.score || b.row.updated_at - a.row.updated_at);
-  if (ranked.length === 0) return { kind: "none" };
+  if (tokens.length === 0) return { kind: "none" };
+  const phrase = fulltextPhrase(tokens);
+  const shortTokens = tokens.filter((token) => token.length < FULLTEXT_MIN_TOKEN);
+  const openScope = scope.publishedOnly
+    ? { publishedOnly: true as const, libraryId: library.id }
+    : { publishedOnly: false as const };
 
-  const best = ranked[0];
-  const second = ranked[1]?.score ?? 0;
-  const clearWinner = best !== undefined && (ranked.length === 1 || best.score >= second + 4);
-  if (clearWinner && best) return { kind: "item", item: toRecord(best.row) };
-  return { kind: "list", records: ranked.slice(0, 5).map((entry) => toSummary(entry.row)) };
+  const nameHits = await findNameSummaryHits(db, library.id, scope, phrase, shortTokens);
+  const rankedNames = rankHits(nameHits, tokens);
+  const leading = rankedNames[0];
+  if (leading && nameIsEnough(rankedNames, tokens.length)) {
+    const item = await getItem(db, leading.hit.id, openScope);
+    if (item) return { kind: "item", item };
+  }
+
+  const ids = new Set(nameHits.map((hit) => hit.id));
+  for (const id of await findBodyHitIds(db, library.id, scope, phrase)) ids.add(id);
+  if (ids.size === 0) return { kind: "none" };
+
+  const ranked = rankHits(await loadLookupHits(db, library.id, scope, [...ids]), tokens);
+  const winner = ranked[0];
+  if (!winner) return { kind: "none" };
+  if (!isClearWinner(ranked)) {
+    return { kind: "list", items: ranked.slice(0, 5).map((entry) => summaryFromHit(entry.hit)) };
+  }
+  const item = await getItem(db, winner.hit.id, openScope);
+  return item ? { kind: "item", item } : { kind: "none" };
 }
 
 /** Exact library name wins. A partial name is used only when it matches one library. */
@@ -300,42 +481,53 @@ export async function defaultLibraryId(db: Database): Promise<string> {
   return row.id;
 }
 
-export async function listRecords(
+export async function listItems(
   db: Database,
   query: ListQuery = {},
   scope: ReadScope = { publishedOnly: true },
-): Promise<RecordSummary[]> {
+): Promise<ItemSummary[]> {
   if (!query.library_id) {
     throw new Error("library_id is required");
   }
   const limit = query.limit ?? 50;
   const offset = query.offset ?? 0;
-  // Reader path is exactly one library and published items. No cross-library dump.
-  const sql = scope.publishedOnly
-    ? "SELECT * FROM items WHERE library_id = ? AND status = 'published' ORDER BY updated_at DESC"
-    : "SELECT * FROM items WHERE library_id = ? ORDER BY updated_at DESC";
-  const rows = await allRows<SqlItem>(db, sql, query.library_id);
-  const needle = query.q?.toLowerCase();
-  const tag = query.tag?.toLowerCase();
-  return rows
-    .map(toSummary)
-    .filter((row) => {
-      if (tag && !row.tags.includes(tag)) return false;
-      if (!needle) return true;
-      return (
-        row.title.toLowerCase().includes(needle) ||
-        row.tags.some((entry) => entry.includes(needle)) ||
-        row.excerpt.toLowerCase().includes(needle)
-      );
-    })
-    .slice(offset, offset + limit);
+  // Name, labels, and summary only. The body stays in the table.
+  const where = [libraryWhere(scope)];
+  const params: unknown[] = [query.library_id];
+  const label = query.label?.trim().toLowerCase();
+  if (label) {
+    where.push("JSON_CONTAINS(labels, JSON_QUOTE(?))");
+    params.push(label);
+  }
+  const needle = query.q?.trim();
+  if (needle) {
+    const pattern = `%${escapeLike(needle)}%`;
+    where.push(
+      "(name LIKE ? ESCAPE '\\\\' OR summary LIKE ? ESCAPE '\\\\' OR labels LIKE ? ESCAPE '\\\\')",
+    );
+    params.push(pattern, pattern, pattern);
+  }
+  params.push(limit, offset);
+  const rows = await allRows<Omit<LookupHit, "body">>(
+    db,
+    `SELECT id, library_id, name, labels, summary, updated_at
+     FROM items
+     WHERE ${where.join(" AND ")}
+     ORDER BY updated_at DESC
+     LIMIT ? OFFSET ?`,
+    ...params,
+  );
+  return rows.map((row) => summaryFromHit({ ...row, body: "" }));
 }
 
-export async function getRecord(
+/** @deprecated Use listItems. */
+export const listRecords = listItems;
+
+export async function getItem(
   db: Database,
   id: string,
   scope: ReadScope & { libraryId?: string } = { publishedOnly: true },
-): Promise<RecordRow | undefined> {
+): Promise<ItemRow | undefined> {
   if (scope.publishedOnly && !scope.libraryId) {
     throw new Error("library_id is required");
   }
@@ -347,17 +539,20 @@ export async function getRecord(
         scope.libraryId,
       )
     : await getRow<SqlItem>(db, "SELECT * FROM items WHERE id = ?", id);
-  return row ? toRecord(row) : undefined;
+  return row ? toItem(row) : undefined;
 }
+
+/** @deprecated Use getItem. */
+export const getRecord = getItem;
 
 type ItemSave = ItemInput & { summary?: string; details?: string | null };
 
-export async function createRecord(
+export async function createItem(
   db: Database,
   input: ItemSave,
   actorSub: string,
   libraryId?: string,
-): Promise<RecordRow> {
+): Promise<ItemRow> {
   const now = Date.now();
   const id = crypto.randomUUID();
   const library_id = libraryId || (await defaultLibraryId(db));
@@ -365,51 +560,57 @@ export async function createRecord(
   await runSql(
     db,
     `INSERT INTO items (
-       id, library_id, name, labels, summary, data, details, status,
+       id, library_id, name, labels, summary, body, details, status,
        created_by, updated_by, created_at, updated_at
      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`,
     id,
     library_id,
-    input.title,
-    JSON.stringify(input.tags),
-    input.summary?.trim() || summaryFor(input.title, input.notes),
-    input.notes,
+    input.name,
+    JSON.stringify(input.labels),
+    input.summary?.trim() || summaryFor(input.name, input.body),
+    input.body,
     input.details ?? null,
     actorSub,
     actorSub,
     now,
     now,
   );
-  const created = await getRecord(db, id, { publishedOnly: false });
-  if (!created) throw new Error("failed to read record after insert");
+  const created = await getItem(db, id, { publishedOnly: false });
+  if (!created) throw new Error("failed to read item after insert");
   return created;
 }
 
-export async function updateRecord(
+/** @deprecated Use createItem. */
+export const createRecord = createItem;
+
+export async function updateItem(
   db: Database,
   id: string,
   input: ItemSave,
   actorSub: string,
-): Promise<RecordRow | undefined> {
-  const existing = await getRecord(db, id, { publishedOnly: false });
+): Promise<ItemRow | undefined> {
+  const existing = await getItem(db, id, { publishedOnly: false });
   if (!existing) return undefined;
   const now = Date.now();
   await runSql(
     db,
     `UPDATE items
-     SET name = ?, labels = ?, summary = ?, data = ?, details = ?, updated_by = ?, updated_at = ?
+     SET name = ?, labels = ?, summary = ?, body = ?, details = ?, updated_by = ?, updated_at = ?
      WHERE id = ?`,
-    input.title,
-    JSON.stringify(input.tags),
-    input.summary?.trim() || summaryFor(input.title, input.notes),
-    input.notes,
+    input.name,
+    JSON.stringify(input.labels),
+    input.summary?.trim() || summaryFor(input.name, input.body),
+    input.body,
     input.details ?? null,
     actorSub,
     now,
     id,
   );
-  return getRecord(db, id, { publishedOnly: false });
+  return getItem(db, id, { publishedOnly: false });
 }
+
+/** @deprecated Use updateItem. */
+export const updateRecord = updateItem;
 
 /**
  * Remove one library and the items in it.
@@ -432,12 +633,15 @@ export async function deleteLibrary(db: Database, id: string): Promise<boolean> 
   });
 }
 
-export async function deleteRecord(db: Database, id: string): Promise<boolean> {
-  const existing = await getRecord(db, id, { publishedOnly: false });
+export async function deleteItem(db: Database, id: string): Promise<boolean> {
+  const existing = await getItem(db, id, { publishedOnly: false });
   if (!existing) return false;
   await runSql(db, "DELETE FROM items WHERE id = ?", id);
   return true;
 }
+
+/** @deprecated Use deleteItem. */
+export const deleteRecord = deleteItem;
 
 export async function writeAudit(
   db: Database,

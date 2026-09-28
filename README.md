@@ -1,10 +1,10 @@
-# Mpos
+# Mpos (Publisher)
 
-This is the MCP. It lives in `~/organization-chat` next to `ollama-mcp-chat`, the chat people use. See `../AGENTS.md`.
+This is the **publisher** surface. It lives in `~/organization-chat` next to `ollama-mcp-chat`, the kiosk. See `../AGENTS.md`.
 
-A **POC** of a Model Context Protocol (MCP) server with real OAuth 2.1 login, two roles, libraries of items in MariaDB, and a localhost Markdown UI.
+A **POC** of a Model Context Protocol (MCP) server with real OAuth 2.1 login, two roles, libraries of items in MariaDB, and a localhost Markdown UI. MCP is the connector; the product words are library, item, and section.
 
-OAuth 2.1 proves who you are. **Mpos** only checks the access token, maps the role to permissions, then lets Cursor and the browser use the same notes.
+OAuth 2.1 proves who you are. **Mpos** only checks the access token, maps the role to permissions, then lets Cursor and the browser use the same libraries.
 
 By default the POC runs a **development identity provider** in the same process (no Docker). That still uses authorization-code + PKCE and audience-bound JWTs. Point `AUTH_MODE=oidc` at Keycloak when Docker Desktop is running if you want an external issuer.
 
@@ -15,7 +15,7 @@ By default the POC runs a **development identity provider** in the same process 
 | Identity | OAuth 2.1 authorization code + PKCE. Mpos never stores passwords. |
 | Roles | **read-only** and **edit**. Edit includes delete. |
 | Permissions | Tools and the UI check `records.read` / `records.write` / `records.delete` / `audit.read`, not the role name. |
-| MariaDB | Libraries and items live in database `mpos`. Each item belongs to a library and has a required summary and a status (`draft` or `published`). Reads use `items`. The older `records` table is kept (not dropped). |
+| MariaDB | Libraries and items live in database `mpos`. Each item belongs to a library and has a required summary and a status (`draft` or `published`). Reads and writes use `items`. The older `records` table is **frozen** (kept, not dropped; no new writes). |
 | Cursor | Streamable HTTP MCP at `http://127.0.0.1:3000/mcp`. |
 | Browser | `http://127.0.0.1:3000/` — Jspreadsheet CE grid (first row = titles) saved as Markdown tables. |
 
@@ -50,6 +50,8 @@ Demo users (change these before this is more than a laptop demo):
 
 Use `http://127.0.0.1:3000/mcp` consistently. `localhost` is a different token audience and login will fail.
 
+Cursor’s desktop OAuth return URL is `http://localhost:8787/callback`. Leave that port free while connecting (the kiosk does not use 8787; it returns to its own `/oauth/callback`).
+
 ### Optional: Keycloak in Docker
 
 Start **Docker Desktop** first (the engine must be running — `docker.sock` missing means it is not). Then:
@@ -72,9 +74,11 @@ Keycloak admin: [http://127.0.0.1:8080](http://127.0.0.1:8080) (`admin` / `admin
 | Tool | Permission | Returns |
 | --- | --- | --- |
 | `whoami` | any role | sub, role, permissions |
+| `list_libraries` | `records.read` | id, name, template for each library |
 | `list_records` | `records.read` | One library plus a question (`library_name` or `library_id`, and `q`). One clear match returns the full item. Several matches return short summaries. |
 | `get_record` | `records.read` | full Markdown for one id |
-| `create_record` / `update_record` | `records.write` | title, Markdown notes, tags |
+| `create_library` | `records.write` | name, template (`general`, `policy`, or `procedure`) |
+| `create_record` / `update_record` | `records.write` | name, body / template fields, labels |
 | `delete_record` | `records.delete` | by id only |
 | `list_audit` | `audit.read` | who invoked which tool |
 
@@ -108,6 +112,10 @@ Verifier tests mint local JWTs and do not need Docker. Tests that touch librarie
 - `src/http/` — HTML UI and OAuth callback
 - `keycloak/` — realm import (two users, two clients, audience mapper)
 
+## Product freeze
+
+See `../AGENTS.md`. Short version: `items` is source of truth (`name`, `labels`, `summary`, `body`, `status`); do not write to `records`; keep live MCP tool names until a planned rename; sections become first-class later — do not invent a third body shape now.
+
 ## Later (not this POC)
 
-TLS on a public bind, TLS to MariaDB when it is not on this machine, a third admin role, optimistic concurrency, soft-delete.
+TLS on a public bind, TLS to MariaDB when it is not on this machine, a third admin role, optimistic concurrency, soft-delete, drop frozen `records`, first-class sections.

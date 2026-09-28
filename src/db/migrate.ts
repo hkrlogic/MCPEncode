@@ -29,6 +29,14 @@ export async function applyMigrations(db: Database): Promise<void> {
     if (file.startsWith("002")) {
       await ensureRecordsLibraryId(db);
     }
+    if (file.startsWith("004") && !(await itemsNeedsDataToBody(db))) {
+      await db.run(
+        "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+        file,
+        Date.now(),
+      );
+      continue;
+    }
     const sql = await readFile(path.join(migrationsDir, file), "utf8");
     await db.exec(sql);
     await db.run(
@@ -60,4 +68,22 @@ async function ensureRecordsLibraryId(db: Database): Promise<void> {
   )) as { name: string }[];
   if (columns.length > 0) return;
   await db.exec("ALTER TABLE records ADD COLUMN library_id VARCHAR(36) NOT NULL DEFAULT ''");
+}
+
+/** True when items still has data and does not yet have body. */
+async function itemsNeedsDataToBody(db: Database): Promise<boolean> {
+  const tables = (await db.all(
+    `SELECT table_name AS name
+     FROM information_schema.tables
+     WHERE table_schema = DATABASE() AND table_name = 'items'`,
+  )) as { name: string }[];
+  if (tables.length === 0) return false;
+  const columns = (await db.all(
+    `SELECT column_name AS name
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE() AND table_name = 'items'
+       AND column_name IN ('data', 'body')`,
+  )) as { name: string }[];
+  const names = new Set(columns.map((row) => row.name));
+  return names.has("data") && !names.has("body");
 }

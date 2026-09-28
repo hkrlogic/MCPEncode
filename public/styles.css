@@ -35,8 +35,10 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 .btn { display: inline-block; background: var(--accent); color: #fff; border: 0; border-radius: 999px; padding: 0.55rem 1.1rem; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; cursor: pointer; text-decoration: none; }
 .btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
 .btn.danger { background: var(--danger); }
-.cards { list-style: none; padding: 0; display: grid; gap: 0.75rem; }
-.cards a { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; text-decoration: none; color: inherit; }
+.cards { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--line); }
+.cards a { display: block; padding: 0.9rem 0.35rem; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit; min-height: 44px; }
+.cards a:hover { background: rgba(31, 77, 58, 0.05); }
+.cards h2 { margin: 0; font-size: 1.15rem; font-weight: 650; }
 .excerpt { color: var(--muted); }
 .tag { display: inline-block; margin-right: 0.35rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #ebe4d6; font-size: 0.8rem; font-family: "Source Sans 3", "Segoe UI", sans-serif; }
 .error { color: var(--danger); }
@@ -65,7 +67,7 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 .library-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 1.5rem;
   margin: 0.25rem 0 2rem;
 }
@@ -83,23 +85,95 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.library-id {
-  margin: 0.45rem 0 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-.library-id code {
-  font-size: 0.8rem;
-}
 .library-view .search {
-  margin: 0;
-  min-width: min(100%, 22rem);
+  margin: 0 0 1.25rem;
   align-items: center;
-}
-.library-view .search input {
+  border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 0.65rem 0.9rem;
   background: var(--panel);
+  padding: 0.15rem 0.15rem 0.15rem 0.35rem;
+}
+.library-view .search:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.library-view .search input {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.65rem 0.75rem;
+  background: transparent;
+  min-height: 44px;
+}
+.library-view .search input:focus { outline: none; }
+.library-view .search button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-weight: 650;
+  min-height: 44px;
+  padding: 0 1rem;
+  cursor: pointer;
+}
+.head-actions { display: flex; align-items: center; gap: 0.5rem; }
+.back { margin: 0 0 1rem; }
+.back a { text-decoration: none; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; }
+.item-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.lead { margin: 0.35rem 0 0; font-size: 1.15rem; }
+.item-menu { position: relative; }
+.item-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-weight: 650;
+}
+.item-menu > summary::-webkit-details-marker { display: none; }
+.menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 2;
+  min-width: 11rem;
+  padding: 0.35rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.menu-list a, .menu-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  min-height: 44px;
+}
+.menu-list a:hover, .menu-list button:hover { background: rgba(31, 77, 58, 0.06); }
+.menu-danger { color: var(--danger); }
+.add-panel { position: relative; }
+.add-panel > summary { list-style: none; cursor: pointer; }
+.add-panel > summary::-webkit-details-marker { display: none; }
+.add-panel > form {
+  position: absolute;
+  right: 0;
+  z-index: 3;
+  width: min(22rem, calc(100vw - 2.5rem));
+  margin-top: 0.5rem;
+  padding: 1rem 1rem 0.35rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 .section-row {
   display: flex;
@@ -120,11 +194,11 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   border-top: 1px solid var(--line);
 }
 .item-list a {
-  display: grid;
-  grid-template-columns: minmax(10rem, 0.7fr) minmax(0, 1.6fr) auto;
-  gap: 0.75rem 1.25rem;
-  align-items: baseline;
-  padding: 0.85rem 0.35rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.9rem 0.35rem;
   border-bottom: 1px solid var(--line);
   text-decoration: none;
   color: inherit;
@@ -134,13 +208,12 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 .item-list a:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .item-name { font-weight: 650; }
 .item-list .excerpt { margin: 0; }
-.item-labels { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; }
+.item-labels { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.2rem; }
 .library-view .panel { margin-top: 2.5rem; }
 .library-view .panel h2 { font-size: 1.15rem; }
 @media (max-width: 720px) {
   .row, .editor { grid-template-columns: 1fr; }
   dl.details div { grid-template-columns: 1fr; gap: 0.1rem; }
   .library-head { flex-direction: column; align-items: stretch; }
-  .item-list a { grid-template-columns: 1fr; gap: 0.2rem; padding: 0.9rem 0.15rem; }
-  .item-labels { justify-content: flex-start; }
+  .add-panel > form { right: auto; left: 0; }
 }

@@ -1,5 +1,5 @@
 import { can, type Access } from "../auth/rbac.ts";
-import type { LibraryRow, RecordRow, RecordSummary } from "../db/queries.ts";
+import type { LibraryRow, ItemRow, ItemSummary } from "../db/queries.ts";
 import {
   EMPTY_TABLE,
   splitSummaryAndTable,
@@ -10,7 +10,7 @@ import {
 function libraryKind(template: LibraryRow["template"]): string {
   if (template === "policy") return "Policy";
   if (template === "procedure") return "Procedure";
-  return "";
+  return "General";
 }
 
 function esc(value: string): string {
@@ -104,7 +104,7 @@ function tableMarkup(table: MdTable): string {
       <div class="sheet-wrap">
         <div id="spreadsheet" data-table="${esc(JSON.stringify(tableToSheetData(table)))}"></div>
       </div>
-      <textarea id="notes" name="notes" class="sr-only" maxlength="50000"></textarea>
+      <textarea id="body" name="body" class="sr-only" maxlength="50000"></textarea>
       <div class="preview" id="preview" aria-live="polite"><p class="hint">Table preview</p></div>
     </div>
   `;
@@ -113,7 +113,7 @@ function tableMarkup(table: MdTable): string {
 function descriptionMarkup(description: string): string {
   return `
     <div class="section section-data">
-      <label for="description">Data</label>
+      <label for="description">Body</label>
       <p class="hint">Primary place to paste this item. Markdown is fine. The summary above is only the one-liner search shows.</p>
       <div class="editor">
         <textarea id="description" name="description" rows="18" maxlength="50000"
@@ -124,22 +124,22 @@ function descriptionMarkup(description: string): string {
   `;
 }
 
-function captureEditor(notes: string, summaryRequired: boolean): string {
-  const split = splitSummaryAndTable(notes);
+function captureEditor(body: string, summaryRequired: boolean): string {
+  const split = splitSummaryAndTable(body);
   return `${summaryField(split.summary, summaryRequired)}${descriptionMarkup(split.description)}${tableMarkup(split.table ?? EMPTY_TABLE)}`;
 }
 
-function itemFields(input: { title: string; tags: string; notes: string; summaryRequired: boolean }): string {
+function itemFields(input: { name: string; labels: string; body: string; summaryRequired: boolean }): string {
   return `
         <div class="row">
           <label>Name
-            <input name="title" required maxlength="200" value="${esc(input.title)}" autocomplete="off">
+            <input name="name" required maxlength="200" value="${esc(input.name)}" autocomplete="off">
           </label>
           <label>Labels
-            <input name="tags" value="${esc(input.tags)}" placeholder="ops, poc" autocomplete="off">
+            <input name="labels" value="${esc(input.labels)}" placeholder="ops, poc" autocomplete="off">
           </label>
         </div>
-        ${captureEditor(input.notes, input.summaryRequired)}
+        ${captureEditor(input.body, input.summaryRequired)}
   `;
 }
 
@@ -151,10 +151,10 @@ export function librariesPage(input: {
 }): string {
   const form = can(input.access, "records.write")
     ? `
-    <section class="panel">
-      <h2>Add library</h2>
-      ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
+    <details class="add-panel"${input.error ? " open" : ""}>
+      <summary class="btn">Add library</summary>
       <form method="post" action="/libraries" class="capture">
+        ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
         <input type="hidden" name="csrf" value="${esc(input.csrf)}">
         <label>Name
           <input name="name" required maxlength="200" autocomplete="off" placeholder="Remote access">
@@ -168,8 +168,8 @@ export function librariesPage(input: {
         </label>
         <button class="btn" type="submit">Add library</button>
       </form>
-    </section>`
-    : `<p class="hint">Read-only: you can open libraries but not add new ones.</p>`;
+    </details>`
+    : "";
 
   const list =
     input.libraries.length === 0
@@ -180,8 +180,8 @@ export function librariesPage(input: {
               (row) => `
             <li>
               <a href="/libraries/${esc(row.id)}">
-                <h3>${esc(row.name)}</h3>
-                ${libraryKind(row.template) ? `<p class="excerpt">${libraryKind(row.template)}</p>` : ""}
+                <p class="kicker">${libraryKind(row.template)}</p>
+                <h2>${esc(row.name)}</h2>
               </a>
             </li>`,
             )
@@ -193,11 +193,13 @@ export function librariesPage(input: {
     csrf: input.csrf,
     access: input.access,
     body: `
-      ${form}
-      <section>
-        <h2>Libraries</h2>
+      <div class="library-view">
+        <header class="library-head">
+          <h1>Libraries</h1>
+          ${form}
+        </header>
         ${list}
-      </section>
+      </div>
     `,
   });
 }
@@ -206,24 +208,24 @@ export function libraryPage(input: {
   access: Access;
   csrf: string;
   library: LibraryRow;
-  records: RecordSummary[];
+  items: ItemSummary[];
   error?: string;
   q?: string;
 }): string {
-  const countLabel = input.records.length === 1 ? "1 item" : `${input.records.length} items`;
+  const countLabel = input.items.length === 1 ? "1 item" : `${input.items.length} items`;
   const list =
-    input.records.length === 0
+    input.items.length === 0
       ? `<p class="empty">${input.q ? "No items match that search." : "No items yet."}</p>`
       : `<ul class="item-list">
-          ${input.records
+          ${input.items
             .map((row) => {
-              const labels = row.tags.map((tag) => `<span class="tag">${esc(tag)}</span>`).join("");
+              const labels = row.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
               return `
             <li>
               <a href="/items/${esc(row.id)}?library=${esc(input.library.id)}">
-                <span class="item-name">${esc(row.title)}</span>
-                <span class="excerpt">${esc(row.excerpt) || "—"}</span>
-                ${labels ? `<span class="item-labels">${labels}</span>` : `<span class="item-labels"></span>`}
+                <span class="item-name">${esc(row.name)}</span>
+                ${row.summary ? `<span class="excerpt">${esc(row.summary)}</span>` : ""}
+                ${labels ? `<span class="item-labels">${labels}</span>` : ""}
               </a>
             </li>`;
             })
@@ -234,6 +236,19 @@ export function libraryPage(input: {
   const addLink = canWrite
     ? `<a class="btn" href="/libraries/${esc(input.library.id)}/items/new">Add item</a>`
     : "";
+  const deleteLibrary = can(input.access, "records.delete")
+    ? `<details class="item-menu">
+         <summary>Actions</summary>
+         <div class="menu-list">
+           ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
+           <form method="post" action="/libraries/${esc(input.library.id)}/delete"
+                onsubmit="return confirm('Delete this library and every item in it?');">
+             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+             <button class="menu-danger" type="submit">Delete library</button>
+           </form>
+         </div>
+       </details>`
+    : "";
   return layout({
     title: `${input.library.name} · Mpos`,
     csrf: input.csrf,
@@ -243,46 +258,35 @@ export function libraryPage(input: {
       <div class="library-view">
         <header class="library-head">
           <div>
-            <p class="kicker">${libraryKind(input.library.template) || "Library"}</p>
+            <p class="kicker">${libraryKind(input.library.template)}</p>
             <h1>${esc(input.library.name)}</h1>
-            <p class="library-id">Library id <code>${esc(input.library.id)}</code></p>
           </div>
-          <form method="get" action="/libraries/${esc(input.library.id)}" class="search" role="search">
-            <label class="sr-only" for="q">Search items</label>
-            <input id="q" name="q" value="${esc(input.q ?? "")}" placeholder="Search items" autocomplete="off">
-            <button class="btn secondary" type="submit">Search</button>
-          </form>
+          <div class="head-actions">
+            ${addLink}
+            ${deleteLibrary}
+          </div>
         </header>
+        <form method="get" action="/libraries/${esc(input.library.id)}" class="search" role="search">
+          <label class="sr-only" for="q">Search items</label>
+          <input id="q" name="q" value="${esc(input.q ?? "")}" placeholder="Search items" autocomplete="off" autofocus>
+          <button type="submit">Search</button>
+        </form>
         <section class="library-items" aria-labelledby="items-heading">
           <div class="section-row">
-            <h2 id="items-heading">Items</h2>
-            <div class="section-actions">
-              <p class="count">${countLabel}</p>
-              ${addLink}
-            </div>
+            <h2 id="items-heading" class="sr-only">Items</h2>
+            <p class="count">${countLabel}</p>
           </div>
           ${list}
         </section>
-        ${
-          can(input.access, "records.delete")
-            ? `<form method="post" action="/libraries/${esc(input.library.id)}/delete" class="library-danger"
-                 onsubmit="return confirm('Delete this library and every item in it?');">
-                 <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-                 ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
-                 <button class="btn danger" type="submit">Delete library</button>
-               </form>`
-            : input.error
-              ? `<p class="error" role="alert">${esc(input.error)}</p>`
-              : ""
-        }
+        ${!can(input.access, "records.delete") && input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
       </div>
     `,
   });
 }
 
 function policyItemFields(input: {
-  title: string;
-  tags: string;
+  name: string;
+  labels: string;
   summary: string;
   owner?: string;
   approvedBy?: string;
@@ -299,10 +303,10 @@ function policyItemFields(input: {
   return `
         <div class="row">
           <label>Name
-            <input name="title" required maxlength="200" value="${esc(input.title)}" autocomplete="off">
+            <input name="name" required maxlength="200" value="${esc(input.name)}" autocomplete="off">
           </label>
           <label>Labels
-            <input name="tags" value="${esc(input.tags)}" placeholder="remote, access" autocomplete="off">
+            <input name="labels" value="${esc(input.labels)}" placeholder="remote, access" autocomplete="off">
           </label>
         </div>
         <label>Summary
@@ -356,8 +360,8 @@ function policyItemFields(input: {
 }
 
 function procedureItemFields(input: {
-  title: string;
-  tags: string;
+  name: string;
+  labels: string;
   summary: string;
   owner?: string;
   relatedPolicy?: string;
@@ -368,10 +372,10 @@ function procedureItemFields(input: {
   return `
         <div class="row">
           <label>Name
-            <input name="title" required maxlength="200" value="${esc(input.title)}" autocomplete="off">
+            <input name="name" required maxlength="200" value="${esc(input.name)}" autocomplete="off">
           </label>
           <label>Labels
-            <input name="tags" value="${esc(input.tags)}" placeholder="visitor, lobby" autocomplete="off">
+            <input name="labels" value="${esc(input.labels)}" placeholder="visitor, lobby" autocomplete="off">
           </label>
         </div>
         <label>Summary
@@ -410,10 +414,10 @@ export function addItemPage(input: {
   const kind = input.library.template;
   const fields =
     kind === "policy"
-      ? policyItemFields({ title: "", tags: "", summary: "" })
+      ? policyItemFields({ name: "", labels: "", summary: "" })
       : kind === "procedure"
-        ? procedureItemFields({ title: "", tags: "", summary: "" })
-        : itemFields({ title: "", tags: "", notes: "", summaryRequired: true });
+        ? procedureItemFields({ name: "", labels: "", summary: "" })
+        : itemFields({ name: "", labels: "", body: "", summaryRequired: true });
   const hint =
     kind === "policy"
       ? "Every policy has the same fields: who owns it, when it is in force, and what it requires."
@@ -446,37 +450,48 @@ export function addItemPage(input: {
 export function itemPage(input: {
   access: Access;
   csrf: string;
-  record: RecordRow;
+  item: ItemRow;
   library: LibraryRow;
   html: string;
   control?: { label: string; value: string }[];
   sections?: { heading: string; html: string }[];
 }): string {
   const actions = can(input.access, "records.write")
-    ? `<p class="actions">
-         <a class="btn secondary" href="/items/${esc(input.record.id)}/edit">Edit</a>
-         ${
-           can(input.access, "records.delete")
-             ? `<form method="post" action="/items/${esc(input.record.id)}/delete" class="inline"
-                  onsubmit="return confirm('Delete this item?');">
-                  <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-                  <button class="btn danger" type="submit">Delete</button>
-                </form>`
-             : ""
-         }
-       </p>`
+    ? `<details class="item-menu">
+         <summary>Actions</summary>
+         <div class="menu-list">
+           <a href="/items/${esc(input.item.id)}/edit">Edit</a>
+           ${
+             can(input.access, "records.delete")
+               ? `<form method="post" action="/items/${esc(input.item.id)}/delete"
+                    onsubmit="return confirm('Delete this item?');">
+                    <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+                    <button class="menu-danger" type="submit">Delete</button>
+                  </form>`
+               : ""
+           }
+         </div>
+       </details>`
     : "";
+  const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
 
   return layout({
-    title: `${input.record.title} · ${input.library.name}`,
+    title: `${input.item.name} · ${input.library.name}`,
     csrf: input.csrf,
     access: input.access,
     library: input.library,
     body: `
-      <p><a href="/libraries/${esc(input.library.id)}">← ${esc(input.library.name)}</a></p>
+      <p class="back"><a href="/libraries/${esc(input.library.id)}">${esc(input.library.name)}</a></p>
       <article class="item">
-        <h1>${esc(input.record.title)}</h1>
-        <p class="meta">${input.record.tags.map((tag) => `<span class="tag">${esc(tag)}</span>`).join("")}</p>
+        <header class="item-head">
+          <div>
+            <p class="kicker">${libraryKind(input.library.template)}</p>
+            <h1>${esc(input.item.name)}</h1>
+            ${input.item.summary ? `<p class="lead">${esc(input.item.summary)}</p>` : ""}
+            ${labels ? `<p class="meta">${labels}</p>` : ""}
+          </div>
+          ${actions}
+        </header>
         ${
           input.control
             ? `<dl class="details">
@@ -487,7 +502,6 @@ export function itemPage(input: {
                 .join("")}`
             : `<div class="prose">${input.html}</div>`
         }
-        ${actions}
       </article>
     `,
   });
@@ -496,56 +510,56 @@ export function itemPage(input: {
 export function editPage(input: {
   access: Access;
   csrf: string;
-  record: RecordRow;
+  item: ItemRow;
   library: LibraryRow;
   error?: string;
 }): string {
   return layout({
-    title: `Edit ${input.record.title} · Mpos`,
+    title: `Edit ${input.item.name} · Mpos`,
     csrf: input.csrf,
     access: input.access,
     library: input.library,
     extraHead: input.library.template === "general" ? spreadsheetHead() : undefined,
     body: `
-      <p><a href="/items/${esc(input.record.id)}">← Item</a></p>
+      <p><a href="/items/${esc(input.item.id)}">← Item</a></p>
       <section class="panel">
         <h1>Edit item</h1>
         ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
-        <form method="post" action="/items/${esc(input.record.id)}" class="capture">
+        <form method="post" action="/items/${esc(input.item.id)}" class="capture">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
           ${
             input.library.template === "policy"
               ? policyItemFields({
-                  title: input.record.title,
-                  tags: input.record.tags.join(", "),
-                  summary: input.record.summary,
-                  owner: input.record.policy?.owner,
-                  approvedBy: input.record.policy?.approved_by,
-                  version: input.record.policy?.version,
-                  effectiveDate: input.record.policy?.effective_date,
-                  reviewDate: input.record.policy?.review_date,
-                  purpose: input.record.policy?.purpose,
-                  scope: input.record.policy?.scope,
-                  policy: input.record.policy?.policy,
-                  responsibilities: input.record.policy?.responsibilities,
-                  exceptions: input.record.policy?.exceptions,
-                  references: input.record.policy?.references,
+                  name: input.item.name,
+                  labels: input.item.labels.join(", "),
+                  summary: input.item.summary,
+                  owner: input.item.policy?.owner,
+                  approvedBy: input.item.policy?.approved_by,
+                  version: input.item.policy?.version,
+                  effectiveDate: input.item.policy?.effective_date,
+                  reviewDate: input.item.policy?.review_date,
+                  purpose: input.item.policy?.purpose,
+                  scope: input.item.policy?.scope,
+                  policy: input.item.policy?.policy,
+                  responsibilities: input.item.policy?.responsibilities,
+                  exceptions: input.item.policy?.exceptions,
+                  references: input.item.policy?.references,
                 })
               : input.library.template === "procedure"
                 ? procedureItemFields({
-                    title: input.record.title,
-                    tags: input.record.tags.join(", "),
-                    summary: input.record.summary,
-                    owner: input.record.procedure?.owner,
-                    relatedPolicy: input.record.procedure?.related_policy,
-                    whenToUse: input.record.procedure?.when_to_use,
-                    steps: input.record.procedure?.steps,
-                    who: input.record.procedure?.who,
+                    name: input.item.name,
+                    labels: input.item.labels.join(", "),
+                    summary: input.item.summary,
+                    owner: input.item.procedure?.owner,
+                    relatedPolicy: input.item.procedure?.related_policy,
+                    whenToUse: input.item.procedure?.when_to_use,
+                    steps: input.item.procedure?.steps,
+                    who: input.item.procedure?.who,
                   })
                 : itemFields({
-                  title: input.record.title,
-                  tags: input.record.tags.join(", "),
-                  notes: input.record.notes,
+                  name: input.item.name,
+                  labels: input.item.labels.join(", "),
+                  body: input.item.body,
                   summaryRequired: false,
                 })
           }

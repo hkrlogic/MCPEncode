@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "mpos": {
+    "publisher": {
       "url": "http://127.0.0.1:3000/mcp",
       "auth": {
         "CLIENT_ID": "mpos-mcp",
-        "scopes": ["openid", "mpos:readonly", "mpos:edit"]
+        "scopes": ["openid", "mpos:edit", "mpos:readonly"]
       }
     }
   }

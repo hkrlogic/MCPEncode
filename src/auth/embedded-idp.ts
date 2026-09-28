@@ -25,10 +25,16 @@ const USERS: DemoUser[] = [
 ];
 
 const ALLOWED_REDIRECTS = [
+  // Publisher web UI
   "http://127.0.0.1:3000/callback",
+  // Cursor desktop MCP OAuth (fixed loopback — do not reuse this port for other apps)
   "http://localhost:8787/callback",
-  "https://www.cursor.com/agents/mcp/oauth/callback",
+  "http://127.0.0.1:8787/callback",
   "cursor://anysphere.cursor-mcp/oauth/callback",
+  "https://www.cursor.com/agents/mcp/oauth/callback",
+  // Kiosk: OAuth returns to the kiosk origin (same pattern as production https://…/oauth/callback)
+  "http://127.0.0.1:8765/oauth/callback",
+  "http://localhost:8765/oauth/callback",
 ];
 
 type AuthCode = {
@@ -42,6 +48,20 @@ type AuthCode = {
   nonce: string;
   expiresAt: number;
 };
+
+type RefreshGrant = {
+  sub: string;
+  realmRole: string;
+  clientId: string;
+  resource: string;
+  expiresAt: number;
+};
+
+const REFRESH_TTL_MS = 12 * 60 * 60 * 1000;
+
+function scopeFor(realmRole: string): string {
+  return realmRole === "mpos-editor" ? "openid mpos:edit" : "openid mpos:readonly";
+}
 
 export type EmbeddedIdp = {
   endpoints: AuthServerEndpoints;
@@ -108,6 +128,11 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
 
   const issuer = config.authIssuer;
   const codes = new Map<string, AuthCode>();
+  // Access tokens last 15 minutes. A refresh token lets the kiosk stay signed
+  // in across that expiry without sending the person through the browser again.
+  // These live in memory: a publisher restart signs everyone out, which is
+  // acceptable for this development identity provider.
+  const refreshGrants = new Map<string, RefreshGrant>();
 
   const endpoints: AuthServerEndpoints = {
     metadata: {
@@ -120,7 +145,7 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
       code_challenge_methods_supported: ["S256"],
       scopes_supported: ["openid", "mpos:readonly", "mpos:edit"],
       token_endpoint_auth_methods_supported: ["none"],
-      grant_types_supported: ["authorization_code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
       subject_types_supported: ["public"],
       id_token_signing_alg_values_supported: ["RS256"],
     },
@@ -129,13 +154,23 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
     endSessionEndpoint: `${issuer}/logout`,
   };
 
+  function issueRefreshToken(input: Omit<RefreshGrant, "expiresAt">): string {
+    const now = Date.now();
+    for (const [key, grant] of refreshGrants) {
+      if (grant.expiresAt < now) refreshGrants.delete(key);
+    }
+    const token = crypto.randomUUID() + crypto.randomUUID();
+    refreshGrants.set(token, { ...input, expiresAt: now + REFRESH_TTL_MS });
+    return token;
+  }
+
   async function issueAccessToken(input: {
     sub: string;
     realmRole: string;
     clientId: string;
     resource: string;
   }): Promise<string> {
-    const scope = input.realmRole === "mpos-editor" ? "openid mpos:edit" : "openid mpos:readonly";
+    const scope = scopeFor(input.realmRole);
     return new SignJWT({
       sub: input.sub,
       azp: input.clientId,
@@ -246,7 +281,12 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
     });
 
     app.post("/id/token", async (req, res) => {
-      if (form(req, "grant_type") !== "authorization_code") {
+      const grant = form(req, "grant_type");
+      if (grant === "refresh_token") {
+        await sendRefresh(req, res);
+        return;
+      }
+      if (grant !== "authorization_code") {
         res.status(400).json({ error: "unsupported_grant_type" });
         return;
       }
@@ -278,14 +318,51 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
         clientId: record.clientId,
         nonce: record.nonce,
       });
+      const refreshToken = issueRefreshToken({
+        sub: record.sub,
+        realmRole: record.realmRole,
+        clientId: record.clientId,
+        resource: record.resource,
+      });
       res.json({
         access_token: accessToken,
         id_token: idToken,
         token_type: "Bearer",
         expires_in: 900,
-        scope: record.realmRole === "mpos-editor" ? "openid mpos:edit" : "openid mpos:readonly",
+        refresh_token: refreshToken,
+        scope: scopeFor(record.realmRole),
       });
     });
+
+    async function sendRefresh(req: Request, res: Response): Promise<void> {
+      const token = form(req, "refresh_token");
+      const record = token ? refreshGrants.get(token) : undefined;
+      if (!record || record.expiresAt < Date.now() || form(req, "client_id") !== record.clientId) {
+        if (token) refreshGrants.delete(token);
+        res.status(400).json({ error: "invalid_grant" });
+        return;
+      }
+      refreshGrants.delete(token);
+      const accessToken = await issueAccessToken({
+        sub: record.sub,
+        realmRole: record.realmRole,
+        clientId: record.clientId,
+        resource: record.resource,
+      });
+      const refreshToken = issueRefreshToken({
+        sub: record.sub,
+        realmRole: record.realmRole,
+        clientId: record.clientId,
+        resource: record.resource,
+      });
+      res.json({
+        access_token: accessToken,
+        token_type: "Bearer",
+        expires_in: 900,
+        refresh_token: refreshToken,
+        scope: scopeFor(record.realmRole),
+      });
+    }
 
     app.get("/id/logout", (_req, res) => {
       res.redirect(config.publicBaseUrl);

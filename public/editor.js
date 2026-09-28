@@ -1,5 +1,5 @@
-/** Capture grid + Description: table Markdown is hidden in #notes; prose lives in #description. */
-const notes = document.getElementById("notes");
+/** Capture grid + Description: table Markdown is hidden in #body; prose lives in #description. */
+const bodyField = document.getElementById("body");
 const preview = document.getElementById("preview");
 const description = document.getElementById("description");
 const descriptionPreview = document.getElementById("description-preview");
@@ -67,18 +67,18 @@ function readSheet() {
 }
 
 function syncNotes() {
-  if (!notes || !worksheet) return;
+  if (!bodyField || !worksheet) return;
   const rows = readSheet();
-  notes.value = markdownFromTable(rows[0] ?? [], rows.slice(1));
-  notes.dispatchEvent(new Event("input"));
+  bodyField.value = markdownFromTable(rows[0] ?? [], rows.slice(1));
+  bodyField.dispatchEvent(new Event("input"));
 }
 
 let tableTimer = 0;
 let descriptionTimer = 0;
 
 async function refreshPreview() {
-  if (!notes || !preview) return;
-  const data = await post("/preview", { markdown: notes.value });
+  if (!bodyField || !preview) return;
+  const data = await post("/preview", { markdown: bodyField.value });
   if (data?.html) preview.innerHTML = data.html;
 }
 
@@ -104,7 +104,7 @@ async function pasteMarkdown(event, field) {
   field.dispatchEvent(new Event("input"));
 }
 
-notes?.addEventListener("input", () => {
+bodyField?.addEventListener("input", () => {
   window.clearTimeout(tableTimer);
   tableTimer = window.setTimeout(refreshPreview, 250);
 });
@@ -114,9 +114,9 @@ description?.addEventListener("input", () => {
   descriptionTimer = window.setTimeout(refreshDescriptionPreview, 250);
 });
 
-notes?.addEventListener("paste", (event) => {
+bodyField?.addEventListener("paste", (event) => {
   if (sheet) return;
-  void pasteMarkdown(event, notes);
+  void pasteMarkdown(event, bodyField);
 });
 
 description?.addEventListener("paste", (event) => {

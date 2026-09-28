@@ -51,7 +51,7 @@ const optionalText = (max: number) => z.string().trim().max(max).default("");
 
 export const policyItemSchema = z
   .object({
-    title: z.string().trim().min(1, "Name is required").max(200, "Name must be 200 characters or fewer"),
+    name: z.string().trim().min(1, "Name is required").max(200, "Name must be 200 characters or fewer"),
     summary: z.string().trim().min(1, "Summary is required").max(160, "Summary must be 160 characters or fewer"),
     owner: z.string().trim().min(1, "Owner is required").max(200, "Owner must be 200 characters or fewer"),
     approved_by: optionalText(200),
@@ -69,7 +69,7 @@ export const policyItemSchema = z
     responsibilities: optionalText(12_000),
     exceptions: optionalText(8_000),
     references: optionalText(8_000),
-    tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+    labels: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   })
   .refine((value) => value.review_date >= value.effective_date, {
     message: "Review date must be on or after the effective date",
@@ -93,7 +93,7 @@ export type PolicyDetails = {
 };
 
 export const POLICY_FIELD_MESSAGE =
-  "This library is Policy. Send title, summary, owner, version (for example 1.0), effective_date (YYYY-MM-DD), review_date (YYYY-MM-DD), purpose, scope, and policy. Optional: approved_by, responsibilities, exceptions, references. Do not invent fields.";
+  "This library is Policy. Send name, summary, owner, version (for example 1.0), effective_date (YYYY-MM-DD), review_date (YYYY-MM-DD), purpose, scope, and policy. Optional: approved_by, responsibilities, exceptions, references. Do not invent fields.";
 
 /** Canonical Policy text. Every label is always present so the field set stays closed. */
 export function formatPolicy(input: PolicyDetails): string {
@@ -124,9 +124,9 @@ export function policyBody(details: PolicyDetails): { label: string; text: strin
 }
 
 type WriteFields = {
-  title: string;
-  notes?: string;
-  tags?: string[];
+  name: string;
+  body?: string;
+  labels?: string[];
   summary?: string;
   owner?: string;
   approved_by?: string;
@@ -156,7 +156,7 @@ export function itemForLibrary(
 ): { ok: true; item: SavedItem } | { ok: false; message: string } {
   if (template === "policy") {
     const parsed = policyItemSchema.safeParse({
-      title: input.title,
+      name: input.name,
       summary: input.summary ?? "",
       owner: input.owner ?? "",
       approved_by: input.approved_by ?? "",
@@ -169,7 +169,7 @@ export function itemForLibrary(
       responsibilities: input.responsibilities ?? "",
       exceptions: input.exceptions ?? "",
       references: input.references ?? "",
-      tags: input.tags ?? [],
+      labels: input.labels ?? [],
     });
     if (!parsed.success) {
       const detail = parsed.error.issues[0]?.message ?? "Invalid policy";
@@ -191,9 +191,9 @@ export function itemForLibrary(
     return {
       ok: true,
       item: {
-        title: parsed.data.title,
-        notes: formatPolicy(details),
-        tags: parsed.data.tags,
+        name: parsed.data.name,
+        body: formatPolicy(details),
+        labels: parsed.data.labels,
         summary: parsed.data.summary,
         details: JSON.stringify(details),
       },
@@ -201,14 +201,14 @@ export function itemForLibrary(
   }
   if (template === "procedure") {
     const parsed = procedureItemSchema.safeParse({
-      title: input.title,
+      name: input.name,
       summary: input.summary ?? "",
       owner: input.owner ?? "",
       related_policy: input.related_policy ?? "",
       when_to_use: input.when_to_use ?? "",
       steps: input.steps ?? "",
       who: input.who ?? "",
-      tags: input.tags ?? [],
+      labels: input.labels ?? [],
     });
     if (!parsed.success) {
       const detail = parsed.error.issues[0]?.message ?? "Invalid procedure";
@@ -224,18 +224,18 @@ export function itemForLibrary(
     return {
       ok: true,
       item: {
-        title: parsed.data.title,
-        notes: formatProcedure(details),
-        tags: parsed.data.tags,
+        name: parsed.data.name,
+        body: formatProcedure(details),
+        labels: parsed.data.labels,
         summary: parsed.data.summary,
         details: JSON.stringify(details),
       },
     };
   }
   const parsed = itemInputSchema.safeParse({
-    title: input.title,
-    notes: input.notes ?? "",
-    tags: input.tags ?? [],
+    name: input.name,
+    body: input.body ?? "",
+    labels: input.labels ?? [],
   });
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid item" };
@@ -267,7 +267,7 @@ const requiredText = (label: string, max: number) =>
   z.string().trim().min(1, `${label} is required`).max(max, `${label} is too long`);
 
 export const procedureItemSchema = z.object({
-  title: z.string().trim().min(1, "Name is required").max(200, "Name must be 200 characters or fewer"),
+  name: z.string().trim().min(1, "Name is required").max(200, "Name must be 200 characters or fewer"),
   summary: z.string().trim().min(1, "Summary is required").max(160, "Summary must be 160 characters or fewer"),
   owner: z.string().trim().min(1, "Owner is required").max(200, "Owner must be 200 characters or fewer"),
   related_policy: z
@@ -278,11 +278,11 @@ export const procedureItemSchema = z.object({
   when_to_use: requiredText("When to use it", 8_000),
   steps: requiredText("Steps", 20_000),
   who: requiredText("Who does each step", 8_000),
-  tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+  labels: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
 });
 
 export const PROCEDURE_FIELD_MESSAGE =
-  "This library is Procedure. Send title, summary, owner, related_policy, when_to_use, steps, and who. Do not invent fields.";
+  "This library is Procedure. Send name, summary, owner, related_policy, when_to_use, steps, and who. Do not invent fields.";
 
 /** Canonical Procedure text. Every label is always present so the field set stays closed. */
 export function formatProcedure(input: ProcedureDetails): string {

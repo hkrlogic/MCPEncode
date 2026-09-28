@@ -17,17 +17,17 @@ import { readSession, signSession } from "../auth/session.ts";
 import { createTokenVerifier } from "../auth/verifier.ts";
 import {
   createLibrary,
-  createRecord,
+  createItem,
   deleteLibrary,
-  deleteRecord,
+  deleteItem,
   getLibrary,
-  getRecord,
+  getItem,
   listLibraries,
-  listRecords,
-  updateRecord,
+  listItems,
+  updateItem,
   writeAudit,
 } from "../db/queries.ts";
-import { itemInputSchema, libraryInputSchema, parseTagField } from "../items/schema.ts";
+import { itemInputSchema, libraryInputSchema, parseLabelField } from "../items/schema.ts";
 import {
   itemForLibrary,
   policyBody,
@@ -76,12 +76,12 @@ function requireCsrf(req: Request, csrf: string): boolean {
 
 function parseItem(body: unknown) {
   return itemInputSchema.safeParse({
-    title: formString(body, "title"),
-    notes: combineSummaryAndBody(
+    name: formString(body, "name"),
+    body: combineSummaryAndBody(
       formString(body, "summary"),
-      [formString(body, "notes"), formString(body, "description")].filter((part) => part.trim()).join("\n\n"),
+      [formString(body, "body"), formString(body, "description")].filter((part) => part.trim()).join("\n\n"),
     ),
-    tags: parseTagField(formString(body, "tags")),
+    labels: parseLabelField(formString(body, "labels")),
   });
 }
 
@@ -93,7 +93,7 @@ function libraryTemplateFromForm(value: string): LibraryTemplate {
 function parseLibraryItem(body: unknown, template: LibraryTemplate) {
   if (template === "general") return parseItem(body);
   const saved = itemForLibrary(template, {
-    title: formString(body, "title"),
+    name: formString(body, "name"),
     summary: formString(body, "summary"),
     owner: formString(body, "owner"),
     approved_by: formString(body, "approved_by"),
@@ -110,7 +110,7 @@ function parseLibraryItem(body: unknown, template: LibraryTemplate) {
     when_to_use: formString(body, "when_to_use"),
     steps: formString(body, "steps"),
     who: formString(body, "who"),
-    tags: parseTagField(formString(body, "tags")),
+    labels: parseLabelField(formString(body, "labels")),
   });
   if (!saved.ok) {
     return { success: false as const, error: { issues: [{ message: saved.message }] } };
@@ -316,12 +316,12 @@ export function createApp(input: {
       return;
     }
     const q = typeof req.query.q === "string" ? req.query.q : undefined;
-    const records = await listRecords(
+    const items = await listItems(
       db,
       { library_id: library.id, q, limit: 50 },
       { publishedOnly: access.role === "readonly" },
     );
-    res.send(libraryPage({ access, csrf: access.csrf, library, records, q }));
+    res.send(libraryPage({ access, csrf: access.csrf, library, items, q }));
   });
 
   app.post("/libraries/:id/delete", async (req, res) => {
@@ -346,7 +346,7 @@ export function createApp(input: {
       res.redirect("/");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not delete this library";
-      const records = await listRecords(db, { library_id: library.id, limit: 50 }, { publishedOnly: false });
+      const items = await listItems(db, { library_id: library.id, limit: 50 }, { publishedOnly: false });
       await writeAudit(db, {
         actorSub: access.sub,
         tool: "ui.delete_library",
@@ -358,7 +358,7 @@ export function createApp(input: {
           access,
           csrf: access.csrf,
           library,
-          records,
+          items,
           error: message,
         }),
       );
@@ -410,7 +410,7 @@ export function createApp(input: {
       );
       return;
     }
-    const row = await createRecord(db, parsed.data, access.sub, library.id);
+    const row = await createItem(db, parsed.data, access.sub, library.id);
     await writeAudit(db, { actorSub: access.sub, tool: "ui.create", success: true, detail: row.id });
     res.redirect(`/items/${row.id}`);
   });
@@ -422,7 +422,7 @@ export function createApp(input: {
       return;
     }
     const libraryId = typeof req.query.library === "string" ? req.query.library : undefined;
-    const record = await getRecord(db, req.params.id, {
+    const record = await getItem(db, req.params.id, {
       publishedOnly: access.role === "readonly",
       libraryId,
     }).catch(() => undefined);
@@ -440,7 +440,7 @@ export function createApp(input: {
       : record.procedure
         ? { control: procedureControl(record.procedure), parts: procedureBody(record.procedure) }
         : undefined;
-    const html = structured ? "" : await renderMarkdown(record.notes);
+    const html = structured ? "" : await renderMarkdown(record.body);
     const control = structured?.control;
     const sections = structured
       ? await Promise.all(
@@ -450,7 +450,7 @@ export function createApp(input: {
           })),
         )
       : undefined;
-    res.send(itemPage({ access, csrf: access.csrf, record, library, html, control, sections }));
+    res.send(itemPage({ access, csrf: access.csrf, item: record, library, html, control, sections }));
   });
 
   app.get("/items/:id/edit", async (req, res) => {
@@ -463,7 +463,7 @@ export function createApp(input: {
       res.status(403).send(errorPage("Read-only accounts cannot edit items."));
       return;
     }
-    const record = await getRecord(db, req.params.id, { publishedOnly: false });
+    const record = await getItem(db, req.params.id, { publishedOnly: false });
     if (!record) {
       res.status(404).send(errorPage("Item not found."));
       return;
@@ -473,7 +473,7 @@ export function createApp(input: {
       res.status(404).send(errorPage("Library not found."));
       return;
     }
-    res.send(editPage({ access, csrf: access.csrf, record, library }));
+    res.send(editPage({ access, csrf: access.csrf, item: record, library }));
   });
 
   app.post("/items/:id", async (req, res) => {
@@ -482,7 +482,7 @@ export function createApp(input: {
       res.status(403).send(errorPage("You cannot edit items with this account."));
       return;
     }
-    const record = await getRecord(db, req.params.id, { publishedOnly: false });
+    const record = await getItem(db, req.params.id, { publishedOnly: false });
     if (!record) {
       res.status(404).send(errorPage("Item not found."));
       return;
@@ -498,14 +498,14 @@ export function createApp(input: {
         editPage({
           access,
           csrf: access.csrf,
-          record,
+          item: record,
           library,
           error: parsed.error.issues[0]?.message ?? "Invalid item",
         }),
       );
       return;
     }
-    const row = await updateRecord(db, req.params.id, parsed.data, access.sub);
+    const row = await updateItem(db, req.params.id, parsed.data, access.sub);
     if (!row) {
       res.status(404).send(errorPage("Item not found."));
       return;
@@ -520,9 +520,9 @@ export function createApp(input: {
       res.status(403).send(errorPage("You cannot delete items with this account."));
       return;
     }
-    const existing = await getRecord(db, req.params.id, { publishedOnly: false });
+    const existing = await getItem(db, req.params.id, { publishedOnly: false });
     const libraryId = existing?.library_id;
-    const removed = await deleteRecord(db, req.params.id);
+    const removed = await deleteItem(db, req.params.id);
     await writeAudit(db, {
       actorSub: access.sub,
       tool: "ui.delete",

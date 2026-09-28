@@ -50,6 +50,12 @@ test("fresh database gets Main and keeps records", async () => {
     assert.equal(library.name, DEFAULT_LIBRARY_NAME);
     assert.equal(await count(db, "records"), 0);
     assert.equal(await count(db, "items"), 0);
+    const bodyCol = (await db.all(
+      `SELECT column_name AS name
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE() AND table_name = 'items' AND column_name = 'body'`,
+    )) as { name: string }[];
+    assert.equal(bodyCol.length, 1);
   });
 });
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createLibrary, createRecord, getRecord, listRecords } from "../src/db/queries.ts";
+import { createLibrary, createItem, getItem, listItems } from "../src/db/queries.ts";
 import { formatProcedure, itemForLibrary } from "../src/items/templates.ts";
 import { withTestDatabase } from "./db.ts";
 
@@ -18,7 +18,7 @@ test("procedure text uses the fixed labels and no extra fields", () => {
   assert.match(text, /Steps:\n1\. Greet the visitor\./);
   assert.match(text, /Who does each step:\nFront Desk greets/);
   assert.doesNotMatch(text, /Template: Policy/);
-  const rejected = itemForLibrary("procedure", { title: "Escort a visitor", notes: "free text" });
+  const rejected = itemForLibrary("procedure", { name: "Escort a visitor", body: "free text" });
   assert.equal(rejected.ok, false);
   if (!rejected.ok) assert.match(rejected.message, /related_policy/);
 });
@@ -28,19 +28,19 @@ test("a procedure library stores the steps, and a reader does not see the draft"
     const library = await createLibrary(db, "Lobby procedures", "alice", "procedure");
     assert.equal(library.template, "procedure");
     const saved = itemForLibrary("procedure", {
-      title: "Escort a visitor",
+      name: "Escort a visitor",
       summary: "What to do when a visitor arrives.",
-      tags: ["visitor"],
+      labels: ["visitor"],
       ...escort,
     });
     assert.equal(saved.ok, true);
     if (!saved.ok) return;
-    const created = await createRecord(db, saved.item, "alice", library.id);
-    const opened = await getRecord(db, created.id, { publishedOnly: false });
+    const created = await createItem(db, saved.item, "alice", library.id);
+    const opened = await getItem(db, created.id, { publishedOnly: false });
     assert.equal(opened?.procedure?.related_policy, "Visitor escort");
     assert.match(opened?.procedure?.steps ?? "", /Call the host/);
     assert.equal(opened?.policy, undefined);
-    const hidden = await listRecords(db, { library_id: library.id }, { publishedOnly: true });
+    const hidden = await listItems(db, { library_id: library.id }, { publishedOnly: true });
     assert.equal(hidden.length, 0);
   });
 });
