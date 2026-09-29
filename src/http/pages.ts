@@ -160,7 +160,7 @@ function layout(input: {
     ? `<nav class="nav" aria-label="Main">
         <a class="brand" href="/">MCPEncode</a>
         <div class="nav-trail">
-          <a class="nav-link" href="/">Libraries</a>
+          <a class="nav-link" href="/">Library</a>
           ${
             input.library
               ? `<span class="nav-sep" aria-hidden="true">/</span>
@@ -376,13 +376,13 @@ export function librariesPage(input: {
         </ul>`;
 
   return layout({
-    title: "Libraries · MCPEncode",
+    title: "Library · MCPEncode",
     csrf: input.csrf,
     access: input.access,
     body: `
       <div class="library-view">
         <header class="library-head">
-          <h1>Libraries</h1>
+          <h1>Library</h1>
           ${form}
         </header>
         ${list}
@@ -836,6 +836,6 @@ export function editPage(input: {
 export function errorPage(message: string): string {
   return layout({
     title: "Error · MCPEncode",
-    body: `<p class="error">${esc(message)}</p><p><a href="/">Libraries</a></p>`,
+    body: `<p class="error">${esc(message)}</p><p><a href="/">Library</a></p>`,
   });
 }
