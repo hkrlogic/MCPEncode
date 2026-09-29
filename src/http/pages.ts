@@ -199,11 +199,12 @@ function layout(input: {
 
 export function loginPage(): string {
   return layout({
-    title: "Sign in · MCPEncode",
+    title: "MCPEncode",
     body: `
-      <section class="hero">
-        <h1>Libraries</h1>
-        <p>Precise libraries of items you can publish for people and agents. Sign in to view or add libraries.</p>
+      <section class="landing">
+        <h1 class="landing-brand">MCPEncode</h1>
+        <p class="landing-title">Libraries</p>
+        <p class="landing-lead">Precise libraries of items you can publish for people and agents. Sign in to view or add libraries.</p>
         <a class="btn" href="/login">Sign in</a>
       </section>
     `,

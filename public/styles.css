@@ -13,6 +13,56 @@
 html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 "Iowan Old Style", "Palatino Linotype", Palatino, serif; }
 a { color: var(--accent); }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+body:has(.landing) {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(ellipse 80% 55% at 50% -10%, rgba(31, 77, 58, 0.08), transparent 55%),
+    var(--bg);
+}
+body:has(.landing) .wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 40rem;
+  padding: 2.5rem 1.5rem 4rem;
+}
+.landing {
+  text-align: center;
+  width: 100%;
+}
+.landing-brand {
+  margin: 0 0 0.65rem;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-size: clamp(2.5rem, 7vw, 3.5rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  color: var(--ink);
+}
+.landing-title {
+  margin: 0 0 0.85rem;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.landing-lead {
+  margin: 0 auto 1.75rem;
+  max-width: 28rem;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1.55;
+}
+.landing .btn {
+  min-height: 44px;
+  padding: 0.7rem 1.4rem;
+  font-size: 1rem;
+}
 .sign-in {
   min-height: 100dvh;
   display: flex;
@@ -101,7 +151,6 @@ a { color: var(--accent); }
 }
 .nav-signout:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 h1, h2, h3 { font-family: "Source Sans 3", "Segoe UI", sans-serif; letter-spacing: -0.02em; }
-.hero { padding: 3rem 0; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; margin-bottom: 2rem; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 label { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.75rem 0; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-size: 0.9rem; font-weight: 650; }
