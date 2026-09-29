@@ -47,6 +47,8 @@ test("agent instructions tell the model to cite, scope by library, and stop if d
   assert.match(AGENT_INSTRUCTIONS, /create_library/);
   assert.match(AGENT_INSTRUCTIONS, /Purpose, Scope, and Policy/);
   assert.match(AGENT_INSTRUCTIONS, /Procedure library uses fixed fields: Owner, Related policy/);
+  assert.match(AGENT_INSTRUCTIONS, /save drafts only/);
+  assert.match(AGENT_INSTRUCTIONS, /do not invent a publish tool call/i);
   assert.ok(AGENT_INSTRUCTIONS.includes(NOT_CONNECTED));
   assert.match(UNAUTHORIZED_MCP, /Not signed in/);
   assert.match(UNAUTHORIZED_MCP, /Do not invent/);
@@ -62,11 +64,14 @@ test("create_library inserts with template", async () => {
   });
 });
 
-test("editor MCP tools include create_library; reader does not", async () => {
+test("editor MCP tools include create and update but not publish", async () => {
   await withTestDatabase(async (db) => {
     const editorTools = registeredToolNames(buildMcpServer(db, authFor("edit")));
     assert.ok(editorTools.includes("create_library"));
     assert.ok(editorTools.includes("create_record"));
+    assert.ok(editorTools.includes("update_record"));
+    assert.equal(editorTools.includes("publish_record"), false);
+    assert.equal(editorTools.includes("publish_item"), false);
     const readerTools = registeredToolNames(buildMcpServer(db, authFor("readonly")));
     assert.equal(readerTools.includes("create_library"), false);
     assert.equal(readerTools.includes("create_record"), false);

@@ -215,8 +215,67 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 .item-list a:hover { background: rgba(31, 77, 58, 0.05); }
 .item-list a:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .item-name { font-weight: 650; }
+.item-name-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .item-list .excerpt { margin: 0; }
 .item-labels { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.2rem; }
+.status {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.status-draft { background: #f3e6c8; color: #6a4f12; }
+.status-published { background: #d8ebe1; color: #1f4d3a; }
+.status-archived { background: #e8e4dc; color: #5c564e; }
+.notice {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  background: #efe8d8;
+  color: var(--ink);
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-size: 0.95rem;
+}
+.gate-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0 0.25rem; }
+.gate-panel {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+.gate-panel h2 { font-size: 1.05rem; margin: 0 0 0.35rem; }
+.agent-preview, .diff-before, .diff-after {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem;
+  overflow: auto;
+  max-height: 22rem;
+}
+.diff-list { list-style: none; padding: 0; margin: 0.75rem 0 0; }
+.diff-list li { margin-bottom: 1rem; }
+.diff-field { margin: 0 0 0.35rem; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; }
+.diff-before { border-left: 3px solid #b35c4a; margin-bottom: 0.35rem; }
+.diff-after { border-left: 3px solid #1f4d3a; }
+.library-archived { margin-top: 1.5rem; }
+.library-archived > details > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  cursor: pointer;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-weight: 650;
+  list-style: none;
+}
+.library-archived > details > summary::-webkit-details-marker { display: none; }
 .library-view .panel { margin-top: 2.5rem; }
 .library-view .panel h2 { font-size: 1.15rem; }
 @media (max-width: 720px) {

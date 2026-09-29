@@ -16,6 +16,7 @@ import { accessFromIdentity, can, type Access, type Role } from "../auth/rbac.ts
 import { readSession, signSession } from "../auth/session.ts";
 import { createTokenVerifier } from "../auth/verifier.ts";
 import {
+  archiveItem,
   createLibrary,
   createItem,
   deleteLibrary,
@@ -24,6 +25,9 @@ import {
   getItem,
   listLibraries,
   listItems,
+  publishItem,
+  restoreItem,
+  unpublishItem,
   updateItem,
   writeAudit,
 } from "../db/queries.ts";
@@ -327,7 +331,7 @@ export function createApp(input: {
     const q = typeof req.query.q === "string" ? req.query.q : undefined;
     const items = await listItems(
       db,
-      { library_id: library.id, q, limit: 50 },
+      { library_id: library.id, q, limit: 200 },
       { publishedOnly: access.role === "readonly" },
     );
     res.send(libraryPage({ access, csrf: access.csrf, library, items, q }));
@@ -421,7 +425,7 @@ export function createApp(input: {
     }
     const row = await createItem(db, parsed.data, access.sub, library.id);
     await writeAudit(db, { actorSub: access.sub, tool: "ui.create", success: true, detail: row.id });
-    res.redirect(`/items/${row.id}`);
+    res.redirect(`/items/${row.id}?notice=created`);
   });
 
   app.get("/items/:id", async (req, res) => {
@@ -431,6 +435,7 @@ export function createApp(input: {
       return;
     }
     const libraryId = typeof req.query.library === "string" ? req.query.library : undefined;
+    const notice = typeof req.query.notice === "string" ? req.query.notice : undefined;
     const record = await getItem(db, req.params.id, {
       publishedOnly: access.role === "readonly",
       libraryId,
@@ -459,7 +464,18 @@ export function createApp(input: {
           })),
         )
       : undefined;
-    res.send(itemPage({ access, csrf: access.csrf, item: record, library, html, control, sections }));
+    res.send(
+      itemPage({
+        access,
+        csrf: access.csrf,
+        item: record,
+        library,
+        html,
+        control,
+        sections,
+        notice,
+      }),
+    );
   });
 
   app.get("/items/:id/edit", async (req, res) => {
@@ -514,13 +530,85 @@ export function createApp(input: {
       );
       return;
     }
+    const wasPublished = record.status === "published";
     const row = await updateItem(db, req.params.id, parsed.data, access.sub);
     if (!row) {
       res.status(404).send(errorPage("Item not found."));
       return;
     }
     await writeAudit(db, { actorSub: access.sub, tool: "ui.update", success: true, detail: row.id });
-    res.redirect(`/items/${row.id}`);
+    res.redirect(`/items/${row.id}${wasPublished ? "?notice=pending" : ""}`);
+  });
+
+  async function gateAction(
+    req: Request,
+    res: Response,
+    action: "publish" | "unpublish" | "archive" | "restore",
+  ): Promise<void> {
+    const access = await sessionAccess(req, config);
+    if (!access || !requireCsrf(req, access.csrf) || !can(access, "records.write")) {
+      res.status(403).send(errorPage("You cannot change publish status with this account."));
+      return;
+    }
+    const id = typeof req.params.id === "string" ? req.params.id : req.params.id?.[0];
+    if (!id) {
+      res.status(404).send(errorPage("Item not found."));
+      return;
+    }
+    const existing = await getItem(db, id, { publishedOnly: false });
+    if (!existing) {
+      res.status(404).send(errorPage("Item not found."));
+      return;
+    }
+    const runners = {
+      publish: publishItem,
+      unpublish: unpublishItem,
+      archive: archiveItem,
+      restore: restoreItem,
+    } as const;
+    const row = await runners[action](db, id, access.sub);
+    if (!row) {
+      res.status(400).send(
+        errorPage(
+          action === "publish"
+            ? "Only Pending (draft) items can be published."
+            : action === "unpublish"
+              ? "Only published items can be unpublished."
+              : action === "archive"
+                ? "This item is already archived."
+                : "Only archived items can be restored.",
+        ),
+      );
+      return;
+    }
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: `ui.${action}`,
+      success: true,
+      detail: row.id,
+    });
+    const notice =
+      action === "publish"
+        ? "published"
+        : action === "unpublish"
+          ? "pending"
+          : action === "archive"
+            ? "archived"
+            : "restored";
+    res.redirect(`/items/${row.id}?notice=${notice}`);
+  }
+
+  app.post("/items/:id/publish", (req, res) => {
+    void gateAction(req, res, "publish");
+  });
+  app.post("/items/:id/unpublish", (req, res) => {
+    void gateAction(req, res, "unpublish");
+  });
+  app.post("/items/:id/archive", (req, res) => {
+    void gateAction(req, res, "archive");
+  });
+  app.post("/items/:id/restore", (req, res) => {
+    void gateAction(req, res, "restore");
   });
 
   app.post("/items/:id/delete", async (req, res) => {

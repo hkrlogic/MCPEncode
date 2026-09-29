@@ -19,7 +19,17 @@ export type LibraryRow = {
   updated_at: number;
 };
 
-export type ItemStatus = "draft" | "published";
+export type ItemStatus = "draft" | "published" | "archived";
+
+/** Last published copy. Used for Diff after an edit unpublishes; MCP still reads live columns. */
+export type PublishedSnapshot = {
+  name: string;
+  labels: string[];
+  summary: string;
+  body: string;
+  details: string | null;
+  published_at: number;
+};
 
 /** App-facing item. Columns on disk are name, labels, summary, body, status. */
 export type ItemRow = {
@@ -30,6 +40,8 @@ export type ItemRow = {
   summary: string;
   body: string;
   status: ItemStatus;
+  details: string | null;
+  published_snapshot: PublishedSnapshot | null;
   policy?: PolicyDetails;
   procedure?: ProcedureDetails;
   created_by: string;
@@ -47,6 +59,7 @@ export type ItemSummary = {
   name: string;
   labels: string[];
   summary: string;
+  status: ItemStatus;
   updated_at: number;
 };
 
@@ -71,6 +84,7 @@ type SqlItem = {
   body: string;
   details: string | null;
   status: string;
+  published_snapshot: string | null;
   created_by: string;
   updated_by: string;
   created_at: number;
@@ -93,7 +107,52 @@ function parseLabels(raw: string): string[] {
 }
 
 function asStatus(value: string): ItemStatus {
-  return value === "published" ? "published" : "draft";
+  if (value === "published") return "published";
+  if (value === "archived") return "archived";
+  return "draft";
+}
+
+function parsePublishedSnapshot(raw: string | null | undefined): PublishedSnapshot | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const row = parsed as Record<string, unknown>;
+    if (typeof row.name !== "string" || typeof row.summary !== "string" || typeof row.body !== "string") {
+      return null;
+    }
+    return {
+      name: row.name,
+      labels: Array.isArray(row.labels)
+        ? row.labels.filter((entry): entry is string => typeof entry === "string")
+        : [],
+      summary: row.summary,
+      body: row.body,
+      details: typeof row.details === "string" ? row.details : null,
+      published_at: typeof row.published_at === "number" ? row.published_at : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function snapshotFromItem(item: {
+  name: string;
+  labels: string[];
+  summary: string;
+  body: string;
+  details: string | null;
+  published_at: number;
+}): string {
+  const snapshot: PublishedSnapshot = {
+    name: item.name,
+    labels: item.labels,
+    summary: item.summary,
+    body: item.body,
+    details: item.details,
+    published_at: item.published_at,
+  };
+  return JSON.stringify(snapshot);
 }
 
 function toItem(row: SqlItem): ItemRow {
@@ -105,6 +164,8 @@ function toItem(row: SqlItem): ItemRow {
     summary: row.summary,
     body: row.body,
     status: asStatus(row.status),
+    details: row.details,
+    published_snapshot: parsePublishedSnapshot(row.published_snapshot),
     policy: parsePolicyDetails(row.details),
     procedure: parseProcedureDetails(row.details),
     created_by: row.created_by,
@@ -136,6 +197,30 @@ async function getRow<T>(db: Database, sql: string, ...params: unknown[]): Promi
 async function runSql(db: Database, sql: string, ...params: unknown[]): Promise<void> {
   const stmt = await db.prepare(sql);
   await stmt.run(...params);
+}
+
+async function writePublishAudit(
+  db: Database,
+  event: {
+    libraryId: string;
+    itemId: string;
+    actorSub: string;
+    fromStatus: ItemStatus;
+    toStatus: ItemStatus;
+  },
+): Promise<void> {
+  await runSql(
+    db,
+    `INSERT INTO publish_audit (id, library_id, item_id, actor_sub, from_status, to_status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    crypto.randomUUID(),
+    event.libraryId,
+    event.itemId,
+    event.actorSub,
+    event.fromStatus,
+    event.toStatus,
+    Date.now(),
+  );
 }
 
 function libraryTemplate(value: string | undefined): LibraryTemplate {
@@ -250,6 +335,7 @@ type LookupHit = {
   labels: string;
   summary: string;
   body: string;
+  status: string;
   updated_at: number;
 };
 
@@ -307,6 +393,7 @@ function summaryFromHit(hit: LookupHit): ItemSummary {
     name: hit.name,
     labels: parseLabels(hit.labels),
     summary: excerptOf(hit.summary),
+    status: asStatus(hit.status),
     updated_at: hit.updated_at,
   };
 }
@@ -322,7 +409,7 @@ async function findNameSummaryHits(
   if (phrase) {
     const rows = await allRows<Omit<LookupHit, "body"> & { relevance: number }>(
       db,
-      `SELECT id, library_id, name, labels, summary, updated_at,
+      `SELECT id, library_id, name, labels, summary, status, updated_at,
               MATCH(name, summary) AGAINST (? IN BOOLEAN MODE) AS relevance
        FROM items
        WHERE ${libraryWhere(scope)}
@@ -342,7 +429,7 @@ async function findNameSummaryHits(
     const pattern = `(^|[^a-z0-9])(${safeShort.join("|")})([^a-z0-9]|$)`;
     const rows = await allRows<Omit<LookupHit, "body">>(
       db,
-      `SELECT id, library_id, name, labels, summary, updated_at
+      `SELECT id, library_id, name, labels, summary, status, updated_at
        FROM items
        WHERE ${libraryWhere(scope)}
          AND (LOWER(name) REGEXP ? OR LOWER(summary) REGEXP ?)
@@ -389,7 +476,7 @@ async function loadLookupHits(
   const placeholders = ids.map(() => "?").join(", ");
   return allRows<LookupHit>(
     db,
-    `SELECT id, library_id, name, labels, summary, body, updated_at
+    `SELECT id, library_id, name, labels, summary, body, status, updated_at
      FROM items
      WHERE ${libraryWhere(scope)}
        AND id IN (${placeholders})`,
@@ -510,7 +597,7 @@ export async function listItems(
   params.push(limit, offset);
   const rows = await allRows<Omit<LookupHit, "body">>(
     db,
-    `SELECT id, library_id, name, labels, summary, updated_at
+    `SELECT id, library_id, name, labels, summary, status, updated_at
      FROM items
      WHERE ${where.join(" AND ")}
      ORDER BY updated_at DESC
@@ -592,10 +679,13 @@ export async function updateItem(
   const existing = await getItem(db, id, { publishedOnly: false });
   if (!existing) return undefined;
   const now = Date.now();
+  const unpublish = existing.status === "published";
   await runSql(
     db,
     `UPDATE items
-     SET name = ?, labels = ?, summary = ?, body = ?, details = ?, updated_by = ?, updated_at = ?
+     SET name = ?, labels = ?, summary = ?, body = ?, details = ?,
+         status = CASE WHEN status = 'published' THEN 'draft' ELSE status END,
+         updated_by = ?, updated_at = ?
      WHERE id = ?`,
     input.name,
     JSON.stringify(input.labels),
@@ -606,11 +696,136 @@ export async function updateItem(
     now,
     id,
   );
+  if (unpublish) {
+    await writePublishAudit(db, {
+      libraryId: existing.library_id,
+      itemId: id,
+      actorSub,
+      fromStatus: "published",
+      toStatus: "draft",
+    });
+  }
   return getItem(db, id, { publishedOnly: false });
 }
 
 /** @deprecated Use updateItem. */
 export const updateRecord = updateItem;
+
+/** Make a draft visible to readers and the kiosk. Copies working fields into published_snapshot. */
+export async function publishItem(
+  db: Database,
+  id: string,
+  actorSub: string,
+): Promise<ItemRow | undefined> {
+  const existing = await getItem(db, id, { publishedOnly: false });
+  if (!existing || existing.status !== "draft") return undefined;
+  const now = Date.now();
+  const snapshot = snapshotFromItem({
+    name: existing.name,
+    labels: existing.labels,
+    summary: existing.summary,
+    body: existing.body,
+    details: existing.details,
+    published_at: now,
+  });
+  await runSql(
+    db,
+    `UPDATE items
+     SET status = 'published', published_snapshot = ?, updated_by = ?, updated_at = ?
+     WHERE id = ? AND status = 'draft'`,
+    snapshot,
+    actorSub,
+    now,
+    id,
+  );
+  await writePublishAudit(db, {
+    libraryId: existing.library_id,
+    itemId: id,
+    actorSub,
+    fromStatus: "draft",
+    toStatus: "published",
+  });
+  return getItem(db, id, { publishedOnly: false });
+}
+
+/** Hide a published item from readers without archiving. Keeps last published snapshot. */
+export async function unpublishItem(
+  db: Database,
+  id: string,
+  actorSub: string,
+): Promise<ItemRow | undefined> {
+  const existing = await getItem(db, id, { publishedOnly: false });
+  if (!existing || existing.status !== "published") return undefined;
+  const now = Date.now();
+  await runSql(
+    db,
+    `UPDATE items SET status = 'draft', updated_by = ?, updated_at = ? WHERE id = ? AND status = 'published'`,
+    actorSub,
+    now,
+    id,
+  );
+  await writePublishAudit(db, {
+    libraryId: existing.library_id,
+    itemId: id,
+    actorSub,
+    fromStatus: "published",
+    toStatus: "draft",
+  });
+  return getItem(db, id, { publishedOnly: false });
+}
+
+/** Move a draft or published item out of active lists. Not visible to readers. */
+export async function archiveItem(
+  db: Database,
+  id: string,
+  actorSub: string,
+): Promise<ItemRow | undefined> {
+  const existing = await getItem(db, id, { publishedOnly: false });
+  if (!existing || existing.status === "archived") return undefined;
+  const fromStatus = existing.status;
+  const now = Date.now();
+  await runSql(
+    db,
+    `UPDATE items SET status = 'archived', updated_by = ?, updated_at = ? WHERE id = ?`,
+    actorSub,
+    now,
+    id,
+  );
+  await writePublishAudit(db, {
+    libraryId: existing.library_id,
+    itemId: id,
+    actorSub,
+    fromStatus,
+    toStatus: "archived",
+  });
+  return getItem(db, id, { publishedOnly: false });
+}
+
+/** Bring an archived item back as a draft (still Pending until Publish). */
+export async function restoreItem(
+  db: Database,
+  id: string,
+  actorSub: string,
+): Promise<ItemRow | undefined> {
+  const existing = await getItem(db, id, { publishedOnly: false });
+  if (!existing || existing.status !== "archived") return undefined;
+  const now = Date.now();
+  await runSql(
+    db,
+    `UPDATE items SET status = 'draft', updated_by = ?, updated_at = ? WHERE id = ? AND status = 'archived'`,
+    actorSub,
+    now,
+    id,
+  );
+  await writePublishAudit(db, {
+    libraryId: existing.library_id,
+    itemId: id,
+    actorSub,
+    fromStatus: "archived",
+    toStatus: "draft",
+  });
+  return getItem(db, id, { publishedOnly: false });
+}
 
 /**
  * Remove one library and the items in it.
@@ -636,6 +851,7 @@ export async function deleteLibrary(db: Database, id: string): Promise<boolean> 
 export async function deleteItem(db: Database, id: string): Promise<boolean> {
   const existing = await getItem(db, id, { publishedOnly: false });
   if (!existing) return false;
+  await runSql(db, "DELETE FROM publish_audit WHERE item_id = ?", id);
   await runSql(db, "DELETE FROM items WHERE id = ?", id);
   return true;
 }

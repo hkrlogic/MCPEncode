@@ -1,5 +1,6 @@
 import { can, type Access } from "../auth/rbac.ts";
-import type { LibraryRow, ItemRow, ItemSummary } from "../db/queries.ts";
+import type { ItemRow, ItemStatus, ItemSummary, LibraryRow, PublishedSnapshot } from "../db/queries.ts";
+import { labeledItemData } from "../markdown/render.ts";
 import {
   EMPTY_TABLE,
   splitSummaryAndTable,
@@ -19,6 +20,122 @@ function esc(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function statusLabel(status: ItemStatus): string {
+  if (status === "published") return "Published";
+  if (status === "archived") return "Archived";
+  return "Pending";
+}
+
+function statusBadge(status: ItemStatus): string {
+  return `<span class="status status-${esc(status)}">${esc(statusLabel(status))}</span>`;
+}
+
+function noticeMessage(notice: string | undefined, status: ItemStatus): string {
+  if (notice === "created") {
+    return "Item saved as Pending. Publish it when it is ready for the kiosk.";
+  }
+  if (notice === "pending") {
+    return "Moved to Pending. It is hidden from the kiosk until you Publish again.";
+  }
+  if (notice === "published") {
+    return "Published. Readers and the kiosk can see this item.";
+  }
+  if (notice === "archived") {
+    return "Archived. Hidden from the kiosk and from Pending.";
+  }
+  if (notice === "restored") {
+    return "Restored to Pending. Publish when it is ready for the kiosk.";
+  }
+  if (status === "draft") {
+    return "Pending — not visible to the kiosk until Published.";
+  }
+  if (status === "archived") {
+    return "Archived — not visible to the kiosk.";
+  }
+  return "Published — visible to readers and the kiosk.";
+}
+
+function labelsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.every((value, index) => value === right[index]);
+}
+
+function publishDiff(item: ItemRow, snapshot: PublishedSnapshot | null): string {
+  if (!snapshot) {
+    return `<p class="hint">Never published.</p>`;
+  }
+  const changes: { field: string; before: string; after: string }[] = [];
+  if (item.name !== snapshot.name) {
+    changes.push({ field: "Name", before: snapshot.name, after: item.name });
+  }
+  if (!labelsEqual(item.labels, snapshot.labels)) {
+    changes.push({
+      field: "Labels",
+      before: snapshot.labels.join(", ") || "(none)",
+      after: item.labels.join(", ") || "(none)",
+    });
+  }
+  if (item.summary !== snapshot.summary) {
+    changes.push({ field: "Summary", before: snapshot.summary, after: item.summary });
+  }
+  if (item.body !== snapshot.body) {
+    changes.push({ field: "Body", before: snapshot.body, after: item.body });
+  }
+  if ((item.details ?? "") !== (snapshot.details ?? "")) {
+    changes.push({
+      field: "Details",
+      before: snapshot.details ?? "(none)",
+      after: item.details ?? "(none)",
+    });
+  }
+  if (changes.length === 0) {
+    return `<p class="hint">No changes since last published.</p>`;
+  }
+  return `<ul class="diff-list">
+    ${changes
+      .map(
+        (change) => `
+      <li>
+        <p class="diff-field">${esc(change.field)}</p>
+        <pre class="diff-before">${esc(change.before)}</pre>
+        <pre class="diff-after">${esc(change.after)}</pre>
+      </li>`,
+      )
+      .join("")}
+  </ul>`;
+}
+
+function itemListMarkup(
+  items: ItemSummary[],
+  libraryId: string,
+  emptyMessage: string,
+  showStatus: boolean,
+): string {
+  if (items.length === 0) {
+    return `<p class="empty">${esc(emptyMessage)}</p>`;
+  }
+  return `<ul class="item-list">
+    ${items
+      .map((row) => {
+        const labels = row.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
+        return `
+      <li>
+        <a href="/items/${esc(row.id)}?library=${esc(libraryId)}">
+          <span class="item-name-row">
+            <span class="item-name">${esc(row.name)}</span>
+            ${showStatus ? statusBadge(row.status) : ""}
+          </span>
+          ${row.summary ? `<span class="excerpt">${esc(row.summary)}</span>` : ""}
+          ${labels ? `<span class="item-labels">${labels}</span>` : ""}
+        </a>
+      </li>`;
+      })
+      .join("")}
+  </ul>`;
 }
 
 function layout(input: {
@@ -212,26 +329,6 @@ export function libraryPage(input: {
   error?: string;
   q?: string;
 }): string {
-  const countLabel = input.items.length === 1 ? "1 item" : `${input.items.length} items`;
-  const list =
-    input.items.length === 0
-      ? `<p class="empty">${input.q ? "No items match that search." : "No items yet."}</p>`
-      : `<ul class="item-list">
-          ${input.items
-            .map((row) => {
-              const labels = row.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
-              return `
-            <li>
-              <a href="/items/${esc(row.id)}?library=${esc(input.library.id)}">
-                <span class="item-name">${esc(row.name)}</span>
-                ${row.summary ? `<span class="excerpt">${esc(row.summary)}</span>` : ""}
-                ${labels ? `<span class="item-labels">${labels}</span>` : ""}
-              </a>
-            </li>`;
-            })
-            .join("")}
-        </ul>`;
-
   const canWrite = can(input.access, "records.write");
   const addLink = canWrite
     ? `<a class="btn" href="/libraries/${esc(input.library.id)}/items/new">Add item</a>`
@@ -249,6 +346,48 @@ export function libraryPage(input: {
          </div>
        </details>`
     : "";
+
+  const published = input.items.filter((row) => row.status === "published");
+  const pending = input.items.filter((row) => row.status === "draft");
+  const archived = input.items.filter((row) => row.status === "archived");
+  const emptySearch = input.q ? "No items match that search." : "No items yet.";
+
+  const lists = canWrite
+    ? `
+        <section class="library-items" aria-labelledby="pending-heading">
+          <div class="section-row">
+            <h2 id="pending-heading">Pending</h2>
+            <p class="count">${pending.length === 1 ? "1 item" : `${pending.length} items`}</p>
+          </div>
+          <p class="hint">Drafts waiting to be published. Not visible to the kiosk.</p>
+          ${itemListMarkup(pending, input.library.id, input.q ? emptySearch : "Nothing pending.", true)}
+        </section>
+        <section class="library-items" aria-labelledby="published-heading">
+          <div class="section-row">
+            <h2 id="published-heading">Published</h2>
+            <p class="count">${published.length === 1 ? "1 item" : `${published.length} items`}</p>
+          </div>
+          <p class="hint">Live for readers and the kiosk.</p>
+          ${itemListMarkup(published, input.library.id, input.q ? emptySearch : "No published items yet.", true)}
+        </section>
+        <section class="library-items library-archived" aria-labelledby="archived-heading">
+          <details>
+            <summary>
+              <span id="archived-heading">Archived</span>
+              <span class="count">${archived.length === 1 ? "1 item" : `${archived.length} items`}</span>
+            </summary>
+            ${itemListMarkup(archived, input.library.id, input.q ? emptySearch : "No archived items.", true)}
+          </details>
+        </section>`
+    : `
+        <section class="library-items" aria-labelledby="items-heading">
+          <div class="section-row">
+            <h2 id="items-heading" class="sr-only">Items</h2>
+            <p class="count">${input.items.length === 1 ? "1 item" : `${input.items.length} items`}</p>
+          </div>
+          ${itemListMarkup(input.items, input.library.id, emptySearch, false)}
+        </section>`;
+
   return layout({
     title: `${input.library.name} · Mpos`,
     csrf: input.csrf,
@@ -271,13 +410,7 @@ export function libraryPage(input: {
           <input id="q" name="q" value="${esc(input.q ?? "")}" placeholder="Search items" autocomplete="off" autofocus>
           <button type="submit">Search</button>
         </form>
-        <section class="library-items" aria-labelledby="items-heading">
-          <div class="section-row">
-            <h2 id="items-heading" class="sr-only">Items</h2>
-            <p class="count">${countLabel}</p>
-          </div>
-          ${list}
-        </section>
+        ${lists}
         ${!can(input.access, "records.delete") && input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
       </div>
     `,
@@ -455,8 +588,44 @@ export function itemPage(input: {
   html: string;
   control?: { label: string; value: string }[];
   sections?: { heading: string; html: string }[];
+  notice?: string;
 }): string {
-  const actions = can(input.access, "records.write")
+  const canWrite = can(input.access, "records.write");
+  const status = input.item.status;
+  const gateForms = canWrite
+    ? `
+        <div class="gate-actions">
+          ${
+            status === "draft"
+              ? `<form method="post" action="/items/${esc(input.item.id)}/publish">
+                   <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+                   <button class="btn" type="submit">Publish</button>
+                 </form>`
+              : ""
+          }
+          ${
+            status === "published"
+              ? `<form method="post" action="/items/${esc(input.item.id)}/unpublish">
+                   <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+                   <button class="btn secondary" type="submit">Unpublish</button>
+                 </form>`
+              : ""
+          }
+          ${
+            status === "archived"
+              ? `<form method="post" action="/items/${esc(input.item.id)}/restore">
+                   <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+                   <button class="btn secondary" type="submit">Restore to Pending</button>
+                 </form>`
+              : `<form method="post" action="/items/${esc(input.item.id)}/archive"
+                     onsubmit="return confirm('Archive this item? It will leave Pending and Published.');">
+                   <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+                   <button class="btn secondary" type="submit">Archive</button>
+                 </form>`
+          }
+        </div>`
+    : "";
+  const actions = canWrite
     ? `<details class="item-menu">
          <summary>Actions</summary>
          <div class="menu-list">
@@ -474,6 +643,17 @@ export function itemPage(input: {
        </details>`
     : "";
   const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
+  const agentPreview = canWrite
+    ? `<section class="gate-panel">
+         <h2>Preview as agent</h2>
+         <p class="hint">This is the wire text readers and the kiosk get when the item is published.</p>
+         <pre class="agent-preview">${esc(labeledItemData(input.item))}</pre>
+       </section>
+       <section class="gate-panel">
+         <h2>Changes since last published</h2>
+         ${publishDiff(input.item, input.item.published_snapshot)}
+       </section>`
+    : "";
 
   return layout({
     title: `${input.item.name} · ${input.library.name}`,
@@ -485,10 +665,12 @@ export function itemPage(input: {
       <article class="item">
         <header class="item-head">
           <div>
-            <p class="kicker">${libraryKind(input.library.template)}</p>
+            <p class="kicker">${libraryKind(input.library.template)} · ${statusBadge(status)}</p>
             <h1>${esc(input.item.name)}</h1>
+            <p class="notice" role="status">${esc(noticeMessage(input.notice, status))}</p>
             ${input.item.summary ? `<p class="lead">${esc(input.item.summary)}</p>` : ""}
             ${labels ? `<p class="meta">${labels}</p>` : ""}
+            ${gateForms}
           </div>
           ${actions}
         </header>
@@ -502,6 +684,7 @@ export function itemPage(input: {
                 .join("")}`
             : `<div class="prose">${input.html}</div>`
         }
+        ${agentPreview}
       </article>
     `,
   });
@@ -514,6 +697,12 @@ export function editPage(input: {
   library: LibraryRow;
   error?: string;
 }): string {
+  const publishBanner =
+    input.item.status === "published"
+      ? `<p class="notice" role="status">Saving moves this item to Pending and hides it from the kiosk until you Publish again.</p>`
+      : input.item.status === "draft"
+        ? `<p class="hint">This item is Pending. Publish from the item page when it is ready for the kiosk.</p>`
+        : `<p class="hint">This item is Archived. Restore it before publishing.</p>`;
   return layout({
     title: `Edit ${input.item.name} · Mpos`,
     csrf: input.csrf,
@@ -524,6 +713,7 @@ export function editPage(input: {
       <p><a href="/items/${esc(input.item.id)}">← Item</a></p>
       <section class="panel">
         <h1>Edit item</h1>
+        ${publishBanner}
         ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
         <form method="post" action="/items/${esc(input.item.id)}" class="capture">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">

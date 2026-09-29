@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  archiveItem,
   createLibrary,
   createItem,
   defaultLibraryId,
@@ -10,6 +11,10 @@ import {
   getItem,
   listItems,
   lookupItems,
+  publishItem,
+  restoreItem,
+  unpublishItem,
+  updateItem,
 } from "../src/db/queries.ts";
 import { withTestDatabase } from "./db.ts";
 
@@ -25,8 +30,10 @@ test("shared store: two actors see the same records", async () => {
     assert.equal(listed.length, 1);
     assert.equal(listed[0]?.name, "Shared");
     assert.equal(listed[0]?.summary.includes("hello"), true);
+    assert.equal(listed[0]?.status, "draft");
     const fetched = await getItem(db, created.id, { publishedOnly: false });
     assert.equal(fetched?.created_by, "alice");
+    assert.equal(fetched?.status, "draft");
     const gone = await deleteItem(db, created.id);
     assert.equal(gone, true);
   });
@@ -58,7 +65,9 @@ test("reader queries return published items in one library only", async () => {
     const draft = await createItem(db, { name: "Draft ring", body: "not yet", labels: [] }, "alice", library.id);
     const live = await createItem(db, { name: "Published ring", body: "Thursday", labels: [] }, "alice", library.id);
     await createItem(db, { name: "Other", body: "Coffee", labels: [] }, "alice", other.id);
-    await db.run("UPDATE items SET status = 'published' WHERE id = ?", live.id);
+    const published = await publishItem(db, live.id, "alice");
+    assert.equal(published?.status, "published");
+    assert.ok(published?.published_snapshot);
 
     await assert.rejects(() => listItems(db, {}), /library_id is required/);
     const listed = await listItems(db, { library_id: library.id }, { publishedOnly: true });
@@ -72,6 +81,65 @@ test("reader queries return published items in one library only", async () => {
     assert.equal(opened?.name, "Published ring");
     const wrongLibrary = await getItem(db, live.id, { publishedOnly: true, libraryId: other.id });
     assert.equal(wrongLibrary, undefined);
+  });
+});
+
+test("edit unpublishes; publish restores visibility and refreshes snapshot", async () => {
+  await withTestDatabase(async (db) => {
+    const library = await createLibrary(db, "Access", "alice");
+    const item = await createItem(
+      db,
+      { name: "VPN", body: "Use company VPN", labels: ["remote"] },
+      "alice",
+      library.id,
+    );
+    await publishItem(db, item.id, "alice");
+    const first = await getItem(db, item.id, { publishedOnly: false });
+    assert.equal(first?.status, "published");
+    assert.equal(first?.published_snapshot?.body, "Use company VPN");
+
+    const edited = await updateItem(
+      db,
+      item.id,
+      { name: "VPN", body: "Use company VPN on travel laptops", labels: ["remote"] },
+      "alice",
+    );
+    assert.equal(edited?.status, "draft");
+    assert.equal(edited?.published_snapshot?.body, "Use company VPN");
+    const hidden = await getItem(db, item.id, { publishedOnly: true, libraryId: library.id });
+    assert.equal(hidden, undefined);
+
+    const again = await publishItem(db, item.id, "alice");
+    assert.equal(again?.status, "published");
+    assert.equal(again?.published_snapshot?.body, "Use company VPN on travel laptops");
+    const visible = await getItem(db, item.id, { publishedOnly: true, libraryId: library.id });
+    assert.equal(visible?.body, "Use company VPN on travel laptops");
+  });
+});
+
+test("unpublish archive and restore follow the gate", async () => {
+  await withTestDatabase(async (db) => {
+    const library = await createLibrary(db, "Facilities", "alice");
+    const item = await createItem(db, { name: "Lobby", body: "Front desk", labels: [] }, "alice", library.id);
+    assert.equal((await publishItem(db, item.id, "alice"))?.status, "published");
+    // Already published — publish again is refused.
+    assert.equal(await publishItem(db, item.id, "alice"), undefined);
+
+    const pending = await unpublishItem(db, item.id, "alice");
+    assert.equal(pending?.status, "draft");
+    assert.ok(pending?.published_snapshot);
+
+    await publishItem(db, item.id, "alice");
+    const archived = await archiveItem(db, item.id, "alice");
+    assert.equal(archived?.status, "archived");
+    assert.equal(await getItem(db, item.id, { publishedOnly: true, libraryId: library.id }), undefined);
+    // Archived items cannot publish until restored.
+    assert.equal(await publishItem(db, item.id, "alice"), undefined);
+
+    const restored = await restoreItem(db, item.id, "alice");
+    assert.equal(restored?.status, "draft");
+    const live = await publishItem(db, restored!.id, "alice");
+    assert.equal(live?.status, "published");
   });
 });
 
@@ -94,7 +162,9 @@ test("one lookup by library name returns the matching item", async () => {
       "alice",
       locations.id,
     );
-    await db.run("UPDATE items SET status = 'published' WHERE library_id = ?", locations.id);
+    for (const row of await listItems(db, { library_id: locations.id }, { publishedOnly: false })) {
+      await publishItem(db, row.id, "alice");
+    }
 
     const hit = await lookupItems(
       db,
@@ -163,7 +233,9 @@ test("lookup uses whole words and does not read a fragment inside a longer word"
       "alice",
       library.id,
     );
-    await db.run("UPDATE items SET status = 'published' WHERE library_id = ?", library.id);
+    for (const row of await listItems(db, { library_id: library.id }, { publishedOnly: false })) {
+      await publishItem(db, row.id, "alice");
+    }
 
     const door = await lookupItems(db, { library_id: library.id, q: "where is the door" });
     assert.equal(door.kind, "item");
@@ -183,6 +255,7 @@ test("deleting a library removes its items and keeps the last library", async ()
     const main = await defaultLibraryId(db);
     const extra = await createLibrary(db, "Temporary", "alice");
     const item = await createItem(db, { name: "Gone", body: "temp", labels: [] }, "alice", extra.id);
+    await publishItem(db, item.id, "alice");
     const removed = await deleteLibrary(db, extra.id);
     assert.equal(removed, true);
     assert.equal(await getLibrary(db, extra.id), undefined);

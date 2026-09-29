@@ -50,6 +50,8 @@ A Policy library uses fixed fields: Owner, Version, Effective date (YYYY-MM-DD),
 
 A Procedure library uses fixed fields: Owner, Related policy, When to use it, Steps, and Who does each step. Use those names when adding or editing. Do not invent a template or extra fields.
 
+create_record and update_record save drafts only. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call.
+
 ${NOT_CONNECTED}
 
 Speak to the human in everyday words (library, item). Do not say MCP unless they do.`;
@@ -167,7 +169,7 @@ export function buildMcpServer(db: Database, authInfo: AuthInfo): McpServer {
       {
         title: "List items",
         description:
-          "Look up one library. Pass library_name (the name a person says) and q to answer. library_id is only the id from list_libraries, never the name. One clear match returns the full item — cite it and stop. Several matches return short summaries; then get_record for one id. Omit q and pass library_id to list names and summaries for that one library. Do not list every library.",
+          "Look up one library. Pass library_name (the name a person says) and q to answer. library_id is only the id from list_libraries, never the name. One clear match returns the full item — cite it and stop. Several matches return short summaries; then get_record for one id. Omit q and pass library_id to list names and summaries for that one library. Readers only see published items. Do not list every library.",
         inputSchema: listQuerySchema,
         annotations: { readOnlyHint: true },
       },
@@ -359,7 +361,7 @@ export function buildMcpServer(db: Database, authInfo: AuthInfo): McpServer {
       {
         title: "Add item",
         description:
-          "Add a library item. General libraries take name, body, and optional labels. Policy libraries take name, summary, owner, version (for example 1.0), effective_date, review_date, purpose, scope, and policy. Optional policy fields: approved_by, responsibilities, exceptions, references. Procedure libraries take title, summary, owner, related_policy, when_to_use, steps, and who. Do not send body for a Policy or Procedure library and do not invent fields. Optional library_id; defaults to the oldest library. Use only when the human asked you to help author.",
+          "Add a library item as a draft (Pending). It is not visible to readers or the kiosk until a human Publishes it in the publisher UI. General libraries take name, body, and optional labels. Policy libraries take name, summary, owner, version (for example 1.0), effective_date, review_date, purpose, scope, and policy. Optional policy fields: approved_by, responsibilities, exceptions, references. Procedure libraries take title, summary, owner, related_policy, when_to_use, steps, and who. Do not send body for a Policy or Procedure library and do not invent fields. Optional library_id; defaults to the oldest library. Use only when the human asked you to help author.",
         inputSchema: z.object({
           library_id: z.string().uuid().optional(),
           ...policyWrite,
@@ -396,7 +398,7 @@ export function buildMcpServer(db: Database, authInfo: AuthInfo): McpServer {
       {
         title: "Update item",
         description:
-          "Replace one library item. General libraries take name, body, and optional labels. Policy libraries take name, summary, owner, version, effective_date, review_date, purpose, scope, and policy. Optional: approved_by, responsibilities, exceptions, references. Procedure libraries take title, summary, owner, related_policy, when_to_use, steps, and who. Do not invent fields. Use only when the human asked you to edit.",
+          "Replace one library item. Saves as draft: if the item was published, it becomes Pending and readers lose access until a human Publishes again in the publisher UI. General libraries take name, body, and optional labels. Policy libraries take name, summary, owner, version, effective_date, review_date, purpose, scope, and policy. Optional: approved_by, responsibilities, exceptions, references. Procedure libraries take title, summary, owner, related_policy, when_to_use, steps, and who. Do not invent fields. Use only when the human asked you to edit.",
         inputSchema: z.object({
           id: z.string().uuid(),
           ...policyWrite,
