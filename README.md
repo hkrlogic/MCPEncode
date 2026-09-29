@@ -1,6 +1,6 @@
 # MCPEncode (Publisher)
 
-This is the **publisher** surface. It lives in `~/organization-chat` next to `ollama-mcp-chat`, the kiosk. See `../AGENTS.md`. GitHub: [hkrlogic/MCPEncode](https://github.com/hkrlogic/MCPEncode).
+This is the **publisher** surface (**MCPEncode**). It lives in `~/MCPEncode` and is separate from the kiosk workspace (`~/organization-chat`). GitHub: [hkrlogic/MCPEncode](https://github.com/hkrlogic/MCPEncode).
 
 A **POC** of a Model Context Protocol (MCP) server with real OAuth 2.1 login, two roles, libraries of items in MariaDB, and a localhost Markdown UI. MCP is the connector; the product words are library, item, and section.
 
@@ -29,7 +29,7 @@ Read-only callers never see write tools in Cursor, and the add/edit forms are om
 ## Run
 
 ```bash
-cd ~/organization-chat/Mpos
+cd ~/MCPEncode
 docker compose up -d mariadb
 npm install
 npm start
