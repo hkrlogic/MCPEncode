@@ -32,6 +32,8 @@ const ALLOWED_REDIRECTS = [
   "http://127.0.0.1:8787/callback",
   "cursor://anysphere.cursor-mcp/oauth/callback",
   "https://www.cursor.com/agents/mcp/oauth/callback",
+  // Perplexity MCP connector
+  "https://www.perplexity.ai/rest/connections/oauth_callback",
   // Kiosk: OAuth returns to the kiosk origin (same pattern as production https://…/oauth/callback)
   "http://127.0.0.1:8765/oauth/callback",
   "http://localhost:8765/oauth/callback",
