@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "OAuth 2.1 MCP server for libraries of items",
+  "description": "OAuth 2.1 MCP server for libraries of items (MCPEncode)",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",

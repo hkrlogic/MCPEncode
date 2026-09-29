@@ -38,7 +38,7 @@ export function accessFromAuthInfo(auth: AuthInfo): Access {
   const extra = (auth.extra ?? {}) as { sub?: string; role?: Role };
   const role = extra.role;
   if (!role) {
-    throw new OAuthError(OAuthErrorCode.InvalidToken, "token is missing a Mpos role");
+    throw new OAuthError(OAuthErrorCode.InvalidToken, "token is missing an MCPEncode role");
   }
   return accessFromIdentity({
     sub: extra.sub || auth.clientId,

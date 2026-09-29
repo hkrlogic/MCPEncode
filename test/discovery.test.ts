@@ -8,6 +8,7 @@ const config: AppConfig = {
   bindHost: "127.0.0.1",
   mcpResourceUrl: "http://127.0.0.1:3000/mcp",
   publicBaseUrl: "http://127.0.0.1:3000",
+  allowedHosts: [],
   authMode: "embedded",
   authIssuer: "http://127.0.0.1:3000/id",
   authJwksUrl: "http://127.0.0.1:3000/id/jwks",

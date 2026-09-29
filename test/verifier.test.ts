@@ -46,7 +46,7 @@ test("rejects a token minted for a different audience", async () => {
   await assert.rejects(() => verifier.verifyAccessToken(token));
 });
 
-test("rejects a token with no Mpos role", async () => {
+test("rejects a token with no MCPEncode role", async () => {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   const token = await new SignJWT({ sub: "nobody" })
     .setProtectedHeader({ alg: "RS256" })

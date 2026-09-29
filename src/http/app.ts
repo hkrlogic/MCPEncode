@@ -153,12 +153,21 @@ export function createApp(input: {
   const originHost = new URL(config.publicBaseUrl).hostname;
   const resourceHost = new URL(config.mcpResourceUrl).hostname;
   // Hostnames only. A full URL here makes the SDK reject the browser Host header.
-  // The Railway hostname must be listed or the public site returns Invalid Host.
+  // PUBLIC_BASE_URL / MCP_RESOURCE_URL must match the domain people open.
+  // ALLOWED_HOSTS adds extras (www, cutover domains) without changing OAuth redirects.
+  const bindAsHost =
+    config.bindHost === "0.0.0.0" || config.bindHost === "::" ? "" : config.bindHost;
   const allowedNames = [
     ...new Set(
-      [config.bindHost, originHost, resourceHost, "127.0.0.1", "localhost", "[::1]"].filter(
-        (name) => name.length > 0,
-      ),
+      [
+        bindAsHost,
+        originHost,
+        resourceHost,
+        ...config.allowedHosts,
+        "127.0.0.1",
+        "localhost",
+        "[::1]",
+      ].filter((name) => name.length > 0),
     ),
   ];
   const app = createMcpExpressApp({
@@ -172,7 +181,7 @@ export function createApp(input: {
     mcpAuthMetadataRouter({
       oauthMetadata: authServer.metadata,
       resourceServerUrl: resourceUrl,
-      resourceName: "Mpos",
+      resourceName: "MCPEncode",
       scopesSupported: ["openid", "mpos:readonly", "mpos:edit"],
     }),
   );
@@ -245,7 +254,7 @@ export function createApp(input: {
     } catch {
       res
         .status(403)
-        .send(errorPage("Signed in, but this account has no Mpos role (read-only or edit)."));
+        .send(errorPage("Signed in, but this account has no MCPEncode role (read-only or edit)."));
       return;
     }
     const extra = (authInfo.extra ?? {}) as { sub?: string; role?: Role };

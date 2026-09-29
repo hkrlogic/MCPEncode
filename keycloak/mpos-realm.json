@@ -2,7 +2,7 @@
   "id": "mpos",
   "realm": "mpos",
   "enabled": true,
-  "displayName": "Mpos",
+  "displayName": "MCPEncode",
   "sslRequired": "none",
   "registrationAllowed": false,
   "resetPasswordAllowed": false,
@@ -16,11 +16,11 @@
     "realm": [
       {
         "name": "mpos-readonly",
-        "description": "Read-only access to the shared Mpos store"
+        "description": "Read-only access to the shared MCPEncode library"
       },
       {
         "name": "mpos-editor",
-        "description": "Edit access to the shared Mpos store"
+        "description": "Edit access to the shared MCPEncode library"
       }
     ]
   },
@@ -30,7 +30,7 @@
       "enabled": true,
       "email": "reader@mpos.local",
       "emailVerified": true,
-      "firstName": "Mpos",
+      "firstName": "MCPEncode",
       "lastName": "Reader",
       "credentials": [
         {
@@ -46,7 +46,7 @@
       "enabled": true,
       "email": "editor@mpos.local",
       "emailVerified": true,
-      "firstName": "Mpos",
+      "firstName": "MCPEncode",
       "lastName": "Editor",
       "credentials": [
         {
@@ -115,7 +115,7 @@
     },
     {
       "clientId": "mpos-web",
-      "name": "Mpos HTML UI",
+      "name": "MCPEncode HTML UI",
       "enabled": true,
       "publicClient": true,
       "protocol": "openid-connect",

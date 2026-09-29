@@ -27,7 +27,7 @@ export const MISSING_LIBRARY_LIST =
 
 /** Shown when a tool call never reaches the libraries (401, timeout, disconnect). */
 export const NOT_CONNECTED =
-  "If this call fails, times out, or is unauthorized, you are not connected. Ask the human to reconnect mpos in Cursor (Tools & MCP) and sign in. Do not invent items from memory.";
+  "If this call fails, times out, or is unauthorized, you are not connected. Ask the human to reconnect MCPEncode in Cursor (Tools & MCP) and sign in. Do not invent items from memory.";
 
 /**
  * Sent on MCP initialize. Cursor injects this into the agent when the
@@ -58,7 +58,7 @@ Speak to the human in everyday words (library, item). Do not say MCP unless they
 
 
 export const UNAUTHORIZED_MCP =
-  "Not signed in. Reconnect mpos in Cursor (Tools & MCP), then sign in. Do not invent library items.";
+  "Not signed in. Reconnect MCPEncode in Cursor (Tools & MCP), then sign in. Do not invent library items.";
 
 export function missingLibraryId(libraryId: string | undefined): boolean {
   return !libraryId;
@@ -79,7 +79,7 @@ function ok(text: string) {
 export function buildMcpServer(db: Database, authInfo: AuthInfo): McpServer {
   const access = accessFromAuthInfo(authInfo);
   const server = new McpServer(
-    { name: "mpos", version: "0.2.0" },
+    { name: "mcpencode", version: "0.2.0" },
     { instructions: AGENT_INSTRUCTIONS },
   );
 

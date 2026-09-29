@@ -1,10 +1,10 @@
-# Mpos (Publisher)
+# MCPEncode (Publisher)
 
-This is the **publisher** surface. It lives in `~/organization-chat` next to `ollama-mcp-chat`, the kiosk. See `../AGENTS.md`.
+This is the **publisher** surface. It lives in `~/organization-chat` next to `ollama-mcp-chat`, the kiosk. See `../AGENTS.md`. GitHub: [hkrlogic/MCPEncode](https://github.com/hkrlogic/MCPEncode).
 
 A **POC** of a Model Context Protocol (MCP) server with real OAuth 2.1 login, two roles, libraries of items in MariaDB, and a localhost Markdown UI. MCP is the connector; the product words are library, item, and section.
 
-OAuth 2.1 proves who you are. **Mpos** only checks the access token, maps the role to permissions, then lets Cursor and the browser use the same libraries.
+OAuth 2.1 proves who you are. **MCPEncode** only checks the access token, maps the role to permissions, then lets Cursor and the browser use the same libraries.
 
 By default the POC runs a **development identity provider** in the same process (no Docker). That still uses authorization-code + PKCE and audience-bound JWTs. Point `AUTH_MODE=oidc` at Keycloak when Docker Desktop is running if you want an external issuer.
 
@@ -12,7 +12,7 @@ By default the POC runs a **development identity provider** in the same process 
 
 | Piece | Role |
 | --- | --- |
-| Identity | OAuth 2.1 authorization code + PKCE. Mpos never stores passwords. |
+| Identity | OAuth 2.1 authorization code + PKCE. MCPEncode never stores passwords. |
 | Roles | **read-only** and **edit**. Edit includes delete. |
 | Permissions | Tools and the UI check `records.read` / `records.write` / `records.delete` / `audit.read`, not the role name. |
 | MariaDB | Libraries and items live in database `mpos`. Each item belongs to a library and has a required summary and a status (`draft` or `published`). Reads and writes use `items`. The older `records` table is **frozen** (kept, not dropped; no new writes). |
@@ -46,7 +46,7 @@ Demo users (change these before this is more than a laptop demo):
 
 ### Cursor
 
-`.cursor/mcp.json` points at `http://127.0.0.1:3000/mcp` with client id `mpos-mcp`. In **Settings → Tools & MCP**, connect **mpos**. Cursor will 401, discover the IdP, and open a browser login.
+`.cursor/mcp.json` points at `http://127.0.0.1:3000/mcp` with client id `mpos-mcp`. In **Settings → Tools & MCP**, connect **MCPEncode** (or the local server named in that config). Cursor will 401, discover the IdP, and open a browser login.
 
 Use `http://127.0.0.1:3000/mcp` consistently. `localhost` is a different token audience and login will fail.
 
@@ -86,7 +86,7 @@ There is no `run_sql` tool. Queries are parameterized in code.
 
 ## Security notes (why it is built this way)
 
-- In **oidc** mode Mpos is only a resource server and does not issue tokens. The default **embedded** mode runs a development IdP in-process (OAuth 2.1 + PKCE). Do not expose that to a network.
+- In **oidc** mode MCPEncode is only a resource server and does not issue tokens. The default **embedded** mode runs a development IdP in-process (OAuth 2.1 + PKCE). Do not expose that to a network.
 - Access tokens must pass signature, issuer, expiry, and **audience** = `MCP_RESOURCE_URL`.
 - The access token is never written to MariaDB. Only the user id (`sub`) is stored as `created_by` / `updated_by`.
 - Tool results label store content as **data**, not instructions (indirect prompt injection).

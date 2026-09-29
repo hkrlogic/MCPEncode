@@ -22,6 +22,8 @@ export type AppConfig = {
   bindHost: string;
   mcpResourceUrl: string;
   publicBaseUrl: string;
+  /** Extra Host header names (custom domains) beyond publicBaseUrl / mcpResourceUrl. */
+  allowedHosts: string[];
   authMode: AuthMode;
   authIssuer: string;
   authJwksUrl: string;
@@ -57,6 +59,18 @@ function railwayPublicOrigin(): string | undefined {
   const domain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
   if (!domain || domain.length > 253 || /[\s/]/.test(domain)) return undefined;
   return `https://${domain}`;
+}
+
+/** Comma-separated hostnames for Host / Origin checks (no scheme, no path). */
+function parseAllowedHosts(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  const hosts: string[] = [];
+  for (const part of raw.split(",")) {
+    const host = part.trim().toLowerCase();
+    if (!host || host.length > 253 || /[\s/:?]/.test(host)) continue;
+    hosts.push(host);
+  }
+  return hosts;
 }
 
 export function loadDatabaseConfig(): DatabaseConfig {
@@ -119,6 +133,7 @@ export function loadConfig(): AppConfig {
     bindHost: process.env.BIND_HOST?.trim() || (onRailway ? "0.0.0.0" : "127.0.0.1"),
     mcpResourceUrl,
     publicBaseUrl,
+    allowedHosts: parseAllowedHosts(process.env.ALLOWED_HOSTS),
     authMode,
     authIssuer,
     authJwksUrl:

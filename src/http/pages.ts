@@ -158,7 +158,7 @@ function layout(input: {
 }): string {
   const nav = input.access
     ? `<nav class="nav" aria-label="Main">
-        <a class="brand" href="/">Mpos</a>
+        <a class="brand" href="/">MCPEncode</a>
         <div class="nav-trail">
           <a class="nav-link" href="/">Libraries</a>
           ${
@@ -173,7 +173,7 @@ function layout(input: {
           <a class="nav-signout" href="/logout">Sign out</a>
         </div>
       </nav>`
-    : `<nav class="nav" aria-label="Main"><a class="brand" href="/">Mpos</a></nav>`;
+    : `<nav class="nav" aria-label="Main"><a class="brand" href="/">MCPEncode</a></nav>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -199,7 +199,7 @@ function layout(input: {
 
 export function loginPage(): string {
   return layout({
-    title: "Sign in · Mpos",
+    title: "Sign in · MCPEncode",
     body: `
       <section class="hero">
         <h1>Libraries</h1>
@@ -325,7 +325,7 @@ export function librariesPage(input: {
         </ul>`;
 
   return layout({
-    title: "Libraries · Mpos",
+    title: "Libraries · MCPEncode",
     csrf: input.csrf,
     access: input.access,
     body: `
@@ -408,7 +408,7 @@ export function libraryPage(input: {
         </section>`;
 
   return layout({
-    title: `${input.library.name} · Mpos`,
+    title: `${input.library.name} · MCPEncode`,
     csrf: input.csrf,
     access: input.access,
     library: input.library,
@@ -725,7 +725,7 @@ export function editPage(input: {
         ? `<p class="hint">This item is Pending. Publish from the item page when it is ready for the kiosk.</p>`
         : `<p class="hint">This item is Archived. Restore it before publishing.</p>`;
   return layout({
-    title: `Edit ${input.item.name} · Mpos`,
+    title: `Edit ${input.item.name} · MCPEncode`,
     csrf: input.csrf,
     access: input.access,
     library: input.library,
@@ -784,7 +784,7 @@ export function editPage(input: {
 
 export function errorPage(message: string): string {
   return layout({
-    title: "Error · Mpos",
+    title: "Error · MCPEncode",
     body: `<p class="error">${esc(message)}</p><p><a href="/">Libraries</a></p>`,
   });
 }

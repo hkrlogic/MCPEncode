@@ -22,8 +22,8 @@ async function main(): Promise<void> {
   });
 
   app.listen(config.port, config.bindHost, () => {
-    console.log(`Mpos UI  http://${config.bindHost}:${config.port}/`);
-    console.log(`Mpos MCP ${config.mcpResourceUrl}`);
+    console.log(`MCPEncode UI  http://${config.bindHost}:${config.port}/`);
+    console.log(`MCPEncode MCP ${config.mcpResourceUrl}`);
     console.log(`Issuer   ${config.authIssuer} (${config.authMode})`);
     console.log(
       `MariaDB ${config.database.host}:${config.database.port}/${config.database.database}`,
