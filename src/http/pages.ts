@@ -11,7 +11,13 @@ import {
 function libraryKind(template: LibraryRow["template"]): string {
   if (template === "policy") return "Policy";
   if (template === "procedure") return "Procedure";
-  return "General";
+  // Free-form libraries have no type label — "General" is internal only.
+  return "";
+}
+
+function kindKicker(template: LibraryRow["template"]): string {
+  const kind = libraryKind(template);
+  return kind ? `<p class="kicker">${esc(kind)}</p>` : "";
 }
 
 function esc(value: string): string {
@@ -138,6 +144,10 @@ function itemListMarkup(
   </ul>`;
 }
 
+function roleLabel(role: Access["role"]): string {
+  return role === "edit" ? "Editor" : "Reader";
+}
+
 function layout(input: {
   title: string;
   csrf?: string;
@@ -147,17 +157,23 @@ function layout(input: {
   body: string;
 }): string {
   const nav = input.access
-    ? `<nav class="nav">
-        <a href="/">Libraries</a>
-        ${
-          input.library
-            ? `<a href="/libraries/${esc(input.library.id)}">${esc(input.library.name)}</a>`
-            : ""
-        }
-        <span class="who">${esc(input.access.role)} · ${esc(input.access.sub)}</span>
-        <a href="/logout">Sign out</a>
+    ? `<nav class="nav" aria-label="Main">
+        <a class="brand" href="/">Mpos</a>
+        <div class="nav-trail">
+          <a class="nav-link" href="/">Libraries</a>
+          ${
+            input.library
+              ? `<span class="nav-sep" aria-hidden="true">/</span>
+                 <a class="nav-link nav-current" href="/libraries/${esc(input.library.id)}">${esc(input.library.name)}</a>`
+              : ""
+          }
+        </div>
+        <div class="nav-end">
+          <span class="nav-role">${esc(roleLabel(input.access.role))}</span>
+          <a class="nav-signout" href="/logout">Sign out</a>
+        </div>
       </nav>`
-    : `<nav class="nav"><span class="brand">Mpos</span></nav>`;
+    : `<nav class="nav" aria-label="Main"><a class="brand" href="/">Mpos</a></nav>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -166,6 +182,9 @@ function layout(input: {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${esc(input.title)}</title>
   ${input.csrf ? `<meta name="csrf-token" content="${esc(input.csrf)}">` : ""}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@450;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   ${input.extraHead ?? ""}
 </head>
@@ -278,7 +297,7 @@ export function librariesPage(input: {
         </label>
         <label>Type
           <select name="template">
-            <option value="general">General</option>
+            <option value="general">Free-form</option>
             <option value="policy">Policy</option>
             <option value="procedure">Procedure</option>
           </select>
@@ -297,7 +316,7 @@ export function librariesPage(input: {
               (row) => `
             <li>
               <a href="/libraries/${esc(row.id)}">
-                <p class="kicker">${libraryKind(row.template)}</p>
+                ${kindKicker(row.template)}
                 <h2>${esc(row.name)}</h2>
               </a>
             </li>`,
@@ -397,7 +416,7 @@ export function libraryPage(input: {
       <div class="library-view">
         <header class="library-head">
           <div>
-            <p class="kicker">${libraryKind(input.library.template)}</p>
+            ${kindKicker(input.library.template)}
             <h1>${esc(input.library.name)}</h1>
           </div>
           <div class="head-actions">
@@ -592,6 +611,7 @@ export function itemPage(input: {
 }): string {
   const canWrite = can(input.access, "records.write");
   const status = input.item.status;
+  const kind = libraryKind(input.library.template);
   const gateForms = canWrite
     ? `
         <div class="gate-actions">
@@ -665,7 +685,8 @@ export function itemPage(input: {
       <article class="item">
         <header class="item-head">
           <div>
-            <p class="kicker">${libraryKind(input.library.template)} · ${statusBadge(status)}</p>
+            ${kind ? `<p class="kicker">${esc(kind)}</p>` : ""}
+            <p class="item-status">${statusBadge(status)}</p>
             <h1>${esc(input.item.name)}</h1>
             <p class="notice" role="status">${esc(noticeMessage(input.notice, status))}</p>
             ${input.item.summary ? `<p class="lead">${esc(input.item.summary)}</p>` : ""}
