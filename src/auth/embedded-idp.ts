@@ -25,8 +25,9 @@ const USERS: DemoUser[] = [
 ];
 
 const ALLOWED_REDIRECTS = [
-  // Publisher web UI
+  // Publisher web UI (127.0.0.1 and localhost are different OAuth redirect_uri values)
   "http://127.0.0.1:3000/callback",
+  "http://localhost:3000/callback",
   // Cursor desktop MCP OAuth (fixed loopback — do not reuse this port for other apps)
   "http://localhost:8787/callback",
   "http://127.0.0.1:8787/callback",
