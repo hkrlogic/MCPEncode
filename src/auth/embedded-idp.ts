@@ -38,6 +38,9 @@ const ALLOWED_REDIRECTS = [
   // Kiosk: OAuth returns to the kiosk origin (same pattern as production https://…/oauth/callback)
   "http://127.0.0.1:8765/oauth/callback",
   "http://localhost:8765/oauth/callback",
+  // Local app MCP connector (e.g. org chat on :3080)
+  "http://localhost:3080/api/mcp/mcpencode/oauth/callback",
+  "http://127.0.0.1:3080/api/mcp/mcpencode/oauth/callback",
 ];
 
 type AuthCode = {
