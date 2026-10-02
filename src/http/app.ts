@@ -170,10 +170,14 @@ export function createApp(input: {
       ].filter((name) => name.length > 0),
     ),
   ];
+  // Origin validation rejects the literal browser value "null" (opaque origins), which
+  // OAuth redirects from a local app to /id/authorize often send. Host allowlisting is
+  // enough on public binds; keep Origin checks only on loopback for DNS-rebinding defense.
+  const loopbackBind = ["127.0.0.1", "localhost", "::1"].includes(config.bindHost);
   const app = createMcpExpressApp({
     host: config.bindHost,
     allowedHosts: allowedNames,
-    allowedOrigins: allowedNames,
+    ...(loopbackBind ? { allowedOrigins: allowedNames } : {}),
   });
   app.use(express.urlencoded({ extended: false }));
 
