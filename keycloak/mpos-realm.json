@@ -71,16 +71,8 @@
       "serviceAccountsEnabled": false,
       "fullScopeAllowed": true,
       "rootUrl": "http://127.0.0.1:3000",
-      "redirectUris": [
-        "http://localhost:8787/callback",
-        "http://127.0.0.1:8787/callback",
-        "http://127.0.0.1:8765/oauth/callback",
-        "http://localhost:8765/oauth/callback",
-        "cursor://anysphere.cursor-mcp/oauth/callback",
-        "https://www.cursor.com/agents/mcp/oauth/callback",
-        "https://www.perplexity.ai/rest/connections/oauth_callback"
-      ],
-      "webOrigins": ["http://127.0.0.1:3000"],
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "client.secret.creation.time": "0"

@@ -1,9 +1,10 @@
-import type { Express, Request, Response } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import type { AppConfig } from "../config.ts";
-import type { Role } from "./rbac.ts";
 import type { AuthServerEndpoints } from "../http/discovery.ts";
 import { pkceChallenge } from "../http/pkce.ts";
+import { callbackLabel, isAllowedCallback } from "./redirect.ts";
+import type { Role } from "./rbac.ts";
 
 type DemoUser = { username: string; password: string; sub: string; role: Role; realmRole: string };
 
@@ -22,25 +23,6 @@ const USERS: DemoUser[] = [
     role: "readonly",
     realmRole: "mpos-readonly",
   },
-];
-
-const ALLOWED_REDIRECTS = [
-  // Publisher web UI (127.0.0.1 and localhost are different OAuth redirect_uri values)
-  "http://127.0.0.1:3000/callback",
-  "http://localhost:3000/callback",
-  // Cursor desktop MCP OAuth (fixed loopback — do not reuse this port for other apps)
-  "http://localhost:8787/callback",
-  "http://127.0.0.1:8787/callback",
-  "cursor://anysphere.cursor-mcp/oauth/callback",
-  "https://www.cursor.com/agents/mcp/oauth/callback",
-  // Perplexity MCP connector
-  "https://www.perplexity.ai/rest/connections/oauth_callback",
-  // Kiosk: OAuth returns to the kiosk origin (same pattern as production https://…/oauth/callback)
-  "http://127.0.0.1:8765/oauth/callback",
-  "http://localhost:8765/oauth/callback",
-  // Local app MCP connector (e.g. org chat on :3080)
-  "http://localhost:3080/api/mcp/mcpencode/oauth/callback",
-  "http://127.0.0.1:3080/api/mcp/mcpencode/oauth/callback",
 ];
 
 type AuthCode = {
@@ -85,17 +67,27 @@ function form(req: Request, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-function redirectAllowed(uri: string, publicBaseUrl: string): boolean {
-  // The deployed site returns to its own /callback. Local and Cursor
-  // addresses stay on the fixed list above.
-  if (uri === `${publicBaseUrl}/callback`) return true;
-  return ALLOWED_REDIRECTS.includes(uri);
+function redirectAllowed(uri: string, clientId: string, config: AppConfig): boolean {
+  return isAllowedCallback(uri, {
+    clientId,
+    webClientId: config.webClientId,
+    publicBaseUrl: config.publicBaseUrl,
+  });
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function loginPage(input: { error?: string; hidden: Record<string, string> }): string {
   const fields = Object.entries(input.hidden)
-    .map(([name, value]) => `<input type="hidden" name="${name}" value="${value.replaceAll('"', "&quot;")}">`)
+    .map(([name, value]) => `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`)
     .join("");
+  const backTo = escapeHtml(callbackLabel(input.hidden.redirect_uri ?? ""));
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -108,7 +100,8 @@ function loginPage(input: { error?: string; hidden: Record<string, string> }): s
   <main class="sign-in">
     <section class="panel">
       <h1>Sign in</h1>
-      ${input.error ? `<p class="error" role="alert">${input.error}</p>` : ""}
+      <p class="hint">After you sign in, you return to <code>${backTo}</code>.</p>
+      ${input.error ? `<p class="error" role="alert">${escapeHtml(input.error)}</p>` : ""}
       <form method="post" action="/id/authorize">
         ${fields}
         <label>Username <input name="username" autocomplete="username" required></label>
@@ -218,14 +211,23 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
       res.json({ keys: [jwk] });
     });
 
-    app.post("/id/register", (req, res) => {
-      const requested = (req.body as { redirect_uris?: string[] } | undefined)?.redirect_uris ?? [];
+    app.post("/id/register", express.json({ limit: "16kb" }), (req, res) => {
+      const requested = (req.body as { redirect_uris?: unknown } | undefined)?.redirect_uris;
+      const redirectUris = Array.isArray(requested) ? requested : [];
+      const accepted: string[] = [];
+      for (const entry of redirectUris) {
+        if (typeof entry !== "string" || !redirectAllowed(entry, "mpos-mcp", config)) {
+          res.status(400).json({ error: "invalid_redirect_uri" });
+          return;
+        }
+        accepted.push(entry);
+      }
       res.status(201).json({
         client_id: "mpos-mcp",
         token_endpoint_auth_method: "none",
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        redirect_uris: requested.length ? requested : ALLOWED_REDIRECTS,
+        redirect_uris: accepted,
       });
     });
 
@@ -240,7 +242,11 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
         scope: form(req, "scope") || q(req, "scope"),
         nonce: form(req, "nonce") || q(req, "nonce"),
       };
-      if (!redirectAllowed(hidden.redirect_uri, config.publicBaseUrl)) {
+      if (!hidden.client_id) {
+        res.status(400).send("client_id is required");
+        return;
+      }
+      if (!redirectAllowed(hidden.redirect_uri, hidden.client_id, config)) {
         res.status(400).send("invalid redirect_uri");
         return;
       }
@@ -264,7 +270,12 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
         return;
       }
       const redirectUri = form(req, "redirect_uri");
-      if (!redirectAllowed(redirectUri, config.publicBaseUrl)) {
+      const clientId = form(req, "client_id");
+      if (!clientId) {
+        res.status(400).send("client_id is required");
+        return;
+      }
+      if (!redirectAllowed(redirectUri, clientId, config)) {
         res.status(400).send("invalid redirect_uri");
         return;
       }
@@ -273,7 +284,7 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
         sub: user.sub,
         role: user.role,
         realmRole: user.realmRole,
-        clientId: form(req, "client_id") || "mpos-web",
+        clientId,
         redirectUri,
         challenge: form(req, "code_challenge"),
         resource: form(req, "resource") || config.authAudience,

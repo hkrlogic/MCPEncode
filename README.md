@@ -50,7 +50,7 @@ Demo users (change these before this is more than a laptop demo):
 
 Use `http://127.0.0.1:3000/mcp` consistently. `localhost` is a different token audience and login will fail.
 
-Cursor’s desktop OAuth return URL is `http://localhost:8787/callback`. Leave that port free while connecting (the kiosk does not use 8787; it returns to its own `/oauth/callback`).
+Cursor’s desktop OAuth return URL is `http://localhost:8787/callback`. Leave that port free while connecting (the kiosk does not use 8787; it returns to its own `/oauth/callback`). The built-in sign-in accepts that address, and any other client’s callback, without adding it to a list. The sign-in page shows where you will be sent back.
 
 ### Optional: Keycloak in Docker
 
@@ -86,7 +86,7 @@ There is no `run_sql` tool. Queries are parameterized in code.
 
 ## Security notes (why it is built this way)
 
-- In **oidc** mode MCPEncode is only a resource server and does not issue tokens. The default **embedded** mode runs a development IdP in-process (OAuth 2.1 + PKCE). Do not expose that to a network.
+- In **oidc** mode MCPEncode is only a resource server and does not issue tokens. The default **embedded** mode runs a development IdP in-process (OAuth 2.1 + PKCE). Do not expose that to a network. MCP clients may return to any absolute callback URL (the browser sign-in for this app still returns only to its own `/callback`). The code is single-use and PKCE is required. Keycloak’s `mpos-mcp` client uses the same open callback list (`*`); import the realm again if Keycloak was already running with the old list.
 - Access tokens must pass signature, issuer, expiry, and **audience** = `MCP_RESOURCE_URL`.
 - The access token is never written to MariaDB. Only the user id (`sub`) is stored as `created_by` / `updated_by`.
 - Tool results label store content as **data**, not instructions (indirect prompt injection).
