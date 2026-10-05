@@ -101,68 +101,121 @@ function envValue(name: string): string | undefined {
   return value || undefined;
 }
 
-/** Railway's Postgres plugin publishes DATABASE_URL. POSTGRES_* still wins when set. */
-export function parseDatabaseUrl(raw: string): {
+/** Percent-decoding is optional. A raw password may contain a lone %. */
+function decodeUserinfo(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export type ParsedDatabaseUrl = {
   host: string;
   port: number;
   user: string;
   password: string;
   database: string;
   sslMode?: string;
-} {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error("DATABASE_URL is not a valid Postgres URL");
-  }
-  if (url.protocol !== "postgresql:" && url.protocol !== "postgres:") {
+};
+
+/**
+ * Read a Postgres URL without the WHATWG parser. Passwords from Railway can
+ * contain characters that parser treats as the end of the address.
+ * Host or database may be blank; the caller fills those from other variables.
+ */
+export function parseDatabaseUrl(raw: string): ParsedDatabaseUrl {
+  const trimmed = raw.trim();
+  const scheme = /^(postgres(?:ql)?):\/\//i.exec(trimmed);
+  if (!scheme) {
     throw new Error("DATABASE_URL must start with postgresql://");
   }
-  const port = Number(url.port || "5432");
+  let rest = trimmed.slice(scheme[0].length);
+  const queryAt = rest.indexOf("?");
+  const query = queryAt === -1 ? "" : rest.slice(queryAt + 1);
+  if (queryAt !== -1) rest = rest.slice(0, queryAt);
+  const at = rest.lastIndexOf("@");
+  const userinfo = at === -1 ? "" : rest.slice(0, at);
+  const hostAndDb = at === -1 ? rest : rest.slice(at + 1);
+  const slash = hostAndDb.indexOf("/");
+  const hostport = slash === -1 ? hostAndDb : hostAndDb.slice(0, slash);
+  const database = decodeUserinfo(slash === -1 ? "" : hostAndDb.slice(slash + 1));
+  let host = hostport;
+  let port = 5432;
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    if (end === -1) throw new Error("DATABASE_URL host is invalid");
+    const after = host.slice(end + 1);
+    host = host.slice(1, end);
+    if (after.startsWith(":")) port = Number(after.slice(1));
+  } else {
+    const colon = host.lastIndexOf(":");
+    if (colon !== -1 && /^\d+$/.test(host.slice(colon + 1))) {
+      port = Number(host.slice(colon + 1));
+      host = host.slice(0, colon);
+    }
+  }
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("DATABASE_URL port must be an integer from 1 to 65535");
   }
-  const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
-  if (!url.hostname || !database) {
-    throw new Error("DATABASE_URL must include a host and database name");
-  }
-  return {
-    host: url.hostname,
-    port,
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
-    database,
-    sslMode: url.searchParams.get("sslmode") ?? undefined,
-  };
+  const sep = userinfo.indexOf(":");
+  const user = decodeUserinfo(sep === -1 ? userinfo : userinfo.slice(0, sep));
+  const password = decodeUserinfo(sep === -1 ? "" : userinfo.slice(sep + 1));
+  const sslMode = new URLSearchParams(query).get("sslmode") ?? undefined;
+  return { host, port, user, password, database, sslMode };
+}
+
+function firstDefined(...values: Array<string | undefined>): string | undefined {
+  return values.find((value) => value !== undefined && value !== "");
+}
+
+function onRailway(): boolean {
+  return Boolean(
+    envValue("RAILWAY_ENVIRONMENT") || envValue("RAILWAY_PROJECT_ID") || envValue("RAILWAY_SERVICE_ID"),
+  );
+}
+
+function railwayDatabaseHelp(): string {
+  return (
+    "On the app service, add five variables and pick each value from the Postgres service: " +
+    "POSTGRES_HOST=${{Postgres.PGHOST}}, POSTGRES_PORT=${{Postgres.PGPORT}}, " +
+    "POSTGRES_USER=${{Postgres.PGUSER}}, POSTGRES_PASSWORD=${{Postgres.PGPASSWORD}}, " +
+    "POSTGRES_DATABASE=${{Postgres.PGDATABASE}}. " +
+    "Use the service's real name if it is not Postgres. Delete DATABASE_URL if it is not a full postgresql://user:password@host:port/database address."
+  );
 }
 
 export function loadDatabaseConfig(): DatabaseConfig {
-  const fromUrl = envValue("DATABASE_URL") ? parseDatabaseUrl(envValue("DATABASE_URL")!) : undefined;
-  const portRaw = envValue("POSTGRES_PORT") || envValue("PGPORT") || (fromUrl ? String(fromUrl.port) : "5432");
+  const rawUrl = envValue("DATABASE_URL");
+  // A pasted ${{Postgres.DATABASE_URL}} that Railway did not fill in is not a connection.
+  const fromUrl = rawUrl && !rawUrl.includes("${{") ? parseDatabaseUrl(rawUrl) : undefined;
+  const portRaw = firstDefined(envValue("POSTGRES_PORT"), envValue("PGPORT"), fromUrl ? String(fromUrl.port) : undefined) ?? "5432";
   const port = Number(portRaw);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("POSTGRES_PORT must be an integer from 1 to 65535");
   }
-  const host = envValue("POSTGRES_HOST") || envValue("PGHOST") || fromUrl?.host || "127.0.0.1";
-  if (!host || /\s/.test(host) || host.length > 253) {
-    throw new Error("POSTGRES_HOST is invalid");
+  const railway = onRailway();
+  const host =
+    firstDefined(envValue("POSTGRES_HOST"), envValue("PGHOST"), fromUrl?.host) || (railway ? "" : "127.0.0.1");
+  if (!host || /\s/.test(host) || host.length > 253 || host.includes("${{")) {
+    throw new Error(`Database host is missing. ${railwayDatabaseHelp()}`);
   }
   const user = assertDbIdentifier(
-    envValue("POSTGRES_USER") || envValue("PGUSER") || fromUrl?.user || "mpos",
+    firstDefined(envValue("POSTGRES_USER"), envValue("PGUSER"), fromUrl?.user) || "mpos",
     "POSTGRES_USER",
   );
-  const database = assertDbIdentifier(
-    envValue("POSTGRES_DATABASE") || envValue("PGDATABASE") || fromUrl?.database || "mpos",
-    "POSTGRES_DATABASE",
-  );
-  const password = envValue("POSTGRES_PASSWORD") || envValue("PGPASSWORD") || fromUrl?.password;
+  // Railway's Postgres image creates a database named railway. A URL with no path still means that.
+  const databaseName =
+    firstDefined(envValue("POSTGRES_DATABASE"), envValue("PGDATABASE"), envValue("POSTGRES_DB"), fromUrl?.database) ||
+    (railway || host.toLowerCase().endsWith(".railway.internal") ? "railway" : "mpos");
+  const database = assertDbIdentifier(databaseName, "POSTGRES_DATABASE");
+  const password = firstDefined(envValue("POSTGRES_PASSWORD"), envValue("PGPASSWORD"), fromUrl?.password);
   if (!password) {
-    throw new Error(
-      "Missing database password. On the app service in Railway, add DATABASE_URL with value ${{Postgres.DATABASE_URL}} (use the Postgres service's real name). The app also accepts POSTGRES_PASSWORD or PGPASSWORD.",
-    );
+    throw new Error(`Database password is missing. ${railwayDatabaseHelp()}`);
   }
-  const sslEnv = envValue("POSTGRES_SSL") || (fromUrl?.sslMode === "require" ? "required" : fromUrl?.sslMode === "disable" ? "disable" : undefined);
+  const sslEnv =
+    envValue("POSTGRES_SSL") ||
+    (fromUrl?.sslMode === "require" ? "required" : fromUrl?.sslMode === "disable" ? "disable" : undefined);
   return {
     host,
     port,
