@@ -1,6 +1,7 @@
 /** Shared HTML layout, status labels, and list markup for publisher pages. */
 import type { Access } from "../../auth/rbac.ts";
 import type { ItemRow, ItemStatus, ItemSummary, LibraryRow, PublishedSnapshot } from "../../db/models.ts";
+import { schemaChoicesMarkup } from "./schema-choice.ts";
 
 export function libraryKind(template: LibraryRow["template"]): string {
   if (template === "policy") return "Policy";
@@ -186,13 +187,7 @@ function librarySidebar(shell: AppShell): string {
         <label>Name
           <input name="name" required maxlength="200" autocomplete="off" placeholder="Remote access">
         </label>
-        <label>Schema starter
-          <select name="template">
-            <option value="general">General</option>
-            <option value="policy">Policy</option>
-            <option value="procedure">Procedure</option>
-          </select>
-        </label>
+        ${schemaChoicesMarkup()}
         <button class="btn" type="submit">Add library</button>
       </form>
     </details>`
