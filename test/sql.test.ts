@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isLoopbackHost, resolvePostgresSsl } from "../src/config.ts";
+import { isLoopbackHost, parseDatabaseUrl, resolvePostgresSsl } from "../src/config.ts";
 import { toPgParams } from "../src/db/client.ts";
 import { assertNoDropTable, splitSql } from "../src/db/sql.ts";
 
@@ -34,4 +34,16 @@ test("remote Postgres requires an explicit SSL choice", () => {
   assert.equal(resolvePostgresSsl("db.example.com", "required"), true);
   assert.equal(resolvePostgresSsl("db.example.com", "disable"), false);
   assert.throws(() => resolvePostgresSsl("db.example.com", undefined), /POSTGRES_SSL/);
+  assert.equal(resolvePostgresSsl("postgres.railway.internal", undefined), false);
+});
+
+test("DATABASE_URL supplies the Railway private connection", () => {
+  const parsed = parseDatabaseUrl(
+    "postgresql://postgres:s3cret%2Fpw@postgres.railway.internal:5432/railway",
+  );
+  assert.equal(parsed.host, "postgres.railway.internal");
+  assert.equal(parsed.port, 5432);
+  assert.equal(parsed.user, "postgres");
+  assert.equal(parsed.password, "s3cret/pw");
+  assert.equal(parsed.database, "railway");
 });

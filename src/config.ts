@@ -81,40 +81,95 @@ export function isLoopbackHost(host: string): boolean {
 }
 
 /**
- * Remote Postgres must use TLS unless an operator explicitly opts out on a
- * trusted private network (`POSTGRES_SSL=disable`).
+ * Remote Postgres must use TLS unless the host is local, Railway's private
+ * network, or an operator opts out (`POSTGRES_SSL=disable`).
  */
 export function resolvePostgresSsl(host: string, sslEnv: string | undefined): boolean {
   const mode = sslEnv?.trim().toLowerCase();
   if (mode === "required") return true;
   if (mode === "disable") return false;
   if (isLoopbackHost(host)) return false;
+  // Railway private DNS. The database is not on the public internet and does not present a cert.
+  if (host.trim().toLowerCase().endsWith(".railway.internal")) return false;
   throw new Error(
     "POSTGRES_SSL must be set for a remote host: use POSTGRES_SSL=required (preferred) or POSTGRES_SSL=disable only on a trusted private network",
   );
 }
 
+function envValue(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value || undefined;
+}
+
+/** Railway's Postgres plugin publishes DATABASE_URL. POSTGRES_* still wins when set. */
+export function parseDatabaseUrl(raw: string): {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+  sslMode?: string;
+} {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("DATABASE_URL is not a valid Postgres URL");
+  }
+  if (url.protocol !== "postgresql:" && url.protocol !== "postgres:") {
+    throw new Error("DATABASE_URL must start with postgresql://");
+  }
+  const port = Number(url.port || "5432");
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("DATABASE_URL port must be an integer from 1 to 65535");
+  }
+  const database = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  if (!url.hostname || !database) {
+    throw new Error("DATABASE_URL must include a host and database name");
+  }
+  return {
+    host: url.hostname,
+    port,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database,
+    sslMode: url.searchParams.get("sslmode") ?? undefined,
+  };
+}
+
 export function loadDatabaseConfig(): DatabaseConfig {
-  const port = Number(process.env.POSTGRES_PORT ?? "5432");
+  const fromUrl = envValue("DATABASE_URL") ? parseDatabaseUrl(envValue("DATABASE_URL")!) : undefined;
+  const portRaw = envValue("POSTGRES_PORT") || envValue("PGPORT") || (fromUrl ? String(fromUrl.port) : "5432");
+  const port = Number(portRaw);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("POSTGRES_PORT must be an integer from 1 to 65535");
   }
-  const host = process.env.POSTGRES_HOST?.trim() || "127.0.0.1";
+  const host = envValue("POSTGRES_HOST") || envValue("PGHOST") || fromUrl?.host || "127.0.0.1";
   if (!host || /\s/.test(host) || host.length > 253) {
     throw new Error("POSTGRES_HOST is invalid");
   }
-  const user = assertDbIdentifier(process.env.POSTGRES_USER?.trim() || "mpos", "POSTGRES_USER");
+  const user = assertDbIdentifier(
+    envValue("POSTGRES_USER") || envValue("PGUSER") || fromUrl?.user || "mpos",
+    "POSTGRES_USER",
+  );
   const database = assertDbIdentifier(
-    process.env.POSTGRES_DATABASE?.trim() || "mpos",
+    envValue("POSTGRES_DATABASE") || envValue("PGDATABASE") || fromUrl?.database || "mpos",
     "POSTGRES_DATABASE",
   );
+  const password = envValue("POSTGRES_PASSWORD") || envValue("PGPASSWORD") || fromUrl?.password;
+  if (!password) {
+    throw new Error(
+      "Missing database password. On the app service in Railway, add DATABASE_URL with value ${{Postgres.DATABASE_URL}} (use the Postgres service's real name). The app also accepts POSTGRES_PASSWORD or PGPASSWORD.",
+    );
+  }
+  const sslEnv = envValue("POSTGRES_SSL") || (fromUrl?.sslMode === "require" ? "required" : fromUrl?.sslMode === "disable" ? "disable" : undefined);
   return {
     host,
     port,
     user,
-    password: required("POSTGRES_PASSWORD"),
+    password,
     database,
-    ssl: resolvePostgresSsl(host, process.env.POSTGRES_SSL),
+    ssl: resolvePostgresSsl(host, sslEnv),
   };
 }
 
