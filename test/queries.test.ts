@@ -12,6 +12,7 @@ import {
   listItems,
   lookupItems,
   publishItem,
+  publishItems,
   restoreItem,
   unpublishItem,
   updateItem,
@@ -140,6 +141,29 @@ test("unpublish archive and restore follow the gate", async () => {
     assert.equal(restored?.status, "draft");
     const live = await publishItem(db, restored!.id, "alice");
     assert.equal(live?.status, "published");
+  });
+});
+
+test("bulk publish selects only Pending items in that library", async () => {
+  await withTestDatabase(async (db) => {
+    const library = await createLibrary(db, "Contacts", "alice");
+    const other = await createLibrary(db, "Other", "alice");
+    const a = await createItem(db, { name: "Ann", body: "a@example.com", labels: [] }, "alice", library.id);
+    const b = await createItem(db, { name: "Bob", body: "b@example.com", labels: [] }, "alice", library.id);
+    const live = await createItem(db, { name: "Cara", body: "c@example.com", labels: [] }, "alice", library.id);
+    await publishItem(db, live.id, "alice");
+    const outsider = await createItem(db, { name: "Dan", body: "d@example.com", labels: [] }, "alice", other.id);
+
+    const published = await publishItems(
+      db,
+      library.id,
+      [a.id, b.id, live.id, outsider.id, "00000000-0000-4000-8000-000000000099"],
+      "alice",
+    );
+    assert.deepEqual(published.sort(), [a.id, b.id].sort());
+    assert.equal((await getItem(db, a.id, { publishedOnly: true, libraryId: library.id }))?.name, "Ann");
+    assert.equal((await getItem(db, b.id, { publishedOnly: true, libraryId: library.id }))?.name, "Bob");
+    assert.equal(await getItem(db, outsider.id, { publishedOnly: true, libraryId: other.id }), undefined);
   });
 });
 

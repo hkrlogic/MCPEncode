@@ -1,26 +1,22 @@
 services:
-  # Local MariaDB only. Published on 127.0.0.1 so it is not reachable from the network.
+  # Local Postgres only. Published on 127.0.0.1 so it is not reachable from the network.
   # Passwords match .env.example. Change both before this machine is shared.
-  mariadb:
-    image: mariadb:11.8
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
+  postgres:
+    image: postgres:16
     ports:
-      - "127.0.0.1:3306:3306"
+      - "127.0.0.1:5432:5432"
     environment:
-      MARIADB_ROOT_PASSWORD: mpos-root-local
-      MARIADB_DATABASE: mpos
-      MARIADB_USER: mpos
-      MARIADB_PASSWORD: mpos-local-dev
+      POSTGRES_USER: mpos
+      POSTGRES_PASSWORD: mpos-local-dev
+      POSTGRES_DB: mpos
     volumes:
-      - mariadb_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      test: ["CMD-SHELL", "pg_isready -U mpos -d mpos"]
       interval: 5s
       timeout: 5s
       retries: 20
-      start_period: 20s
+      start_period: 10s
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.3
@@ -42,4 +38,4 @@ services:
       - ./keycloak:/opt/keycloak/data/import:ro
 
 volumes:
-  mariadb_data:
+  postgres_data:

@@ -5,6 +5,7 @@ import type { ItemRow, ItemStatus, ItemSummary, LibraryRow, PublishedSnapshot } 
 export function libraryKind(template: LibraryRow["template"]): string {
   if (template === "policy") return "Policy";
   if (template === "procedure") return "Procedure";
+  if (template === "table") return "Table";
   // Free-form libraries have no type label — "General" is internal only.
   return "";
 }
@@ -114,23 +115,36 @@ export function itemListMarkup(
   libraryId: string,
   emptyMessage: string,
   showStatus: boolean,
+  options: { selectable?: boolean } = {},
 ): string {
   if (items.length === 0) {
     return `<p class="empty">${esc(emptyMessage)}</p>`;
   }
-  return `<ul class="item-list">
+  const selectable = options.selectable === true;
+  return `<ul class="item-list${selectable ? " item-list-selectable" : ""}">
     ${items
       .map((row) => {
         const labels = row.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
-        return `
-      <li>
-        <a href="/items/${esc(row.id)}?library=${esc(libraryId)}">
+        const body = `
           <span class="item-name-row">
             <span class="item-name">${esc(row.name)}</span>
             ${showStatus ? statusBadge(row.status) : ""}
           </span>
           ${row.summary ? `<span class="excerpt">${esc(row.summary)}</span>` : ""}
-          ${labels ? `<span class="item-labels">${labels}</span>` : ""}
+          ${labels ? `<span class="item-labels">${labels}</span>` : ""}`;
+        if (selectable) {
+          return `
+      <li class="item-row">
+        <input type="checkbox" name="item_id" value="${esc(row.id)}" id="pick-${esc(row.id)}" class="item-pick">
+        <a href="/items/${esc(row.id)}?library=${esc(libraryId)}" class="item-link">
+          ${body}
+        </a>
+      </li>`;
+        }
+        return `
+      <li>
+        <a href="/items/${esc(row.id)}?library=${esc(libraryId)}">
+          ${body}
         </a>
       </li>`;
       })
@@ -144,18 +158,127 @@ export function roleLabel(access: Access): string {
   return access.role === "edit" ? "Editor" : "Reader";
 }
 
+/** Left-pane library list for the publisher shell. */
+export type ShellLibrary = {
+  id: string;
+  name: string;
+  template: string;
+  access_role?: string;
+};
+
+export type AppShell = {
+  libraries: ShellLibrary[];
+  orphans?: ShellLibrary[];
+  activeLibraryId?: string;
+  csrf: string;
+  canAddLibrary: boolean;
+  addError?: string;
+};
+
+function librarySidebar(shell: AppShell): string {
+  const addForm = shell.canAddLibrary
+    ? `
+    <details class="sidebar-add"${shell.addError ? " open" : ""}>
+      <summary>Add library</summary>
+      <form method="post" action="/libraries" class="sidebar-add-form">
+        ${shell.addError ? `<p class="error" role="alert">${esc(shell.addError)}</p>` : ""}
+        <input type="hidden" name="csrf" value="${esc(shell.csrf)}">
+        <label>Name
+          <input name="name" required maxlength="200" autocomplete="off" placeholder="Remote access">
+        </label>
+        <label>Schema starter
+          <select name="template">
+            <option value="general">General</option>
+            <option value="policy">Policy</option>
+            <option value="procedure">Procedure</option>
+          </select>
+        </label>
+        <button class="btn" type="submit">Add library</button>
+      </form>
+    </details>`
+    : "";
+
+  const rows =
+    shell.libraries.length === 0
+      ? `<p class="sidebar-empty">No libraries yet.</p>`
+      : `<ul class="sidebar-libs">
+          ${shell.libraries
+            .map((row) => {
+              const active = row.id === shell.activeLibraryId;
+              const kind = libraryKind(row.template as LibraryRow["template"]);
+              const role =
+                row.access_role === "publisher"
+                  ? "Publisher"
+                  : row.access_role === "reader"
+                    ? "Reader"
+                    : "";
+              return `
+            <li>
+              <a class="sidebar-lib${active ? " is-active" : ""}" href="/libraries/${esc(row.id)}"${active ? ' aria-current="page"' : ""}>
+                <span class="sidebar-lib-name">${esc(row.name)}</span>
+                ${kind || role ? `<span class="sidebar-lib-meta">${esc([kind, role].filter(Boolean).join(" · "))}</span>` : ""}
+              </a>
+            </li>`;
+            })
+            .join("")}
+        </ul>`;
+
+  const orphans =
+    shell.orphans && shell.orphans.length > 0
+      ? `
+      <div class="sidebar-orphans">
+        <p class="sidebar-section-label">Unclaimed</p>
+        <ul class="sidebar-libs">
+          ${shell.orphans
+            .map(
+              (row) => `
+            <li>
+              <a class="sidebar-lib" href="/libraries/${esc(row.id)}">
+                <span class="sidebar-lib-name">${esc(row.name)}</span>
+                <span class="sidebar-lib-meta">Claim</span>
+              </a>
+            </li>`,
+            )
+            .join("")}
+        </ul>
+      </div>`
+      : "";
+
+  return `
+    <aside class="lib-sidebar" aria-label="Libraries">
+      <div class="sidebar-head">
+        <h2 class="sidebar-title">Libraries</h2>
+        ${addForm}
+      </div>
+      <nav class="sidebar-nav" aria-label="Your libraries">
+        ${rows}
+        ${orphans}
+      </nav>
+    </aside>`;
+}
+
 export function layout(input: {
   title: string;
   csrf?: string;
   access?: Access;
   extraHead?: string;
   library?: { id: string; name: string };
+  /** When set, renders libraries on the left and body on the right. */
+  shell?: AppShell;
   body: string;
 }): string {
+  const shellMode = Boolean(input.access && input.shell);
   const nav = input.access
     ? `<nav class="nav" aria-label="Main">
         <a class="brand" href="/">MCPEncode</a>
-        <div class="nav-trail">
+        ${
+          shellMode
+            ? `<p class="nav-context">${
+                input.library
+                  ? `<span class="nav-current">${esc(input.library.name)}</span>`
+                  : `<span class="nav-muted">Libraries</span>`
+              }</p>`
+            : `<div class="nav-trail">
           <a class="nav-link" href="/">Library</a>
           ${
             input.library
@@ -163,7 +286,8 @@ export function layout(input: {
                  <a class="nav-link nav-current" href="/libraries/${esc(input.library.id)}">${esc(input.library.name)}</a>`
               : ""
           }
-        </div>
+        </div>`
+        }
         <div class="nav-end">
           <span class="nav-role">${esc(roleLabel(input.access))}</span>
           <a class="nav-signout" href="/logout">Sign out</a>
@@ -175,6 +299,18 @@ export function layout(input: {
           <a class="nav-signout" href="/login">Sign in</a>
         </div>
       </nav>`;
+
+  const content =
+    shellMode && input.shell
+      ? `<div class="app-shell">
+          ${librarySidebar(input.shell)}
+          <main class="app-main" id="main">
+            ${input.body}
+          </main>
+        </div>`
+      : `<main class="wrap">
+          ${input.body}
+        </main>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -189,11 +325,9 @@ export function layout(input: {
   <link rel="stylesheet" href="/static/styles.css">
   ${input.extraHead ?? ""}
 </head>
-<body>
+<body class="${shellMode ? "app-body" : ""}">
   ${nav}
-  <main class="wrap">
-    ${input.body}
-  </main>
+  ${content}
 </body>
 </html>`;
 }

@@ -1,4 +1,5 @@
 /** HTML form field builders for add/edit item pages. */
+import type { LibrarySchema } from "../../items/library-schema.ts";
 import {
   EMPTY_TABLE,
   splitSummaryAndTable,
@@ -65,6 +66,58 @@ export function itemFields(input: {
           </label>
         </div>
         ${captureEditor(input.body, input.summaryRequired)}
+  `;
+}
+
+/** Add/edit fields for a table a publisher approved. One item is one row. */
+export function schemaItemFields(input: {
+  schema: LibrarySchema;
+  name: string;
+  labels: string;
+  summary: string;
+  values: Record<string, string>;
+}): string {
+  const controls = input.schema.fields.filter((field) => field.kind === "control");
+  const bodies = input.schema.fields.filter((field) => field.kind === "body");
+  const controlMarkup = controls
+    .map((field) => {
+      const value = esc(input.values[field.key] ?? "");
+      const required = field.required ? "required" : "";
+      if (field.type === "date") {
+        return `<label>${esc(field.label)}
+          <input name="${esc(field.key)}" type="date" ${required} value="${value}">
+        </label>`;
+      }
+      const max = field.max ?? 200;
+      return `<label>${esc(field.label)}
+        <input name="${esc(field.key)}" maxlength="${max}" ${required} value="${value}" autocomplete="off">
+      </label>`;
+    })
+    .join("");
+  const bodyMarkup = bodies
+    .map((field) => {
+      const max = field.max ?? 8000;
+      const required = field.required ? "required" : "";
+      return `<label>${esc(field.label)}
+        <textarea name="${esc(field.key)}" maxlength="${max}" rows="6" ${required}>${esc(input.values[field.key] ?? "")}</textarea>
+      </label>`;
+    })
+    .join("");
+  return `
+        <div class="row">
+          <label>Name
+            <input name="name" required maxlength="200" value="${esc(input.name)}" autocomplete="off">
+          </label>
+          <label>Labels
+            <input name="labels" value="${esc(input.labels)}" placeholder="ops, on-call" autocomplete="off">
+          </label>
+        </div>
+        <label>Summary
+          <input name="summary" required maxlength="160" value="${esc(input.summary)}"
+            placeholder="One line. This is what search shows." autocomplete="off">
+        </label>
+        ${controlMarkup ? `<fieldset class="field-group"><legend>Columns</legend>${controlMarkup}</fieldset>` : ""}
+        ${bodyMarkup}
   `;
 }
 

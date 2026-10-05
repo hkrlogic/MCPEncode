@@ -13,10 +13,10 @@ const LOOKUP_STOP_WORDS = new Set([
 ]);
 
 /**
- * InnoDB full-text ignores words shorter than innodb_ft_min_token_size.
- * The server default is 3. Two-letter words are matched on name and summary only.
+ * English tsvector stemming ignores very short tokens; two-letter words are
+ * matched on name and summary with a regex.
  */
-const FULLTEXT_MIN_TOKEN = 3;
+const SEARCH_MIN_TOKEN = 3;
 
 /** Index hits to re-rank. The rest of the library stays in the table. */
 const LOOKUP_CANDIDATE_LIMIT = 25;
@@ -44,7 +44,7 @@ function scoreItem(row: { name: string; summary: string; body: string }, tokens:
       nameHits += 1;
     } else if (hasWord(summary, token)) {
       score += 3;
-    } else if (token.length >= FULLTEXT_MIN_TOKEN && hasWord(body, token)) {
+    } else if (token.length >= SEARCH_MIN_TOKEN && hasWord(body, token)) {
       score += 1;
     }
   }
@@ -63,7 +63,7 @@ type LookupHit = {
   id: string;
   library_id: string;
   name: string;
-  labels: string;
+  labels: string | string[];
   summary: string;
   body: string;
   status: string;
@@ -72,8 +72,8 @@ type LookupHit = {
 
 type RankedHit = { hit: LookupHit; score: number };
 
-function fulltextPhrase(tokens: string[]): string {
-  return tokens.filter((token) => token.length >= FULLTEXT_MIN_TOKEN).join(" ");
+function searchPhrase(tokens: string[]): string {
+  return tokens.filter((token) => token.length >= SEARCH_MIN_TOKEN).join(" ");
 }
 
 function rankHits(hits: LookupHit[], tokens: string[]): RankedHit[] {
@@ -133,13 +133,15 @@ async function findNameSummaryHits(
 ): Promise<LookupHit[]> {
   const groups: LookupHit[][] = [];
   if (phrase) {
+    // Use the stored search_tsv index. Body-only hits score 0 in JS when body
+    // is left empty here, so this pass stays name/summary-focused.
     const rows = await allRows<Omit<LookupHit, "body"> & { relevance: number }>(
       db,
       `SELECT id, library_id, name, labels, summary, status, updated_at,
-              MATCH(name, summary) AGAINST (? IN BOOLEAN MODE) AS relevance
+              ts_rank(search_tsv, plainto_tsquery('english', ?)) AS relevance
        FROM items
        WHERE ${libraryWhere(scope)}
-         AND MATCH(name, summary) AGAINST (? IN BOOLEAN MODE)
+         AND search_tsv @@ plainto_tsquery('english', ?)
        ORDER BY relevance DESC, updated_at DESC
        LIMIT ${LOOKUP_CANDIDATE_LIMIT}`,
       phrase,
@@ -158,7 +160,7 @@ async function findNameSummaryHits(
       `SELECT id, library_id, name, labels, summary, status, updated_at
        FROM items
        WHERE ${libraryWhere(scope)}
-         AND (LOWER(name) REGEXP ? OR LOWER(summary) REGEXP ?)
+         AND (LOWER(name) ~ ? OR LOWER(summary) ~ ?)
        ORDER BY updated_at DESC
        LIMIT ${LOOKUP_CANDIDATE_LIMIT}`,
       libraryId,
@@ -182,8 +184,8 @@ async function findBodyHitIds(
     `SELECT id
      FROM items
      WHERE ${libraryWhere(scope)}
-       AND MATCH(body) AGAINST (? IN BOOLEAN MODE)
-     ORDER BY MATCH(body) AGAINST (? IN BOOLEAN MODE) DESC, updated_at DESC
+       AND search_tsv @@ plainto_tsquery('english', ?)
+     ORDER BY ts_rank(search_tsv, plainto_tsquery('english', ?)) DESC, updated_at DESC
      LIMIT ${LOOKUP_CANDIDATE_LIMIT}`,
     libraryId,
     phrase,
@@ -228,10 +230,11 @@ export async function lookupItems(
   if (!library) return { kind: "none" };
   if ("choices" in library) return { kind: "choices", libraries: library.choices };
 
-  const tokens = searchTokens(query.q);
+  // Cap question length even if a caller skipped the Zod schema.
+  const tokens = searchTokens(query.q.slice(0, 200));
   if (tokens.length === 0) return { kind: "none" };
-  const phrase = fulltextPhrase(tokens);
-  const shortTokens = tokens.filter((token) => token.length < FULLTEXT_MIN_TOKEN);
+  const phrase = searchPhrase(tokens);
+  const shortTokens = tokens.filter((token) => token.length < SEARCH_MIN_TOKEN);
   const openScope = scope.publishedOnly
     ? { publishedOnly: true as const, libraryId: library.id }
     : { publishedOnly: false as const };

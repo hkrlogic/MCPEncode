@@ -197,7 +197,9 @@ export function createApp(input: {
           if (!info) {
             throw new Error("MCP handler invoked without authInfo");
           }
-          return buildMcpServer(db, info, scoped);
+          return buildMcpServer(db, info, scoped, {
+            publicBaseUrl: config.publicBaseUrl,
+          });
         });
         const nodeMcp = toNodeHandler(mcpHandler);
         void nodeMcp(req, res, req.body);

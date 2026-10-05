@@ -3,7 +3,7 @@
 .env.*
 !.env.example
 
-# Old SQLite file, if it is still on disk. MariaDB data lives in the Docker volume.
+# Old SQLite file, if it is still on disk. Postgres data lives in the Docker volume.
 data/
 *.db
 *.db-wal

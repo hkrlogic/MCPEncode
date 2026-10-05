@@ -1,31 +1,62 @@
 /** Library CRUD and name/id resolution for lookups. */
 import type { Database } from "./types.ts";
-import type { LibraryTemplate } from "../items/templates.ts";
+import { librarySchemaOf, schemaForStarter } from "../items/library-schema.ts";
+import { parseStoredTableProposal, type TableProposal, type TableProposalDraft } from "../items/table-proposal.ts";
+import { isLibraryTemplate, type LibraryTemplate } from "../items/templates.ts";
 import { grantLibraryAccess } from "./access.ts";
 import type { LibraryRow } from "./models.ts";
 import { allRows, escapeLike, getRow, runSql } from "./query-helpers.ts";
 
 function libraryTemplate(value: string | undefined): LibraryTemplate {
-  if (value === "policy" || value === "procedure") return value;
-  return "general";
+  return value && isLibraryTemplate(value) ? value : "general";
+}
+
+type SqlLibrary = Omit<LibraryRow, "template" | "schema" | "tableProposal" | "tableProposalUnreadable"> & {
+  template?: string;
+  schema?: unknown;
+  table_proposal?: unknown;
+};
+
+function toLibrary(row: SqlLibrary): LibraryRow {
+  const template = libraryTemplate(row.template);
+  const stored = parseStoredTableProposal(row.table_proposal);
+  return {
+    id: row.id,
+    name: row.name,
+    template,
+    schema: librarySchemaOf(template, row.schema),
+    tableProposal: stored.proposal,
+    tableProposalUnreadable: stored.unreadable,
+    created_by: row.created_by,
+    updated_by: row.updated_by,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+/**
+ * Lock one library row for the rest of this transaction.
+ * Table approval and new items both take this lock so a proposal cannot
+ * be applied in the same moment an item is inserted under the old columns.
+ */
+export async function lockLibrary(db: Database, id: string): Promise<LibraryRow | undefined> {
+  const locked = await getRow<{ id: string }>(db, "SELECT id FROM libraries WHERE id = ? FOR UPDATE", id);
+  if (!locked) return undefined;
+  return getLibrary(db, id);
 }
 
 export async function listLibraries(db: Database): Promise<LibraryRow[]> {
-  // utf8mb4_unicode_ci is case-insensitive, so name order matches the old NOCASE sort.
-  const rows = await allRows<LibraryRow & { template?: string }>(
+  const rows = await allRows<SqlLibrary>(
     db,
-    "SELECT * FROM libraries ORDER BY name ASC",
+    "SELECT * FROM libraries ORDER BY LOWER(name) ASC, name ASC",
   );
-  return rows.map((row) => ({
-    ...row,
-    template: libraryTemplate(row.template),
-  }));
+  return rows.map(toLibrary);
 }
 
 export async function getLibrary(db: Database, id: string): Promise<LibraryRow | undefined> {
-  const row = await getRow<LibraryRow & { template?: string }>(db, "SELECT * FROM libraries WHERE id = ?", id);
+  const row = await getRow<SqlLibrary>(db, "SELECT * FROM libraries WHERE id = ?", id);
   if (!row) return undefined;
-  return { ...row, template: libraryTemplate(row.template) };
+  return toLibrary(row);
 }
 
 export async function createLibrary(
@@ -33,26 +64,39 @@ export async function createLibrary(
   name: string,
   actorSub: string,
   template: LibraryTemplate = "general",
+  table?: TableProposalDraft,
 ): Promise<LibraryRow> {
+  if (table && template !== "general") {
+    throw new Error("A custom table is stored on a general library until a publisher approves it");
+  }
   const now = Date.now();
   const id = crypto.randomUUID();
-  await runSql(
-    db,
-    `INSERT INTO libraries (id, name, template, created_by, updated_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    id,
-    name.trim(),
-    template,
-    actorSub,
-    actorSub,
-    now,
-    now,
-  );
-  await grantLibraryAccess(db, {
-    libraryId: id,
-    subject: actorSub,
-    role: "publisher",
-    grantedBy: actorSub,
+  const schema = schemaForStarter(template);
+  const proposal: TableProposal | null = table
+    ? { ...table, proposedBy: actorSub, proposedAt: now }
+    : null;
+  // Insert + first publisher grant together so a library is never left ownerless.
+  await db.transaction(async (tx) => {
+    await runSql(
+      tx,
+      `INSERT INTO libraries (id, name, template, schema, table_proposal, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)`,
+      id,
+      name.trim(),
+      template,
+      JSON.stringify(schema),
+      proposal ? JSON.stringify(proposal) : null,
+      actorSub,
+      actorSub,
+      now,
+      now,
+    );
+    await grantLibraryAccess(tx, {
+      libraryId: id,
+      subject: actorSub,
+      role: "publisher",
+      grantedBy: actorSub,
+    });
   });
   const created = await getLibrary(db, id);
   if (!created) throw new Error("failed to read library after insert");
@@ -99,16 +143,14 @@ export async function resolveLibrary(
   if (!name) return undefined;
   const exact = await allRows<{ id: string; name: string }>(
     db,
-    "SELECT id, name FROM libraries WHERE name = ?",
+    "SELECT id, name FROM libraries WHERE LOWER(name) = LOWER(?)",
     name,
   );
   if (exact.length === 1) return { id: exact[0].id };
   if (exact.length > 1) return { choices: exact };
   const partial = await allRows<{ id: string; name: string }>(
     db,
-    // JavaScript and MariaDB each treat backslash as an escape, so four
-    // slashes here become the single ESCAPE '\' character.
-    "SELECT id, name FROM libraries WHERE name LIKE ? ESCAPE '\\\\' ORDER BY name ASC",
+    "SELECT id, name FROM libraries WHERE name ILIKE ? ESCAPE '\\' ORDER BY LOWER(name) ASC, name ASC",
     `%${escapeLike(name)}%`,
   );
   if (partial.length === 1) return { id: partial[0].id };

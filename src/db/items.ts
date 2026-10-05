@@ -1,12 +1,17 @@
 /** Item CRUD and status gate (draft / published / archived). */
 import type { Database } from "./types.ts";
+import type { ItemWriteInput } from "../items/library-schema.ts";
 import { excerptOf, type ItemInput, type ListQuery } from "../items/schema.ts";
+import { itemForLibrary } from "../items/templates.ts";
 import type { ItemRow, ItemSummary, ReadScope } from "./models.ts";
 import { writePublishAudit } from "./audit.ts";
 import {
   allRows,
   asStatus,
   escapeLike,
+  ITEM_COLUMNS,
+  LIST_LIMIT_MAX,
+  LIST_OFFSET_MAX,
   libraryWhere,
   parseLabels,
   runSql,
@@ -16,13 +21,13 @@ import {
   type SqlItem,
   getRow,
 } from "./query-helpers.ts";
-import { defaultLibraryId } from "./libraries.ts";
+import { defaultLibraryId, lockLibrary } from "./libraries.ts";
 
 type ListHit = {
   id: string;
   library_id: string;
   name: string;
-  labels: string;
+  labels: string | string[];
   summary: string;
   status: string;
   updated_at: number;
@@ -48,22 +53,20 @@ export async function listItems(
   if (!query.library_id) {
     throw new Error("library_id is required");
   }
-  const limit = query.limit ?? 50;
-  const offset = query.offset ?? 0;
+  const limit = Math.min(Math.max(query.limit ?? 50, 1), LIST_LIMIT_MAX);
+  const offset = Math.min(Math.max(query.offset ?? 0, 0), LIST_OFFSET_MAX);
   // Name, labels, and summary only. The body stays in the table.
   const where = [libraryWhere(scope)];
   const params: unknown[] = [query.library_id];
   const label = query.label?.trim().toLowerCase();
   if (label) {
-    where.push("JSON_CONTAINS(labels, JSON_QUOTE(?))");
-    params.push(label);
+    where.push("labels @> ?::jsonb");
+    params.push(JSON.stringify([label]));
   }
   const needle = query.q?.trim();
   if (needle) {
     const pattern = `%${escapeLike(needle)}%`;
-    where.push(
-      "(name LIKE ? ESCAPE '\\\\' OR summary LIKE ? ESCAPE '\\\\' OR labels LIKE ? ESCAPE '\\\\')",
-    );
+    where.push("(name ILIKE ? ESCAPE '\\' OR summary ILIKE ? ESCAPE '\\' OR labels::text ILIKE ? ESCAPE '\\')");
     params.push(pattern, pattern, pattern);
   }
   params.push(limit, offset);
@@ -90,15 +93,45 @@ export async function getItem(
   const row = scope.publishedOnly
     ? await getRow<SqlItem>(
         db,
-        "SELECT * FROM items WHERE id = ? AND library_id = ? AND status = 'published'",
+        `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ? AND library_id = ? AND status = 'published'`,
         id,
         scope.libraryId,
       )
-    : await getRow<SqlItem>(db, "SELECT * FROM items WHERE id = ?", id);
+    : await getRow<SqlItem>(db, `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`, id);
   return row ? toItem(row) : undefined;
 }
 
 type ItemSave = ItemInput & { summary?: string; details?: string | null };
+
+export async function countLibraryItems(db: Database, libraryId: string): Promise<number> {
+  const row = await getRow<{ n: string | number }>(
+    db,
+    "SELECT COUNT(*) AS n FROM items WHERE library_id = ?",
+    libraryId,
+  );
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Validate against the library schema and insert a draft.
+ * Holds the library row lock so this cannot land under a schema that was
+ * just replaced by table approval.
+ */
+export async function addDraftItem(
+  db: Database,
+  libraryId: string,
+  input: ItemWriteInput,
+  actorSub: string,
+): Promise<{ ok: true; item: ItemRow } | { ok: false; message: string }> {
+  return db.transaction(async (tx) => {
+    const library = await lockLibrary(tx, libraryId);
+    if (!library) return { ok: false, message: "Library not found." };
+    const saved = itemForLibrary(library.schema, input);
+    if (!saved.ok) return saved;
+    const item = await createItem(tx, saved.item, actorSub, libraryId);
+    return { ok: true, item };
+  });
+}
 
 export async function createItem(
   db: Database,
@@ -115,7 +148,7 @@ export async function createItem(
     `INSERT INTO items (
        id, library_id, name, labels, summary, body, details, status,
        created_by, updated_by, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, 'draft', ?, ?, ?, ?)`,
     id,
     library_id,
     input.name,
@@ -146,7 +179,7 @@ export async function updateItem(
   await runSql(
     db,
     `UPDATE items
-     SET name = ?, labels = ?, summary = ?, body = ?, details = ?,
+     SET name = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
          status = CASE WHEN status = 'published' THEN 'draft' ELSE status END,
          updated_by = ?, updated_at = ?
      WHERE id = ?`,
@@ -169,6 +202,27 @@ export async function updateItem(
     });
   }
   return getItem(db, id, { publishedOnly: false });
+}
+
+/**
+ * Publish many Pending items in one library.
+ * Skips ids that are missing, in another library, or not drafts.
+ */
+export async function publishItems(
+  db: Database,
+  libraryId: string,
+  ids: string[],
+  actorSub: string,
+): Promise<string[]> {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))].slice(0, LIST_LIMIT_MAX);
+  const published: string[] = [];
+  for (const id of unique) {
+    const existing = await getItem(db, id, { publishedOnly: false });
+    if (!existing || existing.library_id !== libraryId || existing.status !== "draft") continue;
+    const row = await publishItem(db, id, actorSub);
+    if (row) published.push(row.id);
+  }
+  return published;
 }
 
 /** Make a draft visible to readers and the kiosk. Copies working fields into published_snapshot. */
@@ -288,9 +342,11 @@ export async function restoreItem(
 }
 
 export async function deleteItem(db: Database, id: string): Promise<boolean> {
-  const existing = await getItem(db, id, { publishedOnly: false });
-  if (!existing) return false;
-  await runSql(db, "DELETE FROM publish_audit WHERE item_id = ?", id);
-  await runSql(db, "DELETE FROM items WHERE id = ?", id);
-  return true;
+  return db.transaction(async (tx) => {
+    const existing = await getItem(tx, id, { publishedOnly: false });
+    if (!existing) return false;
+    await runSql(tx, "DELETE FROM publish_audit WHERE item_id = ?", id);
+    await runSql(tx, "DELETE FROM items WHERE id = ?", id);
+    return true;
+  });
 }

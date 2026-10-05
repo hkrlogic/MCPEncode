@@ -8,18 +8,22 @@ import {
   getLibrary,
   getLibraryAccess,
   getItem,
+  listLibrariesForSubject,
+  listOrphanLibraries,
   publishItem,
   restoreItem,
   unpublishItem,
   updateItem,
   writeAudit,
 } from "../../db/queries.ts";
+import type { AppShell } from "../pages/layout.ts";
 import {
   policyBody,
   policyControl,
   procedureBody,
   procedureControl,
 } from "../../items/templates.ts";
+import { parseTableValues, tableControl, tableParts } from "../../items/table-proposal.ts";
 import { renderMarkdown } from "../../markdown/render.ts";
 import { parseLibraryItem, requireCsrf, sessionAccess } from "../helpers.ts";
 import { editPage, errorPage, itemPage } from "../pages.ts";
@@ -41,6 +45,20 @@ async function itemLibraryAccess(
       libraryRole: membership.role,
     }),
     csrf: access.csrf,
+  };
+}
+
+async function itemShell(
+  db: AppRouteContext["db"],
+  access: SessionUser,
+  libraryId: string,
+): Promise<AppShell> {
+  return {
+    libraries: await listLibrariesForSubject(db, access.sub),
+    orphans: can(access, "records.write") ? await listOrphanLibraries(db) : [],
+    activeLibraryId: libraryId,
+    csrf: access.csrf,
+    canAddLibrary: can(access, "records.write"),
   };
 }
 
@@ -74,7 +92,11 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       res.status(404).send(errorPage("Library not found."));
       return;
     }
-    const structured = item.policy
+    const tableValues =
+      library.schema.starter === "table" ? parseTableValues(item.details) : undefined;
+    const structured = tableValues
+      ? { control: tableControl(library.schema.fields, tableValues), parts: tableParts(library.schema.fields, tableValues) }
+      : item.policy
       ? { control: policyControl(item.policy), parts: policyBody(item.policy) }
       : item.procedure
         ? { control: procedureControl(item.procedure), parts: procedureBody(item.procedure) }
@@ -89,6 +111,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
           })),
         )
       : undefined;
+    const shell = await itemShell(db, access, library.id);
     res.send(
       itemPage({
         access: libraryAccess,
@@ -98,6 +121,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
         html,
         control,
         sections,
+        shell,
         notice,
       }),
     );
@@ -124,7 +148,8 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       res.status(404).send(errorPage("Library not found."));
       return;
     }
-    res.send(editPage({ access: libraryAccess, csrf: access.csrf, item, library }));
+    const shell = await itemShell(db, access, library.id);
+    res.send(editPage({ access: libraryAccess, csrf: access.csrf, item, library, shell }));
   });
 
   app.post("/items/:id", async (req, res) => {
@@ -148,8 +173,9 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       res.status(404).send(errorPage("Library not found."));
       return;
     }
-    const parsed = parseLibraryItem(req.body, library.template);
+    const parsed = parseLibraryItem(req.body, library);
     if (!parsed.success) {
+      const shell = await itemShell(db, access, library.id);
       res.status(400).send(
         editPage({
           access: libraryAccess,
@@ -157,6 +183,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
           item,
           library,
           error: parsed.error.issues[0]?.message ?? "Invalid item",
+          shell,
         }),
       );
       return;

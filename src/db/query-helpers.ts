@@ -9,7 +9,7 @@ export type SqlItem = {
   id: string;
   library_id: string;
   name: string;
-  labels: string;
+  labels: string | string[];
   summary: string;
   body: string;
   details: string | null;
@@ -21,7 +21,23 @@ export type SqlItem = {
   updated_at: number;
 };
 
-export function parseLabels(raw: string): string[] {
+/**
+ * Item columns for reads. Excludes generated search_tsv so Open item does not
+ * pull the full-text document blob over the wire.
+ */
+export const ITEM_COLUMNS =
+  "id, library_id, name, labels, summary, body, details, status, published_snapshot, created_by, updated_by, created_at, updated_at";
+
+/** Hard caps so callers cannot ask Postgres for unbounded pages. */
+export const LIST_LIMIT_MAX = 200;
+export const LIST_OFFSET_MAX = 10_000;
+
+/** Labels may arrive as JSON text or a parsed array (Postgres JSONB). */
+export function parseLabels(raw: string | string[] | null | undefined): string[] {
+  if (Array.isArray(raw)) {
+    return raw.filter((entry): entry is string => typeof entry === "string");
+  }
+  if (typeof raw !== "string" || !raw) return [];
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];

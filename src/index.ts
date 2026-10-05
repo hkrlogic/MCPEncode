@@ -26,7 +26,7 @@ async function main(): Promise<void> {
     console.log(`MCPEncode MCP ${config.publicBaseUrl}/libraries/{id}/mcp`);
     console.log(`Issuer   ${config.authIssuer} (${config.authMode})`);
     console.log(
-      `MariaDB ${config.database.host}:${config.database.port}/${config.database.database}`,
+      `Postgres ${config.database.host}:${config.database.port}/${config.database.database}`,
     );
     if (legacySqliteFilePresent()) {
       console.log("data/mpos.db is unused. Delete the data folder when you want the space back.");

@@ -2,17 +2,21 @@
 import type express from "express";
 import { accessFromLibraryRole, can, type Access, type LibraryRole } from "../../auth/rbac.ts";
 import {
+  addDraftItem,
+  approveTableProposal,
   countLibraryAccess,
+  countLibraryItems,
   createLibrary,
-  createItem,
   deleteLibrary,
   getLibrary,
   getLibraryAccess,
+  rejectTableProposal,
   grantLibraryAccess,
   listLibrariesForSubject,
   listLibraryAccess,
   listOrphanLibraries,
   listItems,
+  publishItems,
   revokeLibraryAccess,
   writeAudit,
   type LibraryAccessRow,
@@ -21,8 +25,8 @@ import {
 import { libraryInputSchema } from "../../items/schema.ts";
 import {
   formString,
+  formToItemWrite,
   libraryTemplateFromForm,
-  parseLibraryItem,
   requireCsrf,
   sessionAccess,
 } from "../helpers.ts";
@@ -31,6 +35,27 @@ import { addItemPage, errorPage, librariesPage, libraryPage, loginPage } from ".
 import type { AppRouteContext } from "./context.ts";
 
 type SessionUser = Access & { csrf: string };
+
+/** Fixed copy for ?table=. Query text is never echoed. */
+function tableDecisionNotice(flag: unknown): string | undefined {
+  if (flag === "approved") {
+    return "Table approved. Reconnect this library’s MCP link so agents see the new columns. New items stay Pending until you Publish.";
+  }
+  if (flag === "rejected") return "Table proposal rejected. The library is unchanged.";
+  if (flag === "blocked") {
+    return "This library already has items, so the table was not approved. Reject the proposal, or approve a table on an empty library.";
+  }
+  if (flag === "missing") return "No table is waiting for approval.";
+  if (flag === "unreadable") return "That table proposal could not be read, so it was not approved. Reject it and propose again.";
+  return undefined;
+}
+
+async function publisherShell(db: AppRouteContext["db"], access: SessionUser) {
+  return {
+    shellLibraries: await listLibrariesForSubject(db, access.sub),
+    shellOrphans: can(access, "records.write") ? await listOrphanLibraries(db) : [],
+  };
+}
 
 async function libraryContext(
   db: AppRouteContext["db"],
@@ -161,6 +186,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.status(403).send(errorPage("You do not have access to this library."));
       return;
     }
+    const shell = await publisherShell(db, access);
     if ("orphan" in ctxLib) {
       res.send(
         libraryPage({
@@ -170,11 +196,21 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           items: [],
           mcpUrl: libraryMcpUrl(config.publicBaseUrl, ctxLib.library.id),
           orphan: true,
+          ...shell,
         }),
       );
       return;
     }
     const q = typeof req.query.q === "string" ? req.query.q : undefined;
+    const publishedCount =
+      typeof req.query.published === "string" ? req.query.published : undefined;
+    const notice = tableDecisionNotice(req.query.table);
+    const waiting =
+      ctxLib.library.tableProposal != null || ctxLib.library.tableProposalUnreadable;
+    const itemCount =
+      can(ctxLib.libraryAccess, "records.write") && waiting
+        ? await countLibraryItems(db, ctxLib.library.id)
+        : 0;
     const items = await listItems(
       db,
       { library_id: ctxLib.library.id, q, limit: 200 },
@@ -193,8 +229,39 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         mcpUrl: libraryMcpUrl(config.publicBaseUrl, ctxLib.library.id),
         accessList,
         viewerSub: access.sub,
+        publishedCount,
+        notice,
+        itemCount,
+        ...shell,
       }),
     );
+  });
+
+  app.post("/libraries/:id/items/publish", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only publishers on this library can publish items."));
+      return;
+    }
+    const raw = (req.body as { item_id?: string | string[] } | undefined)?.item_id;
+    const ids = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    const published = await publishItems(db, ctxLib.library.id, ids, access.sub);
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.publish_bulk",
+      success: published.length > 0,
+      detail: `${ctxLib.library.id}:${published.length}`,
+    });
+    res.redirect(`/libraries/${ctxLib.library.id}?published=${published.length}`);
   });
 
   app.post("/libraries/:id/access", async (req, res) => {
@@ -237,6 +304,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         { publishedOnly: false },
       );
       const accessList = await listLibraryAccess(db, ctxLib.library.id);
+      const shell = await publisherShell(db, access);
       res.status(400).send(
         libraryPage({
           access: ctxLib.libraryAccess,
@@ -247,6 +315,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           accessList,
           viewerSub: access.sub,
           error: message,
+          ...shell,
         }),
       );
     }
@@ -285,6 +354,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         { publishedOnly: false },
       );
       const accessList = await listLibraryAccess(db, ctxLib.library.id);
+      const shell = await publisherShell(db, access);
       res.status(400).send(
         libraryPage({
           access: ctxLib.libraryAccess,
@@ -295,6 +365,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           accessList,
           viewerSub: access.sub,
           error: message,
+          ...shell,
         }),
       );
     }
@@ -334,6 +405,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         success: false,
         detail: ctxLib.library.id,
       });
+      const shell = await publisherShell(db, access);
       res.status(400).send(
         libraryPage({
           access: ctxLib.libraryAccess,
@@ -344,6 +416,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           accessList,
           viewerSub: access.sub,
           error: message,
+          ...shell,
         }),
       );
     }
@@ -364,7 +437,73 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.status(403).send(errorPage("Readers cannot add items."));
       return;
     }
-    res.send(addItemPage({ access: ctxLib.libraryAccess, csrf: access.csrf, library: ctxLib.library }));
+    const shell = await publisherShell(db, access);
+    res.send(
+      addItemPage({
+        access: ctxLib.libraryAccess,
+        csrf: access.csrf,
+        library: ctxLib.library,
+        shell: {
+          libraries: shell.shellLibraries,
+          orphans: shell.shellOrphans,
+          activeLibraryId: ctxLib.library.id,
+          csrf: access.csrf,
+          canAddLibrary: can(access, "records.write"),
+        },
+      }),
+    );
+  });
+
+  app.post("/libraries/:id/table/approve", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only a publisher on this library can approve a table."));
+      return;
+    }
+    const result = await approveTableProposal(db, ctxLib.library.id, access.sub);
+    const flag =
+      result.ok ? "approved" : result.reason === "has_items" ? "blocked" : result.reason === "unreadable" ? "unreadable" : "missing";
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.approve_table",
+      success: result.ok,
+      detail: ctxLib.library.id,
+    });
+    res.redirect(`/libraries/${ctxLib.library.id}?table=${flag}`);
+  });
+
+  app.post("/libraries/:id/table/reject", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only a publisher on this library can reject a table."));
+      return;
+    }
+    const removed = await rejectTableProposal(db, ctxLib.library.id, access.sub);
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.reject_table",
+      success: removed,
+      detail: ctxLib.library.id,
+    });
+    res.redirect(`/libraries/${ctxLib.library.id}?table=${removed ? "rejected" : "missing"}`);
   });
 
   app.post("/libraries/:id/items", async (req, res) => {
@@ -382,20 +521,33 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.status(403).send(errorPage("You cannot add items with this account."));
       return;
     }
-    const parsed = parseLibraryItem(req.body, ctxLib.library.template);
-    if (!parsed.success) {
+    const result = await addDraftItem(
+      db,
+      ctxLib.library.id,
+      formToItemWrite(req.body, ctxLib.library.schema),
+      access.sub,
+    );
+    if (!result.ok) {
+      const shell = await publisherShell(db, access);
+      const library = (await getLibrary(db, ctxLib.library.id)) ?? ctxLib.library;
       res.status(400).send(
         addItemPage({
           access: ctxLib.libraryAccess,
           csrf: access.csrf,
-          library: ctxLib.library,
-          error: parsed.error.issues[0]?.message ?? "Invalid item",
+          library,
+          error: result.message,
+          shell: {
+            libraries: shell.shellLibraries,
+            orphans: shell.shellOrphans,
+            activeLibraryId: ctxLib.library.id,
+            csrf: access.csrf,
+            canAddLibrary: can(access, "records.write"),
+          },
         }),
       );
       return;
     }
-    const row = await createItem(db, parsed.data, access.sub, ctxLib.library.id);
-    await writeAudit(db, { actorSub: access.sub, tool: "ui.create", success: true, detail: row.id });
-    res.redirect(`/items/${row.id}?notice=created`);
+    await writeAudit(db, { actorSub: access.sub, tool: "ui.create", success: true, detail: result.item.id });
+    res.redirect(`/items/${result.item.id}?notice=created`);
   });
 }

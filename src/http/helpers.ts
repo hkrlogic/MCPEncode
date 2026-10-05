@@ -4,6 +4,7 @@ import type { AppConfig } from "../config.ts";
 import { accessFromIdentity, type Access } from "../auth/rbac.ts";
 import { readSession } from "../auth/session.ts";
 import { itemInputSchema, parseLabelField } from "../items/schema.ts";
+import type { ItemWriteInput, LibrarySchema } from "../items/library-schema.ts";
 import {
   itemForLibrary,
   type LibraryTemplate,
@@ -58,28 +59,40 @@ export function libraryTemplateFromForm(value: string): LibraryTemplate {
   return "general";
 }
 
-export function parseLibraryItem(body: unknown, template: LibraryTemplate) {
-  if (template === "general") return parseItem(body);
-  const saved = itemForLibrary(template, {
+/** Form fields for one library. General keeps the markdown body; other schemas use their columns. */
+export function formToItemWrite(body: unknown, schema: LibrarySchema): ItemWriteInput {
+  if (schema.starter === "general") {
+    return {
+      name: formString(body, "name"),
+      body: combineSummaryAndBody(
+        formString(body, "summary"),
+        [formString(body, "body"), formString(body, "description")].filter((part) => part.trim()).join("\n\n"),
+      ),
+      labels: parseLabelField(formString(body, "labels")),
+    };
+  }
+  const input: ItemWriteInput = {
     name: formString(body, "name"),
     summary: formString(body, "summary"),
-    owner: formString(body, "owner"),
-    approved_by: formString(body, "approved_by"),
-    version: formString(body, "version"),
-    effective_date: formString(body, "effective_date"),
-    review_date: formString(body, "review_date"),
-    purpose: formString(body, "purpose"),
-    scope: formString(body, "scope"),
-    policy: formString(body, "policy"),
-    responsibilities: formString(body, "responsibilities"),
-    exceptions: formString(body, "exceptions"),
-    references: formString(body, "references"),
-    related_policy: formString(body, "related_policy"),
-    when_to_use: formString(body, "when_to_use"),
-    steps: formString(body, "steps"),
-    who: formString(body, "who"),
     labels: parseLabelField(formString(body, "labels")),
-  });
+  };
+  for (const field of schema.fields) {
+    input[field.key] = formString(body, field.key);
+  }
+  if (schema.fields.some((field) => field.key === "policy")) {
+    input.rule = formString(body, "rule");
+  }
+  return input;
+}
+
+export function parseLibraryItem(
+  body: unknown,
+  library: { template: LibraryTemplate; schema: LibrarySchema },
+) {
+  if (library.schema.starter === "general") {
+    return parseItem(body);
+  }
+  const saved = itemForLibrary(library.schema, formToItemWrite(body, library.schema));
   if (!saved.ok) {
     return { success: false as const, error: { issues: [{ message: saved.message }] } };
   }

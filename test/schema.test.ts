@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { itemInputSchema, parseLabelField, excerptOf } from "../src/items/schema.ts";
+import {
+  createLibraryInputSchema,
+  itemInputSchema,
+  parseLabelField,
+  excerptOf,
+} from "../src/items/schema.ts";
 
 test("parses comma-separated tags into a unique lowercase list", () => {
   assert.deepEqual(parseLabelField("Ops, poc, OPS"), ["ops", "poc"]);
@@ -36,4 +41,11 @@ test("accepts a long Markdown description", () => {
   });
   assert.ok(result.body.length > 300);
   assert.match(result.body, /Step two/);
+});
+
+test("create_library requires a schema starter", () => {
+  const missing = createLibraryInputSchema.safeParse({ name: "Windows patching" });
+  assert.equal(missing.success, false);
+  const ok = createLibraryInputSchema.parse({ name: "Windows patching", schema: "procedure" });
+  assert.equal(ok.schema, "procedure");
 });

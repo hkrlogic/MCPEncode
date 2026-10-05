@@ -26,7 +26,7 @@ Items: `draft` → `published` (optional `archived`). Readonly MCP only sees pub
 
 ```bash
 cd ~/MCPEncode
-docker compose up -d mariadb
+docker compose up -d postgres
 npm start
 ```
 

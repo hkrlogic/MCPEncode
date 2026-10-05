@@ -14,26 +14,34 @@ export async function writeAudit(
     crypto.randomUUID(),
     event.actorSub,
     event.tool,
-    event.success ? 1 : 0,
+    event.success,
     event.detail ?? "",
     Date.now(),
   );
 }
 
 export async function listAudit(db: Database, limit = 50): Promise<AuditRow[]> {
+  const capped = Math.min(Math.max(limit, 1), 100);
   const rows = await allRows<{
     id: string;
     actor_sub: string;
     tool: string;
-    success: number;
+    success: boolean;
     detail: string;
     created_at: number;
-  }>(db, "SELECT * FROM audit_events ORDER BY created_at DESC LIMIT ?", limit);
+  }>(
+    db,
+    `SELECT id, actor_sub, tool, success, detail, created_at
+     FROM audit_events
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    capped,
+  );
   return rows.map((row) => ({
     id: row.id,
     actor_sub: row.actor_sub,
     tool: row.tool,
-    success: Number(row.success) === 1,
+    success: row.success === true,
     detail: row.detail,
     created_at: row.created_at,
   }));

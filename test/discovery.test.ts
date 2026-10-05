@@ -16,7 +16,7 @@ const config: AppConfig = {
   sessionSecret: "x".repeat(32),
   database: {
     host: "127.0.0.1",
-    port: 3306,
+    port: 5432,
     user: "mpos",
     password: "local-test-only",
     database: "mpos",

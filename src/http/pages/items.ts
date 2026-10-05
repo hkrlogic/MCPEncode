@@ -1,8 +1,9 @@
 /** Add / view / edit item pages. */
 import { can, type Access } from "../../auth/rbac.ts";
 import type { ItemRow, LibraryRow } from "../../db/models.ts";
+import { parseTableValues } from "../../items/table-proposal.ts";
 import { labeledItemData } from "../../markdown/render.ts";
-import { itemFields, policyItemFields, procedureItemFields } from "./forms.ts";
+import { itemFields, policyItemFields, procedureItemFields, schemaItemFields } from "./forms.ts";
 import {
   editorScripts,
   esc,
@@ -12,23 +13,45 @@ import {
   publishDiff,
   spreadsheetHead,
   statusBadge,
+  type AppShell,
 } from "./layout.ts";
+
+function pageShell(
+  input: { csrf: string; access: Access; library: LibraryRow; shell?: AppShell },
+): AppShell | undefined {
+  if (input.shell) {
+    return { ...input.shell, activeLibraryId: input.library.id, csrf: input.csrf };
+  }
+  return undefined;
+}
 
 export function addItemPage(input: {
   access: Access;
   csrf: string;
   library: LibraryRow;
   error?: string;
+  shell?: AppShell;
 }): string {
-  const kind = input.library.template;
+  const kind = input.library.schema.starter;
+  const tableName = input.library.schema.tableName;
   const fields =
-    kind === "policy"
+    kind === "table"
+      ? schemaItemFields({
+          schema: input.library.schema,
+          name: "",
+          labels: "",
+          summary: "",
+          values: {},
+        })
+      : kind === "policy"
       ? policyItemFields({ name: "", labels: "", summary: "" })
       : kind === "procedure"
         ? procedureItemFields({ name: "", labels: "", summary: "" })
         : itemFields({ name: "", labels: "", body: "", summaryRequired: true });
   const hint =
-    kind === "policy"
+    kind === "table"
+      ? `Each item is one row${tableName ? ` of ${esc(tableName)}` : ""}. It stays Pending until you Publish.`
+      : kind === "policy"
       ? "Every policy has the same fields: who owns it, when it is in force, and what it requires."
       : kind === "procedure"
         ? "Every procedure has the same fields: which policy it carries out, when to start, the steps, and who does them."
@@ -38,9 +61,10 @@ export function addItemPage(input: {
     csrf: input.csrf,
     access: input.access,
     library: input.library,
+    shell: pageShell(input),
     extraHead: kind === "general" ? spreadsheetHead() : undefined,
     body: `
-      <p><a href="/libraries/${esc(input.library.id)}">← ${esc(input.library.name)}</a></p>
+      <p class="back"><a href="/libraries/${esc(input.library.id)}">${esc(input.library.name)}</a></p>
       <section class="panel">
         <h1>Add item</h1>
         ${hint ? `<p class="hint">${hint}</p>` : ""}
@@ -65,6 +89,7 @@ export function itemPage(input: {
   control?: { label: string; value: string }[];
   sections?: { heading: string; html: string }[];
   notice?: string;
+  shell?: AppShell;
 }): string {
   const canWrite = can(input.access, "records.write");
   const status = input.item.status;
@@ -137,6 +162,7 @@ export function itemPage(input: {
     csrf: input.csrf,
     access: input.access,
     library: input.library,
+    shell: pageShell(input),
     body: `
       <p class="back"><a href="/libraries/${esc(input.library.id)}">${esc(input.library.name)}</a></p>
       <article class="item">
@@ -174,6 +200,7 @@ export function editPage(input: {
   item: ItemRow;
   library: LibraryRow;
   error?: string;
+  shell?: AppShell;
 }): string {
   const publishBanner =
     input.item.status === "published"
@@ -186,9 +213,10 @@ export function editPage(input: {
     csrf: input.csrf,
     access: input.access,
     library: input.library,
+    shell: pageShell(input),
     extraHead: input.library.template === "general" ? spreadsheetHead() : undefined,
     body: `
-      <p><a href="/items/${esc(input.item.id)}">← Item</a></p>
+      <p class="back"><a href="/items/${esc(input.item.id)}">Item</a></p>
       <section class="panel">
         <h1>Edit item</h1>
         ${publishBanner}
@@ -196,7 +224,15 @@ export function editPage(input: {
         <form method="post" action="/items/${esc(input.item.id)}" class="capture">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
           ${
-            input.library.template === "policy"
+            input.library.schema.starter === "table"
+              ? schemaItemFields({
+                  schema: input.library.schema,
+                  name: input.item.name,
+                  labels: input.item.labels.join(", "),
+                  summary: input.item.summary,
+                  values: parseTableValues(input.item.details) ?? {},
+                })
+              : input.library.template === "policy"
               ? policyItemFields({
                   name: input.item.name,
                   labels: input.item.labels.join(", "),

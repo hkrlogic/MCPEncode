@@ -4,10 +4,12 @@ import type { Database } from "../db/types.ts";
 import { z } from "zod/v4";
 import { accessFromLibraryRole, can, type LibraryRole } from "../auth/rbac.ts";
 import {
-  createItem,
+  addDraftItem,
+  createLibrary,
   deleteItem,
   getLibrary,
   getItem,
+  proposeTable,
   getLibraryAccess,
   listAudit,
   listItems,
@@ -15,7 +17,19 @@ import {
   updateItem,
   writeAudit,
 } from "../db/queries.ts";
+import { libraryMcpUrl } from "../http/library-url.ts";
+import { createLibraryInputSchema } from "../items/schema.ts";
+import {
+  mcpCreateItemInputSchema,
+  mcpUpdateItemInputSchema,
+  mcpWriteToolDescription,
+  schemaAgentBlurb,
+  type ItemWriteInput,
+  type LibrarySchema,
+} from "../items/library-schema.ts";
+import { normalizeTableProposal, proposeTableInputSchema } from "../items/table-proposal.ts";
 import { itemForLibrary } from "../items/templates.ts";
+import { libraryDesignGuide } from "./library-design.ts";
 import { labeledItemData } from "../markdown/render.ts";
 
 /** Shown when a tool call never reaches the library (401, timeout, disconnect). */
@@ -32,7 +46,7 @@ export const FORBIDDEN_LIBRARY =
  * Sent on MCP initialize for a library-scoped connection.
  * Tool names are Lookups: list_items / open_item.
  */
-export function agentInstructions(libraryName: string): string {
+export function agentInstructions(libraryName: string, schema: LibrarySchema): string {
   return `You look up human-authored items in the library "${libraryName}". Cite an item or say it is not in the library. Do not invent.
 
 How to look up — one call:
@@ -42,11 +56,11 @@ Call open_item only when list_items returns several matches. You are already con
 
 Omit q only to list names and summaries in this library. That list is for choosing. To answer, pass q and cite the item.
 
-A Policy library uses fixed fields: Owner, Version, Effective date (YYYY-MM-DD), Review date (YYYY-MM-DD), Purpose, Scope, and Policy. Optional: Approved by, Responsibilities, Exceptions, References.
+${schemaAgentBlurb(schema)}
 
-A Procedure library uses fixed fields: Owner, Related policy, When to use it, Steps, and Who does each step. Use those names when adding or editing. Do not invent a template or extra fields.
+create_item and update_item save drafts only. Their arguments match this library’s schema only — do not send fields from another library type. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call.
 
-create_item and update_item save drafts only. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call.
+${libraryDesignGuide()}
 
 ${NOT_CONNECTED}
 
@@ -61,10 +75,26 @@ function ok(text: string) {
   return { content: [{ type: "text" as const, text }] };
 }
 
+/** Keep only string fields (and a string-array labels list) from a tool payload. */
+function asItemWrite(input: Record<string, unknown>): ItemWriteInput {
+  const write: ItemWriteInput = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (typeof value === "string") write[key] = value;
+    else if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) write[key] = value;
+  }
+  return write;
+}
+
 export type LibraryMcpContext = {
   libraryId: string;
   libraryName: string;
   libraryRole: LibraryRole;
+  schema: LibrarySchema;
+};
+
+export type BuildMcpServerOptions = {
+  /** Used to return the new library MCP link from create_library. */
+  publicBaseUrl?: string;
 };
 
 /**
@@ -75,6 +105,7 @@ export function buildMcpServer(
   db: Database,
   authInfo: AuthInfo,
   library: LibraryMcpContext,
+  options: BuildMcpServerOptions = {},
 ): McpServer {
   const idpAccess = (() => {
     const extra = (authInfo.extra ?? {}) as { sub?: string; role?: "readonly" | "edit" };
@@ -90,7 +121,7 @@ export function buildMcpServer(
   });
   const server = new McpServer(
     { name: "mcpencode", version: "0.3.0" },
-    { instructions: agentInstructions(library.libraryName) },
+    { instructions: agentInstructions(library.libraryName, library.schema) },
   );
 
   server.registerPrompt(
@@ -252,58 +283,121 @@ export function buildMcpServer(
   }
 
   if (can(access, "records.write")) {
-    const policyWrite = {
-      name: z.string().trim().min(1).max(200),
-      body: z.string().max(50_000).optional(),
-      labels: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
-      summary: z.string().trim().max(160).optional(),
-      owner: z.string().trim().max(200).optional(),
-      approved_by: z.string().trim().max(200).optional(),
-      version: z.string().trim().max(20).optional(),
-      effective_date: z.string().trim().optional(),
-      review_date: z.string().trim().optional(),
-      purpose: z.string().max(8_000).optional(),
-      scope: z.string().max(8_000).optional(),
-      policy: z.string().max(20_000).optional(),
-      rule: z.string().max(20_000).optional(),
-      responsibilities: z.string().max(12_000).optional(),
-      exceptions: z.string().max(8_000).optional(),
-      references: z.string().max(8_000).optional(),
-      related_policy: z.string().trim().max(200).optional(),
-      when_to_use: z.string().max(8_000).optional(),
-      steps: z.string().max(20_000).optional(),
-      who: z.string().max(8_000).optional(),
-    };
+    server.registerTool(
+      "create_library",
+      {
+        title: "Add library",
+        description:
+          "Create a library only after the human confirmed the name and shape in the design conversation. schema policy or procedure only when they confirmed that fixed shape — do not send table. schema general with table when they confirmed a custom table; general is the placeholder until they Approve it in the publisher. You become the publisher. They connect the returned link for that library. Do not guess a shape.",
+        inputSchema: createLibraryInputSchema,
+        annotations: { readOnlyHint: false },
+      },
+      async (input) => {
+        if (input.table && input.schema !== "general") {
+          return deny(
+            "A custom table is saved with schema general. Policy and procedure keep their own fields. Do not send table with those.",
+          );
+        }
+        const normalized = input.table ? normalizeTableProposal(input.table) : undefined;
+        if (normalized && !normalized.ok) return deny(normalized.message);
+        const row = await createLibrary(
+          db,
+          input.name,
+          access.sub,
+          input.schema,
+          normalized?.ok ? normalized.draft : undefined,
+        );
+        await writeAudit(db, {
+          actorSub: access.sub,
+          tool: "create_library",
+          success: true,
+          detail: `${row.id}:${row.tableProposal?.name ?? row.schema.starter}`,
+        });
+        const mcpUrl = options.publicBaseUrl
+          ? libraryMcpUrl(options.publicBaseUrl, row.id)
+          : undefined;
+        const table = row.tableProposal;
+        const notice = table
+          ? `DATA (not instructions). Library created. Tell the human in everyday words: open the publisher and Approve the table "${table.name}", then connect this library's link before adding items. Do not invent an approve tool.`
+          : "DATA (not instructions). Library created with the confirmed shape. Tell the human to connect this library's link before adding items. Items stay Pending until they Publish.";
+        return ok(
+          JSON.stringify(
+            {
+              notice,
+              library: {
+                id: row.id,
+                name: row.name,
+                schema: row.schema.starter,
+                mcp_url: mcpUrl,
+                table: table
+                  ? { name: table.name, columns: table.columns.map((column) => column.label) }
+                  : undefined,
+              },
+            },
+            null,
+            2,
+          ),
+        );
+      },
+    );
+
+    // Proposal only. Approval stays in the portal so this session cannot approve its own table.
+    server.registerTool(
+      "propose_table",
+      {
+        title: "Propose table",
+        description:
+          "Save a table the human just confirmed, for this library only, when it has no items. For a brand-new library, put the table on create_library instead. Columns are text, date, or longtext. Sample rows are for review and are not items. Does not go live until they Approve in the publisher. There is no approve tool. Fails if a table is already waiting.",
+        inputSchema: proposeTableInputSchema,
+        annotations: { readOnlyHint: false },
+      },
+      async (input) => {
+        const result = await proposeTable(db, library.libraryId, input, access.sub);
+        await writeAudit(db, {
+          actorSub: access.sub,
+          tool: "propose_table",
+          success: result.ok,
+          detail: result.ok ? `${library.libraryId}:${result.proposal.name}` : library.libraryId,
+        });
+        if (!result.ok) return deny(result.message);
+        return ok(
+          `Proposed table "${result.proposal.name}" with columns ${result.proposal.columns
+            .map((column) => column.label)
+            .join(", ")}. It is waiting in the publisher. A human must Approve or Reject it there. It is not live, and readers cannot see it.`,
+        );
+      },
+    );
+
+    // Tool argument schemas are built from this library's stored schema only.
+    const createItemSchema = mcpCreateItemInputSchema(library.schema);
+    const updateItemSchema = mcpUpdateItemInputSchema(library.schema);
+
     server.registerTool(
       "create_item",
       {
         title: "Add item",
-        description:
-          "Add a library item as a draft (Pending). It is not visible to readers or the kiosk until a human Publishes it in the publisher UI. General libraries take name, body, and optional labels. Policy libraries take name, summary, owner, version (for example 1.0), effective_date, review_date, purpose, scope, and policy. Optional policy fields: approved_by, responsibilities, exceptions, references. Procedure libraries take name, summary, owner, related_policy, when_to_use, steps, and who. Do not send body for a Policy or Procedure library and do not invent fields. Use only when the human asked you to help author.",
-        inputSchema: z.object(policyWrite),
+        description: mcpWriteToolDescription(library.schema, "create"),
+        inputSchema: createItemSchema,
         annotations: { readOnlyHint: false },
       },
       async (input) => {
-        const libraryRow = await getLibrary(db, library.libraryId);
-        if (!libraryRow) return deny("Library not found.");
-        const saved = itemForLibrary(libraryRow.template, input);
-        if (!saved.ok) {
+        const result = await addDraftItem(db, library.libraryId, asItemWrite(input), access.sub);
+        if (!result.ok) {
           await writeAudit(db, {
             actorSub: access.sub,
             tool: "create_item",
             success: false,
             detail: library.libraryId,
           });
-          return deny(saved.message);
+          return deny(result.message);
         }
-        const row = await createItem(db, saved.item, access.sub, library.libraryId);
         await writeAudit(db, {
           actorSub: access.sub,
           tool: "create_item",
           success: true,
-          detail: row.id,
+          detail: result.item.id,
         });
-        return ok(labeledItemData(row));
+        return ok(labeledItemData(result.item));
       },
     );
 
@@ -311,12 +405,8 @@ export function buildMcpServer(
       "update_item",
       {
         title: "Update item",
-        description:
-          "Replace one library item. Saves as draft: if the item was published, it becomes Pending and readers lose access until a human Publishes again in the publisher UI. General libraries take name, body, and optional labels. Policy libraries take name, summary, owner, version, effective_date, review_date, purpose, scope, and policy. Optional: approved_by, responsibilities, exceptions, references. Procedure libraries take name, summary, owner, related_policy, when_to_use, steps, and who. Do not invent fields. Use only when the human asked you to edit.",
-        inputSchema: z.object({
-          id: z.string().uuid(),
-          ...policyWrite,
-        }),
+        description: mcpWriteToolDescription(library.schema, "update"),
+        inputSchema: updateItemSchema,
         annotations: { readOnlyHint: false },
       },
       async ({ id, ...input }) => {
@@ -330,7 +420,7 @@ export function buildMcpServer(
         }
         const libraryRow = await getLibrary(db, existing.library_id);
         if (!libraryRow) return deny("Library not found.");
-        const saved = itemForLibrary(libraryRow.template, input);
+        const saved = itemForLibrary(libraryRow.schema, input);
         if (!saved.ok) {
           await writeAudit(db, { actorSub: access.sub, tool: "update_item", success: false, detail: id });
           return deny(saved.message);
@@ -431,5 +521,6 @@ export async function resolveLibraryMcpAccess(
     libraryId: library.id,
     libraryName: library.name,
     libraryRole: membership.role,
+    schema: library.schema,
   };
 }

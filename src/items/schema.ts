@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { proposeTableInputSchema } from "./table-proposal.ts";
 
 /** Shared item shape for the HTML form and MCP tools. */
 export const itemInputSchema = z.object({
@@ -21,7 +22,8 @@ export const listQuerySchema = z.object({
   library_name: z.string().trim().min(1).max(200).optional(),
   label: z.string().trim().min(1).max(40).optional(),
   q: z.string().trim().min(1).max(200).optional(),
-  limit: z.number().int().min(1).max(50).optional(),
+  // UI may page up to 200; MCP tools keep a tighter max in their own schemas.
+  limit: z.number().int().min(1).max(200).optional(),
   offset: z.number().int().min(0).max(10_000).optional(),
 });
 
@@ -35,15 +37,27 @@ export const libraryInputSchema = z.object({
     .max(200, "Name must be 200 characters or fewer"),
 });
 
-/** MCP / API shape for adding a library. */
+/** Schema starters an agent or API must pick when adding a library. */
+export const LIBRARY_SCHEMA_STARTERS = ["general", "policy", "procedure"] as const;
+
+/** MCP / API shape for adding a library. Schema is chosen only after the design conversation. */
 export const createLibraryInputSchema = z.object({
   name: z
     .string()
     .trim()
     .min(1, "Name is required")
-    .max(200, "Name must be 200 characters or fewer"),
-  // Optional (not .default) — some MCP clients mishandle JSON Schema defaults.
-  template: z.enum(["general", "policy", "procedure"]).optional(),
+    .max(200, "Name must be 200 characters or fewer")
+    .describe("Library name the human confirmed"),
+  schema: z
+    .enum(LIBRARY_SCHEMA_STARTERS)
+    .describe(
+      "policy or procedure only after the human confirmed that fixed shape. general when table is set — general is the placeholder until they approve the table.",
+    ),
+  table: proposeTableInputSchema
+    .optional()
+    .describe(
+      "Confirmed table design. Send only with schema general, and only after the human confirmed the columns. Stored as a proposal they Approve in the publisher. Not saved as items.",
+    ),
 });
 
 export type CreateLibraryInput = z.infer<typeof createLibraryInputSchema>;

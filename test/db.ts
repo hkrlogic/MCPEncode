@@ -1,17 +1,19 @@
 import "dotenv/config";
 import { randomBytes } from "node:crypto";
-import mariadb, { type Connection } from "mariadb";
+import pg from "pg";
 import { assertDbIdentifier, loadDatabaseConfig, type DatabaseConfig } from "../src/config.ts";
 import { openDatabase, resetDatabaseCache } from "../src/db/client.ts";
 import type { Database } from "../src/db/types.ts";
+
+const { Client } = pg;
 
 const TEST_DATABASE = /^mpos_test_[a-f0-9]{16}$/;
 
 function adminPassword(): string {
   const password =
-    process.env.MARIADB_ROOT_PASSWORD?.trim() || process.env.MARIADB_ADMIN_PASSWORD?.trim() || "";
+    process.env.POSTGRES_ADMIN_PASSWORD?.trim() || process.env.POSTGRES_PASSWORD?.trim() || "";
   if (!password) {
-    throw new Error("Set MARIADB_ROOT_PASSWORD so tests can create a throwaway database");
+    throw new Error("Set POSTGRES_PASSWORD so tests can create a throwaway database");
   }
   return password;
 }
@@ -22,22 +24,20 @@ function assertTestDatabase(name: string): void {
   }
 }
 
-async function withAdmin<T>(
-  config: DatabaseConfig,
-  fn: (conn: Connection) => Promise<T>,
-): Promise<T> {
-  const conn = await mariadb.createConnection({
+async function withAdmin<T>(config: DatabaseConfig, fn: (client: pg.Client) => Promise<T>): Promise<T> {
+  const client = new Client({
     host: config.host,
     port: config.port,
-    user: process.env.MARIADB_ADMIN_USER?.trim() || "root",
+    user: process.env.POSTGRES_ADMIN_USER?.trim() || config.user,
     password: adminPassword(),
-    connectTimeout: 10_000,
-    permitLocalInfile: false,
+    database: "postgres",
+    connectionTimeoutMillis: 10_000,
   });
+  await client.connect();
   try {
-    return await fn(conn);
+    return await fn(client);
   } finally {
-    await conn.end();
+    await client.end();
   }
 }
 
@@ -49,24 +49,24 @@ export async function disposableDatabase(): Promise<{
   const base = loadDatabaseConfig();
   const database = `mpos_test_${randomBytes(8).toString("hex")}`;
   assertTestDatabase(database);
-  assertDbIdentifier(base.user, "MARIADB_USER");
+  assertDbIdentifier(base.user, "POSTGRES_USER");
   const config: DatabaseConfig = { ...base, database };
   let created = false;
-  await withAdmin(config, async (conn) => {
-    await conn.query(
-      `CREATE DATABASE \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-    );
+  await withAdmin(config, async (client) => {
+    await client.query(`CREATE DATABASE "${database}" OWNER "${base.user}"`);
     created = true;
-    await conn.query(`GRANT ALL PRIVILEGES ON \`${database}\`.* TO '${base.user}'@'%'`);
-    await conn.query("FLUSH PRIVILEGES");
   });
   return {
     config,
     cleanup: async () => {
       resetDatabaseCache();
       if (!created) return;
-      await withAdmin(config, async (conn) => {
-        await conn.query(`DROP DATABASE IF EXISTS \`${database}\``);
+      await withAdmin(config, async (client) => {
+        await client.query(
+          `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+          [database],
+        );
+        await client.query(`DROP DATABASE IF EXISTS "${database}"`);
       });
     },
   };

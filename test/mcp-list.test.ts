@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { createLibrary, grantLibraryAccess } from "../src/db/queries.ts";
+import { schemaForStarter } from "../src/items/library-schema.ts";
 import { withTestDatabase } from "./db.ts";
 import {
   FORBIDDEN_LIBRARY,
@@ -31,13 +32,22 @@ function registeredToolNames(server: ReturnType<typeof buildMcpServer>): string[
 }
 
 test("agent instructions are scoped to one library and use list_items / open_item", () => {
-  const text = agentInstructions("Windows patching");
+  const text = agentInstructions("Windows patching", schemaForStarter("policy"));
   assert.match(text, /Windows patching/);
   assert.match(text, /list_items with q/);
   assert.match(text, /Call open_item only when list_items returns several matches/);
   assert.match(text, /do not ask for a library name or library_id/i);
   assert.match(text, /Do not say MCP unless they do/);
   assert.match(text, /save drafts only/);
+  assert.match(text, /policy schema/i);
+  assert.match(text, /Owner/);
+  assert.match(text, /create_library/);
+  assert.match(text, /One question at a time/);
+  assert.match(text, /Purpose/);
+  assert.match(text, /one column at a time/i);
+  assert.match(text, /confirmed the design/);
+  assert.match(text, /propose_table/);
+  assert.match(text, /Do not invent an approve or reject tool/);
   assert.ok(text.includes(NOT_CONNECTED));
   assert.match(UNAUTHORIZED_MCP, /Not signed in/);
   assert.match(FORBIDDEN_LIBRARY, /cannot open this library/);
@@ -50,21 +60,26 @@ test("publisher MCP tools include create and update but not publish", async () =
       libraryId: library.id,
       libraryName: library.name,
       libraryRole: "publisher" as const,
+      schema: library.schema,
     };
     const editorTools = registeredToolNames(buildMcpServer(db, authFor("edit"), ctx));
     assert.ok(editorTools.includes("list_items"));
     assert.ok(editorTools.includes("open_item"));
     assert.ok(editorTools.includes("create_item"));
     assert.ok(editorTools.includes("update_item"));
+    assert.ok(editorTools.includes("create_library"));
     assert.equal(editorTools.includes("list_libraries"), false);
     assert.equal(editorTools.includes("list_records"), false);
     assert.equal(editorTools.includes("get_record"), false);
-    assert.equal(editorTools.includes("create_library"), false);
+    assert.ok(editorTools.includes("propose_table"));
+    assert.equal(editorTools.includes("approve_table"), false);
     assert.equal(editorTools.includes("publish_item"), false);
     const readerCtx = { ...ctx, libraryRole: "reader" as const };
     const readerTools = registeredToolNames(buildMcpServer(db, authFor("readonly"), readerCtx));
     assert.ok(readerTools.includes("list_items"));
     assert.equal(readerTools.includes("create_item"), false);
+    assert.equal(readerTools.includes("propose_table"), false);
+    assert.equal(readerTools.includes("create_library"), false);
   });
 });
 
@@ -85,6 +100,7 @@ test("MCP access requires a library access-list row for the subject", async () =
       libraryId: library.id,
       libraryName: "HR",
       libraryRole: "reader",
+      schema: schemaForStarter("general"),
     });
   });
 });
@@ -93,11 +109,14 @@ test("create_library grants the creator as publisher", async () => {
   await withTestDatabase(async (db) => {
     const row = await createLibrary(db, "Access control policy", "editor", "policy");
     assert.equal(row.template, "policy");
+    assert.equal(row.schema.starter, "policy");
+    assert.ok(row.schema.fields.some((field) => field.key === "policy"));
     const scoped = await resolveLibraryMcpAccess(db, authFor("edit", "editor"), row.id);
     assert.deepEqual(scoped, {
       libraryId: row.id,
       libraryName: row.name,
       libraryRole: "publisher",
+      schema: row.schema,
     });
   });
 });

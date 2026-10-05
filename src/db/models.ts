@@ -1,10 +1,19 @@
 /** Shared row and scope types for library/item DB access. */
+import type { LibrarySchema } from "../items/library-schema.ts";
+import type { TableProposal } from "../items/table-proposal.ts";
 import type { LibraryTemplate, PolicyDetails, ProcedureDetails } from "../items/templates.ts";
 
 export type LibraryRow = {
   id: string;
   name: string;
+  /** Starter id used when the library was created (UI kicker / copy). */
   template: LibraryTemplate;
+  /** Field contract copied from the starter at create, or from an approved table. */
+  schema: LibrarySchema;
+  /** Table waiting for a publisher to approve in the portal. Null when nothing is waiting. */
+  tableProposal: TableProposal | null;
+  /** JSON was present but not a valid proposal. Reject still clears it. */
+  tableProposalUnreadable: boolean;
   created_by: string;
   updated_by: string;
   created_at: number;

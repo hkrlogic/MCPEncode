@@ -1,8 +1,10 @@
 import { z } from "zod/v4";
-import { itemInputSchema, type ItemInput } from "./schema.ts";
+import { itemForLibrarySchema, type ItemWriteInput, type SavedItem } from "./library-schema.ts";
+
+export type { ItemWriteInput, SavedItem } from "./library-schema.ts";
 
 /** Library types. A library picks one. Items in it keep that shape. */
-export const LIBRARY_TEMPLATES = ["general", "policy", "procedure"] as const;
+export const LIBRARY_TEMPLATES = ["general", "policy", "procedure", "table"] as const;
 export type LibraryTemplate = (typeof LIBRARY_TEMPLATES)[number];
 
 export function isLibraryTemplate(value: string): value is LibraryTemplate {
@@ -123,124 +125,15 @@ export function policyBody(details: PolicyDetails): { label: string; text: strin
   }));
 }
 
-type WriteFields = {
-  name: string;
-  body?: string;
-  labels?: string[];
-  summary?: string;
-  owner?: string;
-  approved_by?: string;
-  version?: string;
-  effective_date?: string;
-  review_date?: string;
-  purpose?: string;
-  scope?: string;
-  policy?: string;
-  /** Earlier Policy items called the statement "rule". */
-  rule?: string;
-  responsibilities?: string;
-  exceptions?: string;
-  references?: string;
-  related_policy?: string;
-  when_to_use?: string;
-  steps?: string;
-  who?: string;
-};
-
-export type SavedItem = ItemInput & { summary?: string; details?: string | null };
-
-/** Turn a tool or form payload into the stored item for this library type. */
+/**
+ * Turn a tool or form payload into the stored item for this library.
+ * Prefer passing the library's stored schema; a starter id still works.
+ */
 export function itemForLibrary(
-  template: LibraryTemplate,
-  input: WriteFields,
+  schemaOrTemplate: import("./library-schema.ts").LibrarySchema | LibraryTemplate,
+  input: ItemWriteInput,
 ): { ok: true; item: SavedItem } | { ok: false; message: string } {
-  if (template === "policy") {
-    const parsed = policyItemSchema.safeParse({
-      name: input.name,
-      summary: input.summary ?? "",
-      owner: input.owner ?? "",
-      approved_by: input.approved_by ?? "",
-      version: input.version ?? "",
-      effective_date: input.effective_date ?? "",
-      review_date: input.review_date ?? "",
-      purpose: input.purpose ?? "",
-      scope: input.scope ?? "",
-      policy: input.policy?.trim() || input.rule?.trim() || "",
-      responsibilities: input.responsibilities ?? "",
-      exceptions: input.exceptions ?? "",
-      references: input.references ?? "",
-      labels: input.labels ?? [],
-    });
-    if (!parsed.success) {
-      const detail = parsed.error.issues[0]?.message ?? "Invalid policy";
-      return { ok: false, message: `${POLICY_FIELD_MESSAGE} ${detail}` };
-    }
-    const details: PolicyDetails = {
-      owner: parsed.data.owner,
-      approved_by: parsed.data.approved_by,
-      version: parsed.data.version,
-      effective_date: parsed.data.effective_date,
-      review_date: parsed.data.review_date,
-      purpose: parsed.data.purpose,
-      scope: parsed.data.scope,
-      policy: parsed.data.policy,
-      responsibilities: parsed.data.responsibilities,
-      exceptions: parsed.data.exceptions,
-      references: parsed.data.references,
-    };
-    return {
-      ok: true,
-      item: {
-        name: parsed.data.name,
-        body: formatPolicy(details),
-        labels: parsed.data.labels,
-        summary: parsed.data.summary,
-        details: JSON.stringify(details),
-      },
-    };
-  }
-  if (template === "procedure") {
-    const parsed = procedureItemSchema.safeParse({
-      name: input.name,
-      summary: input.summary ?? "",
-      owner: input.owner ?? "",
-      related_policy: input.related_policy ?? "",
-      when_to_use: input.when_to_use ?? "",
-      steps: input.steps ?? "",
-      who: input.who ?? "",
-      labels: input.labels ?? [],
-    });
-    if (!parsed.success) {
-      const detail = parsed.error.issues[0]?.message ?? "Invalid procedure";
-      return { ok: false, message: `${PROCEDURE_FIELD_MESSAGE} ${detail}` };
-    }
-    const details: ProcedureDetails = {
-      owner: parsed.data.owner,
-      related_policy: parsed.data.related_policy,
-      when_to_use: parsed.data.when_to_use,
-      steps: parsed.data.steps,
-      who: parsed.data.who,
-    };
-    return {
-      ok: true,
-      item: {
-        name: parsed.data.name,
-        body: formatProcedure(details),
-        labels: parsed.data.labels,
-        summary: parsed.data.summary,
-        details: JSON.stringify(details),
-      },
-    };
-  }
-  const parsed = itemInputSchema.safeParse({
-    name: input.name,
-    body: input.body ?? "",
-    labels: input.labels ?? [],
-  });
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid item" };
-  }
-  return { ok: true, item: { ...parsed.data, details: null } };
+  return itemForLibrarySchema(schemaOrTemplate, input);
 }
 
 /**
@@ -320,6 +213,7 @@ export function parsePolicyDetails(raw: string | null | undefined): PolicyDetail
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return undefined;
     const record = parsed as Record<string, unknown>;
+    if (record._kind === "table") return undefined;
     const owner = textField(record, "owner");
     const effective_date = textField(record, "effective_date");
     const policy = textField(record, "policy") || textField(record, "rule");
@@ -348,6 +242,7 @@ export function parseProcedureDetails(raw: string | null | undefined): Procedure
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return undefined;
     const record = parsed as Record<string, unknown>;
+    if (record._kind === "table") return undefined;
     const owner = textField(record, "owner");
     const related_policy = textField(record, "related_policy");
     const when_to_use = textField(record, "when_to_use");

@@ -29,7 +29,7 @@ test("policy text uses the fixed labels and no extra fields", () => {
   assert.doesNotMatch(text, /Rule:/);
   const rejected = itemForLibrary("policy", { name: "Remote access", body: "free text" });
   assert.equal(rejected.ok, false);
-  if (!rejected.ok) assert.match(rejected.message, /purpose/);
+  if (!rejected.ok) assert.match(rejected.message, /Unknown field|purpose/i);
   const earlyReview = itemForLibrary("policy", { ...remoteAccess, name: "Remote access", summary: "Guest network.", review_date: "2026-01-01" });
   assert.equal(earlyReview.ok, false);
 });

@@ -72,7 +72,7 @@ export async function listLibrariesForSubject(
      FROM libraries l
      INNER JOIN library_access a ON a.library_id = l.id
      WHERE a.subject = ?
-     ORDER BY l.name ASC`,
+     ORDER BY LOWER(l.name) ASC, l.name ASC`,
     subject,
   );
   return rows.map((row) => ({
@@ -91,7 +91,7 @@ export async function listOrphanLibraries(
      FROM libraries l
      LEFT JOIN library_access a ON a.library_id = l.id
      WHERE a.library_id IS NULL
-     ORDER BY l.name ASC`,
+     ORDER BY LOWER(l.name) ASC, l.name ASC`,
   );
 }
 
@@ -112,7 +112,8 @@ export async function grantLibraryAccess(
     db,
     `INSERT INTO library_access (library_id, subject, role, granted_by, created_at)
      VALUES (?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE role = VALUES(role), granted_by = VALUES(granted_by)`,
+     ON CONFLICT (library_id, subject)
+     DO UPDATE SET role = EXCLUDED.role, granted_by = EXCLUDED.granted_by`,
     input.libraryId,
     subject,
     input.role,
@@ -133,24 +134,27 @@ export async function revokeLibraryAccess(
   libraryId: string,
   subject: string,
 ): Promise<boolean> {
-  const existing = await getLibraryAccess(db, libraryId, subject);
-  if (!existing) return false;
-  if (existing.role === "publisher") {
-    const publishers = await getRow<{ n: number }>(
-      db,
-      `SELECT COUNT(*) AS n FROM library_access
-       WHERE library_id = ? AND role = 'publisher'`,
-      libraryId,
-    );
-    if (Number(publishers?.n ?? 0) <= 1) {
-      throw new Error("Keep at least one publisher on this library");
+  // One transaction so two concurrent revokes cannot drop the last publisher.
+  return db.transaction(async (tx) => {
+    const existing = await getLibraryAccess(tx, libraryId, subject);
+    if (!existing) return false;
+    if (existing.role === "publisher") {
+      const publishers = await getRow<{ n: number }>(
+        tx,
+        `SELECT COUNT(*) AS n FROM library_access
+         WHERE library_id = ? AND role = 'publisher'`,
+        libraryId,
+      );
+      if (Number(publishers?.n ?? 0) <= 1) {
+        throw new Error("Keep at least one publisher on this library");
+      }
     }
-  }
-  await runSql(
-    db,
-    "DELETE FROM library_access WHERE library_id = ? AND subject = ?",
-    libraryId,
-    subject,
-  );
-  return true;
+    await runSql(
+      tx,
+      "DELETE FROM library_access WHERE library_id = ? AND subject = ?",
+      libraryId,
+      subject,
+    );
+    return true;
+  });
 }

@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
  */
 export type AuthMode = "embedded" | "oidc";
 
-/** MariaDB connection. The password is never logged. */
+/** Postgres connection. The password is never logged. */
 export type DatabaseConfig = {
   host: string;
   port: number;
@@ -74,27 +74,47 @@ function parseAllowedHosts(raw: string | undefined): string[] {
   return hosts;
 }
 
+/** True for hosts that stay on this machine (local Docker publishes 127.0.0.1). */
+export function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost";
+}
+
+/**
+ * Remote Postgres must use TLS unless an operator explicitly opts out on a
+ * trusted private network (`POSTGRES_SSL=disable`).
+ */
+export function resolvePostgresSsl(host: string, sslEnv: string | undefined): boolean {
+  const mode = sslEnv?.trim().toLowerCase();
+  if (mode === "required") return true;
+  if (mode === "disable") return false;
+  if (isLoopbackHost(host)) return false;
+  throw new Error(
+    "POSTGRES_SSL must be set for a remote host: use POSTGRES_SSL=required (preferred) or POSTGRES_SSL=disable only on a trusted private network",
+  );
+}
+
 export function loadDatabaseConfig(): DatabaseConfig {
-  const port = Number(process.env.MARIADB_PORT ?? "3306");
+  const port = Number(process.env.POSTGRES_PORT ?? "5432");
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error("MARIADB_PORT must be an integer from 1 to 65535");
+    throw new Error("POSTGRES_PORT must be an integer from 1 to 65535");
   }
-  const host = process.env.MARIADB_HOST?.trim() || "127.0.0.1";
+  const host = process.env.POSTGRES_HOST?.trim() || "127.0.0.1";
   if (!host || /\s/.test(host) || host.length > 253) {
-    throw new Error("MARIADB_HOST is invalid");
+    throw new Error("POSTGRES_HOST is invalid");
   }
-  const user = assertDbIdentifier(process.env.MARIADB_USER?.trim() || "mpos", "MARIADB_USER");
+  const user = assertDbIdentifier(process.env.POSTGRES_USER?.trim() || "mpos", "POSTGRES_USER");
   const database = assertDbIdentifier(
-    process.env.MARIADB_DATABASE?.trim() || "mpos",
-    "MARIADB_DATABASE",
+    process.env.POSTGRES_DATABASE?.trim() || "mpos",
+    "POSTGRES_DATABASE",
   );
   return {
     host,
     port,
     user,
-    password: required("MARIADB_PASSWORD"),
+    password: required("POSTGRES_PASSWORD"),
     database,
-    ssl: process.env.MARIADB_SSL?.trim().toLowerCase() === "required",
+    ssl: resolvePostgresSsl(host, process.env.POSTGRES_SSL),
   };
 }
 

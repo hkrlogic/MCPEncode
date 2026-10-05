@@ -1,6 +1,6 @@
 /**
  * The small set of calls the rest of the app needs.
- * Callers never see the MariaDB driver, so the driver can change later
+ * Callers never see the Postgres driver, so the driver can change later
  * without a sweep through the HTTP and MCP code.
  */
 export type Database = {
