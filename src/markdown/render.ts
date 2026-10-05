@@ -76,6 +76,3 @@ export function labeledItemData(item: {
     .filter((line) => line !== "")
     .join("\n");
 }
-
-/** @deprecated Use labeledItemData. */
-export const labeledNoteData = labeledItemData;

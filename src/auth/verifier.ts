@@ -5,6 +5,7 @@ import { accessFromIdentity, resolveRole, type Access, type Role } from "./rbac.
 
 export type VerifierOptions = {
   issuer: string;
+  /** Expected token audience (library MCP URL, or publicBaseUrl for the web UI). */
   audience: string;
   jwksUrl?: string;
   /** Test hook: verify against a local key instead of a JWKS URL. */
@@ -47,6 +48,10 @@ export function accessFromAuthInfo(auth: AuthInfo): Access {
   });
 }
 
+/**
+ * Verify an access token for one expected audience.
+ * Library MCP mounts pass that library's MCP URL; the web login uses publicBaseUrl.
+ */
 export function createTokenVerifier(options: VerifierOptions): OAuthTokenVerifier {
   const jwks = options.localKey
     ? null

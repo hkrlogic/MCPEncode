@@ -20,13 +20,14 @@ export type DatabaseConfig = {
 export type AppConfig = {
   port: number;
   bindHost: string;
-  mcpResourceUrl: string;
+  /** Publisher origin. Library MCP URLs are `{publicBaseUrl}/libraries/{id}/mcp`. */
   publicBaseUrl: string;
-  /** Extra Host header names (custom domains) beyond publicBaseUrl / mcpResourceUrl. */
+  /** Extra Host header names (custom domains) beyond publicBaseUrl. */
   allowedHosts: string[];
   authMode: AuthMode;
   authIssuer: string;
   authJwksUrl: string;
+  /** Audience for the web UI login token (not a library MCP link). */
   authAudience: string;
   webClientId: string;
   sessionSecret: string;
@@ -53,7 +54,7 @@ function required(name: string): string {
 
 /**
  * Railway sets RAILWAY_PUBLIC_DOMAIN to the public hostname, with no scheme.
- * Used when MCP_RESOURCE_URL and PUBLIC_BASE_URL were not typed in by hand.
+ * Used when PUBLIC_BASE_URL was not typed in by hand.
  */
 function railwayPublicOrigin(): string | undefined {
   const domain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
@@ -99,20 +100,27 @@ export function loadDatabaseConfig(): DatabaseConfig {
 
 export function loadConfig(): AppConfig {
   const origin = railwayPublicOrigin();
-  const mcpResourceUrl = (process.env.MCP_RESOURCE_URL?.trim() || (origin ? `${origin}/mcp` : "")).replace(
-    /\/$/,
-    "",
-  );
-  if (!mcpResourceUrl) {
-    throw new Error(
-      "Missing MCP_RESOURCE_URL. On Railway, generate a public domain under Networking. Locally, set MCP_RESOURCE_URL.",
-    );
+  // MCP_RESOURCE_URL used to be the global /mcp address. Accept its origin only.
+  const legacyMcp = process.env.MCP_RESOURCE_URL?.trim();
+  let legacyOrigin: string | undefined;
+  if (legacyMcp) {
+    try {
+      legacyOrigin = new URL(legacyMcp).origin;
+    } catch {
+      legacyOrigin = undefined;
+    }
   }
   const publicBaseUrl = (
     process.env.PUBLIC_BASE_URL?.trim() ||
     origin ||
+    legacyOrigin ||
     "http://127.0.0.1:3000"
   ).replace(/\/$/, "");
+  if (!publicBaseUrl) {
+    throw new Error(
+      "Missing PUBLIC_BASE_URL. On Railway, generate a public domain under Networking. Locally, set PUBLIC_BASE_URL.",
+    );
+  }
   const onRailway = Boolean(process.env.RAILWAY_ENVIRONMENT?.trim() || origin);
   const authMode: AuthMode = process.env.AUTH_MODE === "oidc" ? "oidc" : "embedded";
   const authIssuer = (
@@ -131,7 +139,6 @@ export function loadConfig(): AppConfig {
   return {
     port: Number(process.env.PORT ?? "3000"),
     bindHost: process.env.BIND_HOST?.trim() || (onRailway ? "0.0.0.0" : "127.0.0.1"),
-    mcpResourceUrl,
     publicBaseUrl,
     allowedHosts: parseAllowedHosts(process.env.ALLOWED_HOSTS),
     authMode,
@@ -141,7 +148,7 @@ export function loadConfig(): AppConfig {
       (authMode === "embedded"
         ? `${authIssuer}/jwks`
         : `${authIssuer}/protocol/openid-connect/certs`),
-    authAudience: process.env.AUTH_AUDIENCE?.trim() || mcpResourceUrl,
+    authAudience: process.env.AUTH_AUDIENCE?.trim() || publicBaseUrl,
     webClientId: process.env.WEB_CLIENT_ID ?? "mpos-web",
     sessionSecret,
     database: loadDatabaseConfig(),

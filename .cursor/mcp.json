@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "publisher": {
-      "url": "http://127.0.0.1:3000/mcp",
+      "url": "http://127.0.0.1:3000/libraries/PASTE_LIBRARY_ID/mcp",
       "auth": {
         "CLIENT_ID": "mpos-mcp",
         "scopes": ["openid", "mpos:edit", "mpos:readonly"]

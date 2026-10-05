@@ -63,9 +63,6 @@ export function parseLabelField(raw: string | undefined): string[] {
   return labels;
 }
 
-/** @deprecated Use parseLabelField. */
-export const parseTagField = parseLabelField;
-
 export function excerptOf(text: string, max = 160): string {
   const flat = text.replace(/\s+/g, " ").trim();
   if (flat.length <= max) return flat;

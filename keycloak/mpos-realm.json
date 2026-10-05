@@ -79,18 +79,6 @@
       },
       "protocolMappers": [
         {
-          "name": "mpos-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.custom.audience": "http://127.0.0.1:3000/mcp",
-            "id.token.claim": "false",
-            "access.token.claim": "true",
-            "introspection.token.claim": "true"
-          }
-        },
-        {
           "name": "realm-roles",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-usermodel-realm-role-mapper",
@@ -132,7 +120,7 @@
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {
-            "included.custom.audience": "http://127.0.0.1:3000/mcp",
+            "included.custom.audience": "http://127.0.0.1:3000",
             "id.token.claim": "false",
             "access.token.claim": "true",
             "introspection.token.claim": "true"

@@ -55,7 +55,7 @@ test("authorize accepts a callback that was not on the old list", async () => {
   const config = {
     publicBaseUrl: "http://127.0.0.1:3000",
     authIssuer: "http://127.0.0.1:3000/id",
-    authAudience: "http://127.0.0.1:3000/mcp",
+    authAudience: "http://127.0.0.1:3000",
     webClientId: "mpos-web",
   } as AppConfig;
   const idp = await createEmbeddedIdp(config);

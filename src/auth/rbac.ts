@@ -1,16 +1,23 @@
 /**
- * Roles are what people are assigned in the identity provider.
- * Permissions are what tools and HTTP routes check. Adding a third role
- * later is a new row in ROLE_PERMISSIONS, not a rewrite of handlers.
+ * IdP roles (readonly / edit) gate sign-in and adding libraries.
+ * Library roles (reader / publisher) gate what someone may do inside one library.
+ * Permissions are what tools and HTTP routes check.
  */
 export const PERMISSIONS = ["records.read", "records.write", "records.delete", "audit.read"] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
 export type Role = "readonly" | "edit";
+/** Role on one library's access list. Independent of the IdP role. */
+export type LibraryRole = "reader" | "publisher";
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
   readonly: ["records.read", "audit.read"],
   edit: ["records.read", "audit.read", "records.write", "records.delete"],
+};
+
+export const LIBRARY_ROLE_PERMISSIONS: Record<LibraryRole, readonly Permission[]> = {
+  reader: ["records.read", "audit.read"],
+  publisher: ["records.read", "audit.read", "records.write", "records.delete"],
 };
 
 export type Access = {
@@ -18,10 +25,28 @@ export type Access = {
   clientId: string;
   role: Role;
   permissions: readonly Permission[];
+  /** Set when this access is scoped to one library's access list. */
+  libraryRole?: LibraryRole;
 };
 
 export function can(access: Access, permission: Permission): boolean {
   return access.permissions.includes(permission);
+}
+
+/** Map a library access-list role onto the Access shape handlers already check. */
+export function accessFromLibraryRole(input: {
+  sub: string;
+  clientId: string;
+  libraryRole: LibraryRole;
+}): Access {
+  const role: Role = input.libraryRole === "publisher" ? "edit" : "readonly";
+  return {
+    sub: input.sub,
+    clientId: input.clientId,
+    role,
+    libraryRole: input.libraryRole,
+    permissions: LIBRARY_ROLE_PERMISSIONS[input.libraryRole],
+  };
 }
 
 /**

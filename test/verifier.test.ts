@@ -7,7 +7,7 @@ import { createTokenVerifier } from "../src/auth/verifier.ts";
 import { accessFromAuthInfo } from "../src/auth/verifier.ts";
 
 const issuer = "http://127.0.0.1:8080/realms/mpos";
-const audience = "http://127.0.0.1:3000/mcp";
+const audience = "http://127.0.0.1:3000/libraries/00000000-0000-4000-8000-000000000001/mcp";
 
 test("accepts an audience-bound token with the editor role", async () => {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
@@ -38,7 +38,7 @@ test("rejects a token minted for a different audience", async () => {
   })
     .setProtectedHeader({ alg: "RS256" })
     .setIssuer(issuer)
-    .setAudience("http://evil.example/mcp")
+    .setAudience("http://evil.example/libraries/00000000-0000-4000-8000-000000000001/mcp")
     .setExpirationTime("5m")
     .sign(privateKey);
 

@@ -2,22 +2,23 @@
 
 This is the **publisher** surface (**MCPEncode**). It lives in `~/MCPEncode` and is separate from the kiosk workspace (`~/organization-chat`). GitHub: [hkrlogic/MCPEncode](https://github.com/hkrlogic/MCPEncode).
 
-A **POC** of a Model Context Protocol (MCP) server with real OAuth 2.1 login, two roles, libraries of items in MariaDB, and a localhost Markdown UI. MCP is the connector; the product words are library, item, and section.
+A **POC** of a Model Context Protocol (MCP) server with real OAuth 2.1 login, two roles, libraries of items in MariaDB, and a localhost Markdown UI. MCP is the connector; the product words are **library**, **item**, and **section**.
 
 OAuth 2.1 proves who you are. **MCPEncode** only checks the access token, maps the role to permissions, then lets Cursor and the browser use the same libraries.
 
-By default the POC runs a **development identity provider** in the same process (no Docker). That still uses authorization-code + PKCE and audience-bound JWTs. Point `AUTH_MODE=oidc` at Keycloak when Docker Desktop is running if you want an external issuer.
+By default the POC runs a **development identity provider** in the same process (no Docker IdP). That still uses authorization-code + PKCE and audience-bound JWTs. Point `AUTH_MODE=oidc` at Keycloak when Docker Desktop is running if you want an external issuer.
 
 ## What you get
 
 | Piece | Role |
 | --- | --- |
 | Identity | OAuth 2.1 authorization code + PKCE. MCPEncode never stores passwords. |
-| Roles | **read-only** and **edit**. Edit includes delete. |
-| Permissions | Tools and the UI check `records.read` / `records.write` / `records.delete` / `audit.read`, not the role name. |
-| MariaDB | Libraries and items live in database `mpos`. Each item belongs to a library and has a required summary and a status (`draft` or `published`). Reads and writes use `items`. The older `records` table is **frozen** (kept, not dropped; no new writes). |
-| Cursor | Streamable HTTP MCP at `http://127.0.0.1:3000/mcp`. |
-| Browser | `http://127.0.0.1:3000/` — Jspreadsheet CE grid (first row = titles) saved as Markdown tables. |
+| Roles | IdP **read-only** / **edit** for sign-in and adding libraries. Per library: **reader** / **publisher** on the access list (by IdP `sub`). |
+| Permissions | Tools and the UI check `records.read` / `records.write` / `records.delete` / `audit.read` from the library role. |
+| MariaDB | Libraries and items live in database `mpos`. Each item has a name, labels, a required summary, a body, and a status. Reads and writes use `items`. The older `records` table is **frozen** (kept, not dropped; no new writes). |
+| Status gate | Items: **Pending** (`draft`) → **Published** → optional **Archived**. Edit always saves a draft (published items unpublish on edit). Publish / unpublish / archive are UI actions. Readers and reader MCP only see published. |
+| Cursor | One MCP link per library: `http://127.0.0.1:3000/libraries/{id}/mcp` (copy from Open library). Global `/mcp` is retired. |
+| Browser | `http://127.0.0.1:3000/` — signed-out landing, then libraries you can open. General libraries use a Jspreadsheet CE grid (first row = titles) saved as Markdown tables; Policy and Procedure libraries use fixed fields. |
 
 Read-only callers never see write tools in Cursor, and the add/edit forms are omitted in the UI.
 
@@ -46,9 +47,9 @@ Demo users (change these before this is more than a laptop demo):
 
 ### Cursor
 
-`.cursor/mcp.json` points at `http://127.0.0.1:3000/mcp` with client id `mpos-mcp`. In **Settings → Tools & MCP**, connect **MCPEncode** (or the local server named in that config). Cursor will 401, discover the IdP, and open a browser login.
+Open a library in the publisher and copy its **MCP link**. Put that URL in `.cursor/mcp.json` (replace `PASTE_LIBRARY_ID`) with client id `mpos-mcp`. In **Settings → Tools & MCP**, connect **publisher**. Cursor will 401, discover the IdP, and open a browser login.
 
-Use `http://127.0.0.1:3000/mcp` consistently. `localhost` is a different token audience and login will fail.
+Use `127.0.0.1` consistently. `localhost` is a different token audience and login will fail. The token audience is that library URL.
 
 Cursor’s desktop OAuth return URL is `http://localhost:8787/callback`. Leave that port free while connecting (the kiosk does not use 8787; it returns to its own `/oauth/callback`). The built-in sign-in accepts that address, and any other client’s callback, without adding it to a list. The sign-in page shows where you will be sent back.
 
@@ -69,28 +70,30 @@ AUTH_ISSUER=http://127.0.0.1:8080/realms/mpos
 
 Keycloak admin: [http://127.0.0.1:8080](http://127.0.0.1:8080) (`admin` / `admin`).
 
-## MCP tools
+## MCP tools (Lookups)
+
+Each connection is one library. Lookups do not take a library name or id.
 
 | Tool | Permission | Returns |
 | --- | --- | --- |
-| `whoami` | any role | sub, role, permissions |
-| `list_libraries` | `records.read` | id, name, template for each library |
-| `list_records` | `records.read` | One library plus a question (`library_name` or `library_id`, and `q`). One clear match returns the full item. Several matches return short summaries. |
-| `get_record` | `records.read` | full Markdown for one id |
-| `create_library` | `records.write` | name, template (`general`, `policy`, or `procedure`) |
-| `create_record` / `update_record` | `records.write` | name, body / template fields, labels |
-| `delete_record` | `records.delete` | by id only |
+| `whoami` | any library role | sub, library, role, permissions |
+| `list_items` | `records.read` | Pass `q` to answer. One clear match returns the full item. Several matches return short summaries. Omit `q` to browse names and summaries. |
+| `open_item` | `records.read` | full Markdown for one id (when `list_items` returned several matches) |
+| `create_item` / `update_item` | `records.write` | name, body / template fields, labels — always saves as **draft** |
+| `delete_item` | `records.delete` | by id only |
 | `list_audit` | `audit.read` | who invoked which tool |
 
-There is no `run_sql` tool. Queries are parameterized in code.
+There is no publish tool and no `run_sql` tool. Publishing is a human action in the UI. Queries are parameterized in code.
 
 ## Security notes (why it is built this way)
 
 - In **oidc** mode MCPEncode is only a resource server and does not issue tokens. The default **embedded** mode runs a development IdP in-process (OAuth 2.1 + PKCE). Do not expose that to a network. MCP clients may return to any absolute callback URL (the browser sign-in for this app still returns only to its own `/callback`). The code is single-use and PKCE is required. Keycloak’s `mpos-mcp` client uses the same open callback list (`*`); import the realm again if Keycloak was already running with the old list.
-- Access tokens must pass signature, issuer, expiry, and **audience** = `MCP_RESOURCE_URL`.
-- The access token is never written to MariaDB. Only the user id (`sub`) is stored as `created_by` / `updated_by`.
+- Access tokens must pass signature, issuer, expiry, and **audience** = the library MCP URL (or `AUTH_AUDIENCE` / `PUBLIC_BASE_URL` for the web UI).
+- Library access is an allow-list of IdP subjects (`sub`) with reader or publisher role.
+- The access token is never written to MariaDB. Only the user id (`sub`) is stored as `created_by` / `updated_by` / access subjects.
+
 - Tool results label store content as **data**, not instructions (indirect prompt injection).
-- The Markdown preview **does not execute raw HTML** in notes.
+- The Markdown preview **does not execute raw HTML** in item bodies.
 - Pasted Word/Docs HTML is converted to Markdown before save.
 - The UI session is an httpOnly cookie. Forms carry a CSRF token.
 - The HTTP server binds to `127.0.0.1` by default. MariaDB is published on `127.0.0.1:3306`. The app connects as user `mpos`, not root. Queries stay parameterized. `LOAD DATA LOCAL` is off.
@@ -105,17 +108,21 @@ Verifier tests mint local JWTs and do not need Docker. Tests that touch librarie
 
 ## Layout
 
-- `src/auth/` — JWKS verifier, role → permission map, UI session
-- `migrations/` — SQL applied once on startup. Adds `items` and `publish_audit`. Does not drop `records`.
-- `src/db/` — MariaDB connection, migrations, and queries
-- `src/mcp/` — tools
-- `src/http/` — HTML UI and OAuth callback
+- `src/auth/` — JWKS verifier, role → permission map, UI session, embedded IdP
+- `src/db/` — MariaDB connection, migrations, and domain queries (`libraries`, `items`, `lookup`, `audit`); `queries.ts` is the public barrel
+- `src/http/` — Express composer (`app.ts`), `routes/` by URL area, `pages/` HTML renderers, OAuth helpers
+- `src/items/` — Zod schemas and Policy / Procedure templates
+- `src/markdown/` — sanitize, preview, table ↔ Markdown
+- `src/mcp/` — tools (search-then-fetch)
+- `migrations/` — SQL applied once on startup (`items`, status gate, full-text). Does not drop `records`.
+- `public/` — browser editor and styles
 - `keycloak/` — realm import (two users, two clients, audience mapper)
+- `AGENTS.md` — product vocabulary and run notes for agents
 
 ## Product freeze
 
-See `../AGENTS.md`. Short version: `items` is source of truth (`name`, `labels`, `summary`, `body`, `status`); do not write to `records`; keep live MCP tool names until a planned rename; sections become first-class later — do not invent a third body shape now.
+See `AGENTS.md`. Short version: `items` is source of truth (`name`, `labels`, `summary`, `body`, `status`); do not write to `records`; Lookups are `list_items` / `open_item` on a library MCP link; sections become first-class later — do not invent a third body shape now.
 
 ## Later (not this POC)
 
-TLS on a public bind, TLS to MariaDB when it is not on this machine, a third admin role, optimistic concurrency, soft-delete, drop frozen `records`, first-class sections.
+TLS on a public bind, TLS to MariaDB when it is not on this machine, org-admin role, optimistic concurrency, soft-delete, drop frozen `records`, first-class sections (Table, Checklist, Details, Description), editable Lookup names in the UI.

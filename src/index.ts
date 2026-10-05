@@ -23,7 +23,7 @@ async function main(): Promise<void> {
 
   app.listen(config.port, config.bindHost, () => {
     console.log(`MCPEncode UI  http://${config.bindHost}:${config.port}/`);
-    console.log(`MCPEncode MCP ${config.mcpResourceUrl}`);
+    console.log(`MCPEncode MCP ${config.publicBaseUrl}/libraries/{id}/mcp`);
     console.log(`Issuer   ${config.authIssuer} (${config.authMode})`);
     console.log(
       `MariaDB ${config.database.host}:${config.database.port}/${config.database.database}`,

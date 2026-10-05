@@ -66,7 +66,7 @@ function readSheet() {
   }
 }
 
-function syncNotes() {
+function syncBody() {
   if (!bodyField || !worksheet) return;
   const rows = readSheet();
   bodyField.value = markdownFromTable(rows[0] ?? [], rows.slice(1));
@@ -140,14 +140,14 @@ if (sheet && window.jspreadsheet) {
   const created = window.jspreadsheet(sheet, {
     parseHTML: false,
     toolbar: false,
-    onafterchanges: syncNotes,
-    onchange: syncNotes,
-    oninsertrow: syncNotes,
-    oninsertcolumn: syncNotes,
-    ondeleterow: syncNotes,
-    ondeletecolumn: syncNotes,
-    onundo: syncNotes,
-    onredo: syncNotes,
+    onafterchanges: syncBody,
+    onchange: syncBody,
+    oninsertrow: syncBody,
+    oninsertcolumn: syncBody,
+    ondeleterow: syncBody,
+    ondeletecolumn: syncBody,
+    onundo: syncBody,
+    onredo: syncBody,
     worksheets: [
       {
         data,
@@ -165,8 +165,8 @@ if (sheet && window.jspreadsheet) {
     ],
   });
   worksheet = Array.isArray(created) ? created[0] : created;
-  document.querySelector("form.capture")?.addEventListener("submit", syncNotes);
-  syncNotes();
+  document.querySelector("form.capture")?.addEventListener("submit", syncBody);
+  syncBody();
 }
 
 refreshPreview();

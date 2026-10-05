@@ -6,7 +6,7 @@ GitHub: `hkrlogic/MCPEncode`.
 
 ## Product
 
-You keep **libraries** of **items**. Auth is to a library. Each item has a **name**, **labels**, a **summary**, and **sections** (for now: markdown **body** plus policy/procedure templates). **Publish** a library so people and agents can look its items up.
+You keep **libraries** of **items**. Auth is to a library. Each item has a **name**, **labels**, a **summary**, and **sections** (for now: markdown **body** plus policy/procedure templates). **Publish** items in a library so people and agents can look them up.
 
 | Word | Meaning |
 | --- | --- |
@@ -30,8 +30,12 @@ docker compose up -d mariadb
 npm start
 ```
 
-Open `http://127.0.0.1:3000/`. MCP: `http://127.0.0.1:3000/mcp`.
+Open `http://127.0.0.1:3000/`. Each library has its own MCP link: `http://127.0.0.1:3000/libraries/{id}/mcp` (copy it from Open library). The global `/mcp` URL is retired.
+
+## Access
+
+Grant by IdP `sub` on each library (**reader** or **publisher**). Publishers manage that list. Agents connect with that library’s link only.
 
 ## Related
 
-Kiosk workspace: `~/organization-chat` — connect Settings to this publisher’s MCP URL.
+Kiosk workspace: `~/organization-chat` — connect Settings to a library MCP URL from this publisher.
