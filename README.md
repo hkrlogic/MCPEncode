@@ -78,12 +78,13 @@ Each connection is one library. Lookups do not take a library name or id.
 | --- | --- | --- |
 | `whoami` | any library role | sub, library, role, permissions |
 | `list_items` | `records.read` | Pass `q` to answer. One clear match returns the full item. Several matches return short summaries. Omit `q` to browse names and summaries. |
-| `open_item` | `records.read` | full Markdown for one id (when `list_items` returned several matches) |
-| `create_item` / `update_item` | `records.write` | name, body / template fields, labels — always saves as **draft** |
+| `open_item` | `records.read` | full item for one id (when `list_items` returned several matches) |
+| `get_schema` | `records.read` | published field schema for this library (empty if none) |
+| `create_item` / `update_item` | `records.write` | name + template fields, or name/summary/`fields` when a schema is published — always **draft** |
 | `delete_item` | `records.delete` | by id only |
 | `list_audit` | `audit.read` | who invoked which tool |
 
-There is no publish tool and no `run_sql` tool. Publishing is a human action in the UI. Queries are parameterized in code.
+There is no publish tool and no `run_sql` tool. Publishing items and schemas is a human action in the UI. Custom field values are typed rows in MariaDB; the schema is JSON field definitions, not DDL.
 
 ## Security notes (why it is built this way)
 
@@ -121,8 +122,8 @@ Verifier tests mint local JWTs and do not need Docker. Tests that touch librarie
 
 ## Product freeze
 
-See `AGENTS.md`. Short version: `items` is source of truth (`name`, `labels`, `summary`, `body`, `status`); do not write to `records`; Lookups are `list_items` / `open_item` on a library MCP link; sections become first-class later — do not invent a third body shape now.
+See `AGENTS.md`. Short version: `items` is source of truth (`name`, `labels`, `summary`, `body`, `status`); optional per-library schema + `item_field_values` typed rows; do not write to `records`; Lookups are `list_items` / `open_item` / `get_schema` on a library MCP link; sections become first-class later — do not invent a third body shape now.
 
 ## Later (not this POC)
 
-TLS on a public bind, TLS to MariaDB when it is not on this machine, org-admin role, optimistic concurrency, soft-delete, drop frozen `records`, first-class sections (Table, Checklist, Details, Description), editable Lookup names in the UI.
+TLS on a public bind, TLS to MariaDB when it is not on this machine, org-admin role, optimistic concurrency, soft-delete, drop frozen `records`, first-class sections (Table, Checklist, Details, Description), editable Lookup names in the UI, control-plane MCP to create libraries.

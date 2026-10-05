@@ -2,6 +2,7 @@
 import { can, type Access } from "../../auth/rbac.ts";
 import type { LibraryAccessRow } from "../../db/access.ts";
 import type { ItemSummary, LibraryRow } from "../../db/models.ts";
+import type { LibrarySchemaDoc } from "../../items/library-schema.ts";
 import { esc, itemListMarkup, kindKicker, layout } from "./layout.ts";
 
 export function librariesPage(input: {
@@ -139,6 +140,42 @@ function accessPanel(input: {
     </section>`;
 }
 
+function schemaPanel(input: {
+  library: LibraryRow;
+  csrf: string;
+  editableFields: LibrarySchemaDoc;
+  publishedVersion: number | null;
+  draftVersion: number | null;
+  schemaError?: string;
+  schemaNotice?: string;
+}): string {
+  const json = JSON.stringify({ fields: input.editableFields.fields }, null, 2);
+  const status =
+    input.publishedVersion !== null
+      ? `Published schema v${input.publishedVersion}${input.draftVersion !== null && input.draftVersion > input.publishedVersion ? ` · draft v${input.draftVersion} unsaved/unpublished` : ""}`
+      : input.draftVersion !== null
+        ? `Draft schema v${input.draftVersion} (not published yet)`
+        : "No schema yet — add fields and publish";
+  return `
+    <section class="library-schema" aria-labelledby="schema-heading">
+      <h2 id="schema-heading">Schema</h2>
+      <p class="hint">Field definitions for this library only (JSON). Types: string, number, date, enum, boolean. Publishing the schema does not run SQL — values are stored as typed rows. Agents call <code>get_schema</code>.</p>
+      <p class="meta">${esc(status)}</p>
+      ${input.schemaError ? `<p class="error" role="alert">${esc(input.schemaError)}</p>` : ""}
+      ${input.schemaNotice ? `<p class="notice" role="status">${esc(input.schemaNotice)}</p>` : ""}
+      <form method="post" action="/libraries/${esc(input.library.id)}/schema" class="capture">
+        <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+        <label>Fields JSON
+          <textarea name="fields_json" rows="14" required spellcheck="false">${esc(json)}</textarea>
+        </label>
+        <div class="gate-actions">
+          <button class="btn secondary" type="submit" name="action" value="save">Save draft</button>
+          <button class="btn" type="submit" name="action" value="publish">Publish schema</button>
+        </div>
+      </form>
+    </section>`;
+}
+
 export function libraryPage(input: {
   access: Access;
   csrf: string;
@@ -150,6 +187,13 @@ export function libraryPage(input: {
   accessList?: LibraryAccessRow[];
   viewerSub?: string;
   orphan?: boolean;
+  schema?: {
+    editableFields: LibrarySchemaDoc;
+    publishedVersion: number | null;
+    draftVersion: number | null;
+    error?: string;
+    notice?: string;
+  };
 }): string {
   if (input.orphan) {
     return layout({
@@ -242,6 +286,19 @@ export function libraryPage(input: {
       </p>
     </section>`;
 
+  const schemaBlock =
+    canWrite && input.schema
+      ? schemaPanel({
+          library: input.library,
+          csrf: input.csrf,
+          editableFields: input.schema.editableFields,
+          publishedVersion: input.schema.publishedVersion,
+          draftVersion: input.schema.draftVersion,
+          schemaError: input.schema.error,
+          schemaNotice: input.schema.notice,
+        })
+      : "";
+
   const accessBlock =
     canWrite && input.accessList && input.viewerSub
       ? accessPanel({
@@ -273,6 +330,7 @@ export function libraryPage(input: {
           </div>
         </header>
         ${mcpBlock}
+        ${schemaBlock}
         <form method="get" action="/libraries/${esc(input.library.id)}" class="search" role="search">
           <label class="sr-only" for="q">Search items</label>
           <input id="q" name="q" value="${esc(input.q ?? "")}" placeholder="Search items" autocomplete="off" autofocus>

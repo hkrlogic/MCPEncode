@@ -1,4 +1,5 @@
 /** HTML form field builders for add/edit item pages. */
+import type { SchemaField } from "../../items/library-schema.ts";
 import {
   EMPTY_TABLE,
   splitSummaryAndTable,
@@ -65,6 +66,78 @@ export function itemFields(input: {
           </label>
         </div>
         ${captureEditor(input.body, input.summaryRequired)}
+  `;
+}
+
+/** Item form driven by a published library schema (typed custom fields). */
+export function structuredItemFields(input: {
+  name: string;
+  labels: string;
+  summary: string;
+  schemaFields: SchemaField[];
+  values: Record<string, string | number | boolean>;
+}): string {
+  const custom = input.schemaFields
+    .map((field) => {
+      const raw = input.values[field.key];
+      const value = raw === undefined || raw === null ? "" : String(raw);
+      const req = field.required ? "required" : "";
+      if (field.type === "boolean") {
+        return `
+          <label class="check">
+            <input type="checkbox" name="field_${esc(field.key)}" value="true"${value === "true" ? " checked" : ""}>
+            ${esc(field.label)}
+          </label>`;
+      }
+      if (field.type === "enum") {
+        const options = (field.values ?? [])
+          .map(
+            (option) =>
+              `<option value="${esc(option)}"${option === value ? " selected" : ""}>${esc(option)}</option>`,
+          )
+          .join("");
+        return `
+          <label>${esc(field.label)}
+            <select name="field_${esc(field.key)}" ${req}>
+              <option value="">—</option>
+              ${options}
+            </select>
+          </label>`;
+      }
+      if (field.type === "date") {
+        return `
+          <label>${esc(field.label)}
+            <input type="date" name="field_${esc(field.key)}" ${req} value="${esc(value)}">
+          </label>`;
+      }
+      if (field.type === "number") {
+        return `
+          <label>${esc(field.label)}
+            <input type="number" name="field_${esc(field.key)}" ${req} value="${esc(value)}" step="any">
+          </label>`;
+      }
+      const max = field.max ?? 2000;
+      return `
+        <label>${esc(field.label)}
+          <input name="field_${esc(field.key)}" ${req} maxlength="${max}" value="${esc(value)}" autocomplete="off">
+        </label>`;
+    })
+    .join("");
+
+  return `
+        <div class="row">
+          <label>Name
+            <input name="name" required maxlength="200" value="${esc(input.name)}" autocomplete="off">
+          </label>
+          <label>Labels
+            <input name="labels" value="${esc(input.labels)}" placeholder="ops, poc" autocomplete="off">
+          </label>
+        </div>
+        ${summaryField(input.summary, true)}
+        <fieldset>
+          <legend>Fields</legend>
+          ${custom || `<p class="hint">This schema has no fields yet.</p>`}
+        </fieldset>
   `;
 }
 

@@ -6,7 +6,7 @@ GitHub: `hkrlogic/MCPEncode`.
 
 ## Product
 
-You keep **libraries** of **items**. Auth is to a library. Each item has a **name**, **labels**, a **summary**, and **sections** (for now: markdown **body** plus policy/procedure templates). **Publish** items in a library so people and agents can look them up.
+You keep **libraries** of **items**. Auth is to a library. Each item has a **name**, **labels**, a **summary**, and **sections** (for now: markdown **body** plus policy/procedure templates). A library may also publish a **schema** (field definitions); custom values are stored as typed rows. **Publish** items (and schemas) in a library so people and agents can look them up.
 
 | Word | Meaning |
 | --- | --- |
@@ -34,7 +34,7 @@ Open `http://127.0.0.1:3000/`. Each library has its own MCP link: `http://127.0.
 
 ## Access
 
-Grant by IdP `sub` on each library (**reader** or **publisher**). Publishers manage that list. Agents connect with that library’s link only.
+Grant by IdP `sub` on each library (**reader** or **publisher**). Publishers manage that list and may edit/publish the library schema in the UI. Agents connect with that library’s link only (`get_schema`, `list_items`, `open_item`).
 
 ## Related
 
