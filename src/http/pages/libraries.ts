@@ -139,7 +139,6 @@ function accessPanel(input: {
   csrf: string;
   accessList: LibraryAccessRow[];
   viewerSub: string;
-  error?: string;
 }): string {
   const rows =
     input.accessList.length === 0
@@ -162,9 +161,9 @@ function accessPanel(input: {
         </ul>`;
 
   return `
-    <section class="library-access">
+    <section class="library-access" aria-labelledby="access-heading">
+      <h2 id="access-heading" class="sr-only">Access</h2>
       <p class="hint">Grant by IdP subject (<code>sub</code>). Your subject is <code>${esc(input.viewerSub)}</code>.</p>
-      ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
       ${rows}
       <form method="post" action="/libraries/${esc(input.library.id)}/access" class="capture">
         <input type="hidden" name="csrf" value="${esc(input.csrf)}">
@@ -182,6 +181,24 @@ function accessPanel(input: {
     </section>`;
 }
 
+/** Publisher sections. Opening a library starts on the published item list. */
+type LibraryTab = "items" | "pending" | "archives" | "access";
+
+/** Tab links keep the current search so switching sections does not drop it. */
+function libraryTabHref(libraryId: string, tab: LibraryTab, q?: string): string {
+  const params = new URLSearchParams();
+  if (tab !== "items") params.set("tab", tab);
+  if (q) params.set("q", q);
+  const query = params.toString();
+  const path = `/libraries/${encodeURIComponent(libraryId)}`;
+  return esc(query ? `${path}?${query}` : path);
+}
+
+function tabBadge(count: number, tone: "pending" | "archive"): string {
+  if (count <= 0) return "";
+  return `<span class="tab-count tab-count-${tone}">${count}</span>`;
+}
+
 export function libraryPage(input: {
   access: Access;
   csrf: string;
@@ -189,6 +206,8 @@ export function libraryPage(input: {
   items: ItemSummary[];
   error?: string;
   q?: string;
+  /** Publisher section. Readers always see published items. */
+  tab?: LibraryTab;
   mcpUrl: string;
   accessList?: LibraryAccessRow[];
   viewerSub?: string;
@@ -257,6 +276,12 @@ export function libraryPage(input: {
   const pending = input.items.filter((row) => row.status === "draft");
   const archived = input.items.filter((row) => row.status === "archived");
   const emptySearch = input.q ? "No items match that search." : "No items yet.";
+  const requested = input.tab ?? "items";
+  // Readers only receive published items, so the other sections stay closed.
+  const tab: LibraryTab =
+    canWrite && (requested === "pending" || requested === "archives" || requested === "access")
+      ? requested
+      : "items";
   const bulkNotice =
     input.publishedCount && Number(input.publishedCount) > 0
       ? `<p class="notice" role="status">${esc(
@@ -266,26 +291,31 @@ export function libraryPage(input: {
         )}</p>`
       : "";
 
-  const pendingBlock =
+  const itemsPanel = `
+    <section class="library-items" aria-labelledby="items-heading">
+      <h2 id="items-heading" class="sr-only">Items</h2>
+      ${itemListMarkup(
+        canWrite ? published : input.items,
+        input.library.id,
+        input.q ? emptySearch : "No published items yet.",
+        false,
+      )}
+    </section>`;
+
+  const pendingPanel =
     pending.length === 0
       ? `
         <section class="library-items" aria-labelledby="pending-heading">
-          <div class="section-row">
-            <h2 id="pending-heading">Pending</h2>
-            <p class="count">0 items</p>
-          </div>
-          <p class="hint">Drafts waiting to be published. Not visible to the kiosk.</p>
-          ${itemListMarkup([], input.library.id, input.q ? emptySearch : "Nothing pending.", true)}
+          <h2 id="pending-heading" class="sr-only">Pending</h2>
+          <p class="hint library-tab-hint">Drafts waiting to be published. Not visible to the kiosk.</p>
+          ${itemListMarkup([], input.library.id, input.q ? emptySearch : "Nothing pending.", false)}
         </section>`
       : `
         <section class="library-items" aria-labelledby="pending-heading">
+          <h2 id="pending-heading" class="sr-only">Pending</h2>
           <form method="post" action="/libraries/${esc(input.library.id)}/items/publish" class="pending-publish" id="pending-publish">
             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-            <div class="section-row">
-              <h2 id="pending-heading">Pending</h2>
-              <p class="count">${pending.length === 1 ? "1 item" : `${pending.length} items`}</p>
-            </div>
-            <p class="hint">Drafts waiting to be published. Not visible to the kiosk. Select items and Publish when ready.</p>
+            <p class="hint library-tab-hint">Drafts waiting to be published. Not visible to the kiosk. Select items and Publish when ready.</p>
             <div class="pending-toolbar">
               <label class="pending-select-all">
                 <input type="checkbox" id="pending-select-all">
@@ -293,65 +323,61 @@ export function libraryPage(input: {
               </label>
               <button class="btn" type="submit" id="pending-publish-btn" disabled>Publish selected</button>
             </div>
-            ${itemListMarkup(pending, input.library.id, input.q ? emptySearch : "Nothing pending.", true, {
+            ${itemListMarkup(pending, input.library.id, input.q ? emptySearch : "Nothing pending.", false, {
               selectable: true,
             })}
           </form>
         </section>`;
 
-  const lists = canWrite
-    ? `
-        ${pendingBlock}
-        <section class="library-items" aria-labelledby="published-heading">
-          <div class="section-row">
-            <h2 id="published-heading">Published</h2>
-            <p class="count">${published.length === 1 ? "1 item" : `${published.length} items`}</p>
-          </div>
-          <p class="hint">Live for readers and the kiosk.</p>
-          ${itemListMarkup(published, input.library.id, input.q ? emptySearch : "No published items yet.", true)}
-        </section>
-        <section class="library-items library-archived" aria-labelledby="archived-heading">
-          <details>
-            <summary>
-              <span id="archived-heading">Archived</span>
-              <span class="count">${archived.length === 1 ? "1 item" : `${archived.length} items`}</span>
-            </summary>
-            ${itemListMarkup(archived, input.library.id, input.q ? emptySearch : "No archived items.", true)}
-          </details>
-        </section>`
-    : `
-        <section class="library-items" aria-labelledby="items-heading">
-          <div class="section-row">
-            <h2 id="items-heading" class="sr-only">Items</h2>
-            <p class="count">${input.items.length === 1 ? "1 item" : `${input.items.length} items`}</p>
-          </div>
-          ${itemListMarkup(input.items, input.library.id, emptySearch, false)}
-        </section>`;
-
-  const mcpBlock = `
-    <details class="library-mcp" aria-labelledby="mcp-heading">
-      <summary id="mcp-heading">MCP link</summary>
-      <p class="hint">Hand this link to Cursor or the kiosk for this library only. Sign-in still required; access list still applies.</p>
-      <p class="mcp-url"><code id="mcp-url">${esc(input.mcpUrl)}</code>
-        <button type="button" class="btn" data-copy="#mcp-url">Copy</button>
-      </p>
-    </details>`;
+  const archivesPanel = `
+    <section class="library-items" aria-labelledby="archives-heading">
+      <h2 id="archives-heading" class="sr-only">Archives</h2>
+      <p class="hint library-tab-hint">Hidden from the kiosk and from Pending.</p>
+      ${itemListMarkup(archived, input.library.id, input.q ? emptySearch : "No archived items.", false)}
+    </section>`;
 
   const accessBlock =
     canWrite && input.accessList && input.viewerSub
-      ? `<details class="library-access-wrap">
-          <summary>Access</summary>
-          ${accessPanel({
-            library: input.library,
-            csrf: input.csrf,
-            accessList: input.accessList,
-            viewerSub: input.viewerSub,
-            error: input.error,
-          })}
-        </details>`
-      : input.error
-        ? `<p class="error" role="alert">${esc(input.error)}</p>`
-        : "";
+      ? accessPanel({
+          library: input.library,
+          csrf: input.csrf,
+          accessList: input.accessList,
+          viewerSub: input.viewerSub,
+        })
+      : `<p class="empty">Access is managed by a publisher on this library.</p>`;
+
+  const panel =
+    tab === "pending" ? pendingPanel : tab === "archives" ? archivesPanel : tab === "access" ? accessBlock : itemsPanel;
+
+  const tabs = canWrite
+    ? `<nav class="library-tabs" aria-label="Library">
+        <a href="${libraryTabHref(input.library.id, "items", input.q)}"${tab === "items" ? ' aria-current="page"' : ""}>Items</a>
+        <a href="${libraryTabHref(input.library.id, "pending", input.q)}"${tab === "pending" ? ' aria-current="page"' : ""}>Pending${tabBadge(pending.length, "pending")}</a>
+        <a href="${libraryTabHref(input.library.id, "archives", input.q)}"${tab === "archives" ? ' aria-current="page"' : ""}>Archives${tabBadge(archived.length, "archive")}</a>
+        <a href="${libraryTabHref(input.library.id, "access", input.q)}"${tab === "access" ? ' aria-current="page"' : ""}>Access</a>
+      </nav>`
+    : "";
+
+  const search =
+    tab === "access"
+      ? ""
+      : `<form method="get" action="/libraries/${esc(input.library.id)}" class="search" role="search">
+          ${tab === "items" ? "" : `<input type="hidden" name="tab" value="${esc(tab)}">`}
+          <label class="sr-only" for="q">Search items</label>
+          <input id="q" name="q" value="${esc(input.q ?? "")}" placeholder="Search items" autocomplete="off">
+          <button type="submit">Search</button>
+        </form>`;
+
+  // The link stays in the header so publishers can copy it without leaving the item list.
+  const mcpBlock = `
+    <details class="mcp-menu">
+      <summary>MCP link</summary>
+      <div class="mcp-panel">
+        <p class="hint">Hand this link to Cursor or the kiosk for this library only. Sign-in is still required.</p>
+        <p class="mcp-url"><code id="mcp-url">${esc(input.mcpUrl)}</code></p>
+        <button type="button" class="btn secondary" data-copy="#mcp-url">Copy</button>
+      </div>
+    </details>`;
 
   return layout({
     title: `${input.library.name} · MCPEncode`,
@@ -367,21 +393,18 @@ export function libraryPage(input: {
             <h1>${esc(input.library.name)}</h1>
           </div>
           <div class="head-actions">
+            ${mcpBlock}
             ${addLink}
             ${deleteLibrary}
           </div>
         </header>
         ${input.notice ? `<p class="notice" role="status">${esc(input.notice)}</p>` : ""}
         ${bulkNotice}
+        ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
         ${canWrite ? tableProposalPanel({ library: input.library, csrf: input.csrf, itemCount: input.itemCount ?? 0 }) : ""}
-        <form method="get" action="/libraries/${esc(input.library.id)}" class="search" role="search">
-          <label class="sr-only" for="q">Search items</label>
-          <input id="q" name="q" value="${esc(input.q ?? "")}" placeholder="Search items" autocomplete="off">
-          <button type="submit">Search</button>
-        </form>
-        ${lists}
-        ${mcpBlock}
-        ${accessBlock}
+        ${tabs}
+        ${search}
+        ${panel}
       </div>
       <script>
         document.querySelectorAll("[data-copy]").forEach((btn) => {
@@ -390,11 +413,28 @@ export function libraryPage(input: {
             if (!el) return;
             try {
               await navigator.clipboard.writeText(el.textContent || "");
+              const previous = btn.textContent;
               btn.textContent = "Copied";
-              setTimeout(() => { btn.textContent = "Copy"; }, 1500);
-            } catch { /* ignore */ }
+              setTimeout(() => { btn.textContent = previous || "Copy"; }, 1500);
+            } catch { /* clipboard can be denied; the link stays visible */ }
           });
         });
+        (function mcpMenu() {
+          const menu = document.querySelector(".mcp-menu");
+          if (!menu) return;
+          document.addEventListener("click", (event) => {
+            if (!menu.open) return;
+            if (event.target instanceof Node && menu.contains(event.target)) return;
+            menu.open = false;
+          });
+          document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && menu.open) {
+              menu.open = false;
+              const summary = menu.querySelector("summary");
+              if (summary instanceof HTMLElement) summary.focus();
+            }
+          });
+        })();
         (function pendingSelect() {
           const form = document.getElementById("pending-publish");
           if (!form) return;
@@ -415,7 +455,8 @@ export function libraryPage(input: {
             sync();
           });
           form.addEventListener("change", (event) => {
-            if (event.target && event.target.name === "item_id") sync();
+            const target = event.target;
+            if (target instanceof HTMLInputElement && target.name === "item_id") sync();
           });
           sync();
         })();

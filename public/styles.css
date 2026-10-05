@@ -217,24 +217,40 @@ a { color: var(--accent); }
   margin: 0;
 }
 .nav-muted { color: var(--muted); font-size: 0.95rem; font-weight: 600; }
-.library-mcp,
-.library-access-wrap {
-  margin-top: 2rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-}
-.library-mcp > summary,
-.library-access-wrap > summary {
-  cursor: pointer;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
-  font-weight: 700;
-  font-size: 1rem;
+/* MCP link sits in the library header, beside Add item. */
+.mcp-menu { position: relative; }
+.mcp-menu > summary {
   list-style: none;
-  padding: 0.35rem 0;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--accent);
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-weight: 650;
 }
-.library-mcp > summary::-webkit-details-marker,
-.library-access-wrap > summary::-webkit-details-marker { display: none; }
-.library-access-wrap .library-access { margin-top: 0.75rem; }
+.mcp-menu > summary::-webkit-details-marker { display: none; }
+.mcp-menu > summary:hover { background: rgba(31, 77, 58, 0.06); }
+.mcp-menu > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.mcp-menu[open] > summary { background: rgba(31, 77, 58, 0.08); }
+.mcp-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 4;
+  width: min(28rem, calc(100vw - 2.5rem));
+  padding: 0.9rem 1rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(28, 25, 22, 0.1);
+}
+.mcp-panel .hint { margin: 0; }
+.mcp-panel .btn { margin-top: 0.15rem; }
 @media (max-width: 840px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -571,29 +587,63 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 }
 .library-head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  align-items: flex-start;
-  gap: 1.5rem;
-  margin: 0.25rem 0 2rem;
+  align-items: center;
+  gap: 0.85rem 1.5rem;
+  margin: 0.15rem 0 0.85rem;
 }
+.library-head > div:first-child { min-width: 0; flex: 1 1 12rem; }
 .library-head h1 {
   margin: 0;
   font-size: 2rem;
   line-height: 1.15;
   font-weight: 650;
 }
-.library-mcp,
-.library-access {
-  margin: 0 0 1.75rem;
-  padding: 1rem 0 0;
-  border-top: 1px solid var(--line);
-}
-.library-mcp h2,
+.library-access { margin: 0; }
 .library-access h2 {
   margin: 0 0 0.35rem;
   font-size: 1.05rem;
   font-weight: 650;
 }
+.library-tabs {
+  display: flex;
+  gap: 0.15rem;
+  margin: 0 0 1.15rem;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+}
+.library-tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0.35rem 0.85rem;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-weight: 650;
+  text-decoration: none;
+}
+.library-tabs a:hover { color: var(--ink); }
+.library-tabs a:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.library-tabs a[aria-current="page"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+.tab-count {
+  min-width: 1.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-align: center;
+}
+.tab-count-pending { background: #f3e6c8; color: #6a4f12; }
+.tab-count-archive { background: #e8e4dc; color: #5c564e; }
+.library-tab-hint { margin: 0 0 0.85rem; }
 .mcp-url {
   display: flex;
   flex-wrap: wrap;
@@ -672,7 +722,7 @@ button.linkish {
   padding: 0 1rem;
   cursor: pointer;
 }
-.head-actions { display: flex; align-items: center; gap: 0.5rem; }
+.head-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem; }
 .back { margin: 0 0 1rem; }
 .back a { text-decoration: none; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; }
 .item-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
@@ -884,24 +934,14 @@ fieldset.field-group legend { font-family: "Source Sans 3", "Segoe UI", sans-ser
 .diff-field { margin: 0 0 0.35rem; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; }
 .diff-before { border-left: 3px solid #b35c4a; margin-bottom: 0.35rem; }
 .diff-after { border-left: 3px solid #1f4d3a; }
-.library-archived { margin-top: 1.5rem; }
-.library-archived > details > summary {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 1rem;
-  cursor: pointer;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
-  font-weight: 650;
-  list-style: none;
-}
-.library-archived > details > summary::-webkit-details-marker { display: none; }
 .library-view .panel { margin-top: 2.5rem; }
 .library-view .panel h2 { font-size: 1.15rem; }
 @media (max-width: 720px) {
   .row, .editor { grid-template-columns: 1fr; }
   dl.details div { grid-template-columns: 1fr; gap: 0.1rem; }
   .library-head { flex-direction: column; align-items: stretch; }
+  .head-actions { justify-content: flex-start; }
+  .mcp-panel { right: auto; left: 0; }
   .add-panel > form { right: auto; left: 0; }
   .nav {
     flex-wrap: wrap;

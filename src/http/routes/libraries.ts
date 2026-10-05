@@ -36,6 +36,12 @@ import type { AppRouteContext } from "./context.ts";
 
 type SessionUser = Access & { csrf: string };
 
+/** Library sections. Unknown values fall back to the published item list. */
+function libraryTab(value: unknown): "items" | "pending" | "archives" | "access" {
+  if (value === "pending" || value === "archives" || value === "access") return value;
+  return "items";
+}
+
 /** Fixed copy for ?table=. Query text is never echoed. */
 function tableDecisionNotice(flag: unknown): string | undefined {
   if (flag === "approved") {
@@ -202,6 +208,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       return;
     }
     const q = typeof req.query.q === "string" ? req.query.q : undefined;
+    const tab = libraryTab(req.query.tab);
     const publishedCount =
       typeof req.query.published === "string" ? req.query.published : undefined;
     const notice = tableDecisionNotice(req.query.table);
@@ -226,6 +233,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         library: ctxLib.library,
         items,
         q,
+        tab,
         mcpUrl: libraryMcpUrl(config.publicBaseUrl, ctxLib.library.id),
         accessList,
         viewerSub: access.sub,
@@ -295,7 +303,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         success: true,
         detail: `${ctxLib.library.id}:${subject}:${role}`,
       });
-      res.redirect(`/libraries/${ctxLib.library.id}`);
+      res.redirect(`/libraries/${ctxLib.library.id}?tab=access`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not grant access";
       const items = await listItems(
@@ -315,6 +323,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           accessList,
           viewerSub: access.sub,
           error: message,
+          tab: "access",
           ...shell,
         }),
       );
@@ -345,7 +354,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         success: true,
         detail: `${ctxLib.library.id}:${subject}`,
       });
-      res.redirect(`/libraries/${ctxLib.library.id}`);
+      res.redirect(`/libraries/${ctxLib.library.id}?tab=access`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not revoke access";
       const items = await listItems(
@@ -365,6 +374,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           accessList,
           viewerSub: access.sub,
           error: message,
+          tab: "access",
           ...shell,
         }),
       );
