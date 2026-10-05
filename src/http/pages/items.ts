@@ -1,14 +1,8 @@
 /** Add / view / edit item pages. */
 import { can, type Access } from "../../auth/rbac.ts";
 import type { ItemRow, LibraryRow } from "../../db/models.ts";
-import type { SchemaField } from "../../items/library-schema.ts";
 import { labeledItemData } from "../../markdown/render.ts";
-import {
-  itemFields,
-  policyItemFields,
-  procedureItemFields,
-  structuredItemFields,
-} from "./forms.ts";
+import { itemFields, policyItemFields, procedureItemFields } from "./forms.ts";
 import {
   editorScripts,
   esc,
@@ -25,27 +19,16 @@ export function addItemPage(input: {
   csrf: string;
   library: LibraryRow;
   error?: string;
-  /** When set, the published library schema drives the form. */
-  schemaFields?: SchemaField[];
 }): string {
   const kind = input.library.template;
-  const structured = input.schemaFields && input.schemaFields.length > 0;
-  const fields = structured
-    ? structuredItemFields({
-        name: "",
-        labels: "",
-        summary: "",
-        schemaFields: input.schemaFields!,
-        values: {},
-      })
-    : kind === "policy"
+  const fields =
+    kind === "policy"
       ? policyItemFields({ name: "", labels: "", summary: "" })
       : kind === "procedure"
         ? procedureItemFields({ name: "", labels: "", summary: "" })
         : itemFields({ name: "", labels: "", body: "", summaryRequired: true });
-  const hint = structured
-    ? "This library uses a published schema. Field values are stored as typed rows."
-    : kind === "policy"
+  const hint =
+    kind === "policy"
       ? "Every policy has the same fields: who owns it, when it is in force, and what it requires."
       : kind === "procedure"
         ? "Every procedure has the same fields: which policy it carries out, when to start, the steps, and who does them."
@@ -55,7 +38,7 @@ export function addItemPage(input: {
     csrf: input.csrf,
     access: input.access,
     library: input.library,
-    extraHead: !structured && kind === "general" ? spreadsheetHead() : undefined,
+    extraHead: kind === "general" ? spreadsheetHead() : undefined,
     body: `
       <p><a href="/libraries/${esc(input.library.id)}">← ${esc(input.library.name)}</a></p>
       <section class="panel">
@@ -68,7 +51,7 @@ export function addItemPage(input: {
           <button class="btn" type="submit">Add item</button>
         </form>
       </section>
-      ${!structured && kind === "general" ? editorScripts() : ""}
+      ${kind === "general" ? editorScripts() : ""}
     `,
   });
 }
@@ -191,8 +174,6 @@ export function editPage(input: {
   item: ItemRow;
   library: LibraryRow;
   error?: string;
-  schemaFields?: SchemaField[];
-  fieldValues?: Record<string, string | number | boolean>;
 }): string {
   const publishBanner =
     input.item.status === "published"
@@ -200,55 +181,12 @@ export function editPage(input: {
       : input.item.status === "draft"
         ? `<p class="hint">This item is Pending. Publish from the item page when it is ready for the kiosk.</p>`
         : `<p class="hint">This item is Archived. Restore it before publishing.</p>`;
-  const structured = input.schemaFields && input.schemaFields.length > 0;
-  const fields = structured
-    ? structuredItemFields({
-        name: input.item.name,
-        labels: input.item.labels.join(", "),
-        summary: input.item.summary,
-        schemaFields: input.schemaFields!,
-        values: input.fieldValues ?? {},
-      })
-    : input.library.template === "policy"
-      ? policyItemFields({
-          name: input.item.name,
-          labels: input.item.labels.join(", "),
-          summary: input.item.summary,
-          owner: input.item.policy?.owner,
-          approvedBy: input.item.policy?.approved_by,
-          version: input.item.policy?.version,
-          effectiveDate: input.item.policy?.effective_date,
-          reviewDate: input.item.policy?.review_date,
-          purpose: input.item.policy?.purpose,
-          scope: input.item.policy?.scope,
-          policy: input.item.policy?.policy,
-          responsibilities: input.item.policy?.responsibilities,
-          exceptions: input.item.policy?.exceptions,
-          references: input.item.policy?.references,
-        })
-      : input.library.template === "procedure"
-        ? procedureItemFields({
-            name: input.item.name,
-            labels: input.item.labels.join(", "),
-            summary: input.item.summary,
-            owner: input.item.procedure?.owner,
-            relatedPolicy: input.item.procedure?.related_policy,
-            whenToUse: input.item.procedure?.when_to_use,
-            steps: input.item.procedure?.steps,
-            who: input.item.procedure?.who,
-          })
-        : itemFields({
-            name: input.item.name,
-            labels: input.item.labels.join(", "),
-            body: input.item.body,
-            summaryRequired: false,
-          });
   return layout({
     title: `Edit ${input.item.name} · MCPEncode`,
     csrf: input.csrf,
     access: input.access,
     library: input.library,
-    extraHead: !structured && input.library.template === "general" ? spreadsheetHead() : undefined,
+    extraHead: input.library.template === "general" ? spreadsheetHead() : undefined,
     body: `
       <p><a href="/items/${esc(input.item.id)}">← Item</a></p>
       <section class="panel">
@@ -257,11 +195,46 @@ export function editPage(input: {
         ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
         <form method="post" action="/items/${esc(input.item.id)}" class="capture">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-          ${fields}
+          ${
+            input.library.template === "policy"
+              ? policyItemFields({
+                  name: input.item.name,
+                  labels: input.item.labels.join(", "),
+                  summary: input.item.summary,
+                  owner: input.item.policy?.owner,
+                  approvedBy: input.item.policy?.approved_by,
+                  version: input.item.policy?.version,
+                  effectiveDate: input.item.policy?.effective_date,
+                  reviewDate: input.item.policy?.review_date,
+                  purpose: input.item.policy?.purpose,
+                  scope: input.item.policy?.scope,
+                  policy: input.item.policy?.policy,
+                  responsibilities: input.item.policy?.responsibilities,
+                  exceptions: input.item.policy?.exceptions,
+                  references: input.item.policy?.references,
+                })
+              : input.library.template === "procedure"
+                ? procedureItemFields({
+                    name: input.item.name,
+                    labels: input.item.labels.join(", "),
+                    summary: input.item.summary,
+                    owner: input.item.procedure?.owner,
+                    relatedPolicy: input.item.procedure?.related_policy,
+                    whenToUse: input.item.procedure?.when_to_use,
+                    steps: input.item.procedure?.steps,
+                    who: input.item.procedure?.who,
+                  })
+                : itemFields({
+                  name: input.item.name,
+                  labels: input.item.labels.join(", "),
+                  body: input.item.body,
+                  summaryRequired: false,
+                })
+          }
           <button class="btn" type="submit">Save</button>
         </form>
       </section>
-      ${!structured && input.library.template === "general" ? editorScripts() : ""}
+      ${input.library.template === "general" ? editorScripts() : ""}
     `,
   });
 }

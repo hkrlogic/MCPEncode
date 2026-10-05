@@ -74,9 +74,7 @@ export async function deleteLibrary(db: Database, id: string): Promise<boolean> 
       throw new Error("Keep at least one library");
     }
     await runSql(tx, "DELETE FROM publish_audit WHERE library_id = ?", id);
-    // item_field_values cascade from items; library_schemas cascade from libraries
     await runSql(tx, "DELETE FROM items WHERE library_id = ?", id);
-    await runSql(tx, "DELETE FROM library_schemas WHERE library_id = ?", id);
     await runSql(tx, "DELETE FROM libraries WHERE id = ?", id);
     return true;
   });

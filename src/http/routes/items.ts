@@ -8,16 +8,12 @@ import {
   getLibrary,
   getLibraryAccess,
   getItem,
-  getPublishedSchema,
-  listFieldValues,
   publishItem,
-  replaceFieldValues,
   restoreItem,
   unpublishItem,
   updateItem,
   writeAudit,
 } from "../../db/queries.ts";
-import { fieldValuesToMap } from "../../items/library-schema.ts";
 import {
   policyBody,
   policyControl,
@@ -25,7 +21,7 @@ import {
   procedureControl,
 } from "../../items/templates.ts";
 import { renderMarkdown } from "../../markdown/render.ts";
-import { parseLibraryItem, parseStructuredLibraryItem, requireCsrf, sessionAccess } from "../helpers.ts";
+import { parseLibraryItem, requireCsrf, sessionAccess } from "../helpers.ts";
 import { editPage, errorPage, itemPage } from "../pages.ts";
 import type { AppRouteContext } from "./context.ts";
 
@@ -78,28 +74,6 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       res.status(404).send(errorPage("Library not found."));
       return;
     }
-    const publishedSchema = await getPublishedSchema(db, item.library_id);
-    const typedValues = await listFieldValues(db, item.id);
-    if (publishedSchema && publishedSchema.fields.fields.length > 0) {
-      const map = fieldValuesToMap(typedValues);
-      const control = publishedSchema.fields.fields.map((field) => ({
-        label: field.label,
-        value: map[field.key] === undefined ? "" : String(map[field.key]),
-      }));
-      res.send(
-        itemPage({
-          access: libraryAccess,
-          csrf: access.csrf,
-          item,
-          library,
-          html: "",
-          control,
-          sections: [],
-          notice,
-        }),
-      );
-      return;
-    }
     const structured = item.policy
       ? { control: policyControl(item.policy), parts: policyBody(item.policy) }
       : item.procedure
@@ -150,18 +124,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       res.status(404).send(errorPage("Library not found."));
       return;
     }
-    const published = await getPublishedSchema(db, library.id);
-    const values = published ? fieldValuesToMap(await listFieldValues(db, item.id)) : undefined;
-    res.send(
-      editPage({
-        access: libraryAccess,
-        csrf: access.csrf,
-        item,
-        library,
-        schemaFields: published?.fields.fields,
-        fieldValues: values,
-      }),
-    );
+    res.send(editPage({ access: libraryAccess, csrf: access.csrf, item, library }));
   });
 
   app.post("/items/:id", async (req, res) => {
@@ -183,34 +146,6 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
     const library = await getLibrary(db, item.library_id);
     if (!library) {
       res.status(404).send(errorPage("Library not found."));
-      return;
-    }
-    const published = await getPublishedSchema(db, library.id);
-    if (published && published.fields.fields.length > 0) {
-      const parsed = parseStructuredLibraryItem(req.body, published.fields);
-      if (!parsed.success) {
-        res.status(400).send(
-          editPage({
-            access: libraryAccess,
-            csrf: access.csrf,
-            item,
-            library,
-            schemaFields: published.fields.fields,
-            fieldValues: fieldValuesToMap(await listFieldValues(db, item.id)),
-            error: parsed.error.issues[0]?.message ?? "Invalid item",
-          }),
-        );
-        return;
-      }
-      const wasPublished = item.status === "published";
-      const row = await updateItem(db, req.params.id, parsed.data.item, access.sub);
-      if (!row) {
-        res.status(404).send(errorPage("Item not found."));
-        return;
-      }
-      await replaceFieldValues(db, row.id, parsed.data.fieldRows);
-      await writeAudit(db, { actorSub: access.sub, tool: "ui.update", success: true, detail: row.id });
-      res.redirect(`/items/${row.id}${wasPublished ? "?notice=pending" : ""}`);
       return;
     }
     const parsed = parseLibraryItem(req.body, library.template);

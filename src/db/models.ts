@@ -1,6 +1,5 @@
 /** Shared row and scope types for library/item DB access. */
 import type { LibraryTemplate, PolicyDetails, ProcedureDetails } from "../items/templates.ts";
-import type { TypedFieldValue } from "../items/library-schema.ts";
 
 export type LibraryRow = {
   id: string;
@@ -37,8 +36,6 @@ export type ItemRow = {
   published_snapshot: PublishedSnapshot | null;
   policy?: PolicyDetails;
   procedure?: ProcedureDetails;
-  /** Custom field values when the library has a published schema. */
-  field_values?: TypedFieldValue[];
   created_by: string;
   updated_by: string;
   created_at: number;

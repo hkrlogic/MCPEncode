@@ -54,7 +54,6 @@ test("publisher MCP tools include create and update but not publish", async () =
     const editorTools = registeredToolNames(buildMcpServer(db, authFor("edit"), ctx));
     assert.ok(editorTools.includes("list_items"));
     assert.ok(editorTools.includes("open_item"));
-    assert.ok(editorTools.includes("get_schema"));
     assert.ok(editorTools.includes("create_item"));
     assert.ok(editorTools.includes("update_item"));
     assert.equal(editorTools.includes("list_libraries"), false);

@@ -5,11 +5,6 @@ import { accessFromIdentity, type Access } from "../auth/rbac.ts";
 import { readSession } from "../auth/session.ts";
 import { itemInputSchema, parseLabelField } from "../items/schema.ts";
 import {
-  fieldValuesToMap,
-  validateFieldValues,
-  type LibrarySchemaDoc,
-} from "../items/library-schema.ts";
-import {
   itemForLibrary,
   type LibraryTemplate,
 } from "../items/templates.ts";
@@ -90,43 +85,3 @@ export function parseLibraryItem(body: unknown, template: LibraryTemplate) {
   }
   return { success: true as const, data: saved.item };
 }
-
-/** Parse item + typed field values from a schema-driven form. */
-export function parseStructuredLibraryItem(body: unknown, schema: LibrarySchemaDoc) {
-  const name = formString(body, "name").trim();
-  const summary = formString(body, "summary").trim();
-  if (!name) {
-    return { success: false as const, error: { issues: [{ message: "Name is required" }] } };
-  }
-  if (!summary) {
-    return { success: false as const, error: { issues: [{ message: "Summary is required" }] } };
-  }
-  const fieldInput: Record<string, string | boolean> = {};
-  for (const field of schema.fields) {
-    const key = `field_${field.key}`;
-    if (field.type === "boolean") {
-      fieldInput[field.key] = formString(body, key) === "true";
-    } else {
-      fieldInput[field.key] = formString(body, key);
-    }
-  }
-  const validated = validateFieldValues(schema, fieldInput);
-  if (!validated.ok) {
-    return { success: false as const, error: { issues: [{ message: validated.message }] } };
-  }
-  return {
-    success: true as const,
-    data: {
-      item: {
-        name,
-        summary,
-        body: "",
-        labels: parseLabelField(formString(body, "labels")),
-        details: null as string | null,
-      },
-      fieldRows: validated.rows,
-    },
-  };
-}
-
-export { fieldValuesToMap };

@@ -39,12 +39,3 @@ export {
   grantLibraryAccess,
   revokeLibraryAccess,
 } from "./access.ts";
-export type { LibrarySchemaRow, LibrarySchemaStatus } from "./schemas.ts";
-export {
-  getPublishedSchema,
-  getDraftSchema,
-  getEditableSchema,
-  saveDraftSchema,
-  publishSchema,
-} from "./schemas.ts";
-export { listFieldValues, replaceFieldValues } from "./field-values.ts";
