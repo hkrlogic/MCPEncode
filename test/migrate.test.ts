@@ -44,8 +44,16 @@ test("fresh database gets Main and keeps records", async () => {
        WHERE table_schema = 'public' AND table_name = 'libraries' AND column_name = 'schema'`,
     )) as { name: string }[];
     assert.equal(schemaCol.length, 1);
+    const writeModeCol = (await db.all(
+      `SELECT column_name AS name, column_default AS def
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'libraries' AND column_name = 'write_mode'`,
+    )) as { name: string; def: string }[];
+    assert.equal(writeModeCol.length, 1);
+    assert.match(writeModeCol[0]?.def ?? "", /reviewed/);
     const main = await getLibrary(db, DEFAULT_LIBRARY_ID);
     assert.equal(main?.schema.starter, "general");
+    assert.equal(main?.writeMode, "reviewed");
     assert.ok(main?.schema.fields.some((field) => field.key === "body"));
   });
 });

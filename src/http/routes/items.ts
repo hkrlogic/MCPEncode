@@ -195,7 +195,13 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       return;
     }
     await writeAudit(db, { actorSub: access.sub, tool: "ui.update", success: true, detail: row.id });
-    res.redirect(`/items/${row.id}${wasPublished ? "?notice=pending" : ""}`);
+    const notice =
+      library.writeMode === "direct"
+        ? "saved_live"
+        : wasPublished
+          ? "pending"
+          : "";
+    res.redirect(`/items/${row.id}${notice ? `?notice=${notice}` : ""}`);
   });
 
   async function gateAction(

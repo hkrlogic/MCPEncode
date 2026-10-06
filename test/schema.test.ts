@@ -43,9 +43,16 @@ test("accepts a long Markdown description", () => {
   assert.match(result.body, /Step two/);
 });
 
-test("create_library requires a schema starter", () => {
+test("create_library requires a schema starter and write mode", () => {
   const missing = createLibraryInputSchema.safeParse({ name: "Windows patching" });
   assert.equal(missing.success, false);
-  const ok = createLibraryInputSchema.parse({ name: "Windows patching", schema: "procedure" });
+  const noMode = createLibraryInputSchema.safeParse({ name: "Windows patching", schema: "procedure" });
+  assert.equal(noMode.success, false);
+  const ok = createLibraryInputSchema.parse({
+    name: "Windows patching",
+    schema: "procedure",
+    write_mode: "reviewed",
+  });
   assert.equal(ok.schema, "procedure");
+  assert.equal(ok.write_mode, "reviewed");
 });

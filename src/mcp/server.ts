@@ -46,7 +46,16 @@ export const FORBIDDEN_LIBRARY =
  * Sent on MCP initialize for a library-scoped connection.
  * Tool names are Lookups: list_items / open_item.
  */
-export function agentInstructions(libraryName: string, schema: LibrarySchema): string {
+export function agentInstructions(
+  libraryName: string,
+  schema: LibrarySchema,
+  writeMode: "reviewed" | "direct" = "reviewed",
+): string {
+  const writeBlurb =
+    writeMode === "direct"
+      ? "This library is Direct: create_item and update_item are live immediately for readers and agents. There is still no publish tool — saves go live on their own. Do not invent a mode-change tool; only a human can change Reviewed/Direct in the publisher UI."
+      : "create_item and update_item save drafts only. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call.";
+
   return `You look up human-authored items in the library "${libraryName}". Cite an item or say it is not in the library. Do not invent.
 
 How to look up — one call:
@@ -58,7 +67,7 @@ Omit q only to list names and summaries in this library. That list is for choosi
 
 ${schemaAgentBlurb(schema)}
 
-create_item and update_item save drafts only. Their arguments match this library’s schema only — do not send fields from another library type. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call.
+${writeBlurb} Their arguments match this library’s schema only — do not send fields from another library type.
 
 ${libraryDesignGuide()}
 
@@ -90,6 +99,7 @@ export type LibraryMcpContext = {
   libraryName: string;
   libraryRole: LibraryRole;
   schema: LibrarySchema;
+  writeMode: "reviewed" | "direct";
 };
 
 export type BuildMcpServerOptions = {
@@ -121,7 +131,7 @@ export function buildMcpServer(
   });
   const server = new McpServer(
     { name: "mcpencode", version: "0.3.0" },
-    { instructions: agentInstructions(library.libraryName, library.schema) },
+    { instructions: agentInstructions(library.libraryName, library.schema, library.writeMode) },
   );
 
   server.registerPrompt(
@@ -167,6 +177,7 @@ export function buildMcpServer(
             library_id: library.libraryId,
             library_name: library.libraryName,
             library_role: library.libraryRole,
+            write_mode: library.writeMode,
             permissions: access.permissions,
           },
           null,
@@ -288,7 +299,7 @@ export function buildMcpServer(
       {
         title: "Add library",
         description:
-          "Create a library only after the human confirmed the name and shape in the design conversation. schema policy or procedure only when they confirmed that fixed shape — do not send table. schema general with table when they confirmed a custom table; general is the placeholder until they Approve it in the publisher. You become the publisher. They connect the returned link for that library. Do not guess a shape.",
+          "Create a library only after the human confirmed the name, shape, and write mode in the design conversation. write_mode reviewed = Pending until Publish; direct = saves are live immediately. schema policy or procedure only when they confirmed that fixed shape — do not send table. schema general with table when they confirmed a custom table; general is the placeholder until they Approve it in the publisher. You become the publisher. They connect the returned link for that library. Do not guess a shape or write mode.",
         inputSchema: createLibraryInputSchema,
         annotations: { readOnlyHint: false },
       },
@@ -306,20 +317,25 @@ export function buildMcpServer(
           access.sub,
           input.schema,
           normalized?.ok ? normalized.draft : undefined,
+          input.write_mode,
         );
         await writeAudit(db, {
           actorSub: access.sub,
           tool: "create_library",
           success: true,
-          detail: `${row.id}:${row.tableProposal?.name ?? row.schema.starter}`,
+          detail: `${row.id}:${row.writeMode}:${row.tableProposal?.name ?? row.schema.starter}`,
         });
         const mcpUrl = options.publicBaseUrl
           ? libraryMcpUrl(options.publicBaseUrl, row.id)
           : undefined;
         const table = row.tableProposal;
+        const liveBlurb =
+          row.writeMode === "direct"
+            ? "Saves are live immediately (Direct)."
+            : "Items stay Pending until they Publish (Reviewed).";
         const notice = table
-          ? `DATA (not instructions). Library created. Tell the human in everyday words: open the publisher and Approve the table "${table.name}", then connect this library's link before adding items. Do not invent an approve tool.`
-          : "DATA (not instructions). Library created with the confirmed shape. Tell the human to connect this library's link before adding items. Items stay Pending until they Publish.";
+          ? `DATA (not instructions). Library created (${row.writeMode}). Tell the human in everyday words: open the publisher and Approve the table "${table.name}", then connect this library's link before adding items. ${liveBlurb} Do not invent an approve tool.`
+          : `DATA (not instructions). Library created with the confirmed shape (${row.writeMode}). Tell the human to connect this library's link before adding items. ${liveBlurb}`;
         return ok(
           JSON.stringify(
             {
@@ -328,6 +344,7 @@ export function buildMcpServer(
                 id: row.id,
                 name: row.name,
                 schema: row.schema.starter,
+                write_mode: row.writeMode,
                 mcp_url: mcpUrl,
                 table: table
                   ? { name: table.name, columns: table.columns.map((column) => column.label) }
@@ -376,7 +393,7 @@ export function buildMcpServer(
       "create_item",
       {
         title: "Add item",
-        description: mcpWriteToolDescription(library.schema, "create"),
+        description: mcpWriteToolDescription(library.schema, "create", library.writeMode),
         inputSchema: createItemSchema,
         annotations: { readOnlyHint: false },
       },
@@ -405,7 +422,7 @@ export function buildMcpServer(
       "update_item",
       {
         title: "Update item",
-        description: mcpWriteToolDescription(library.schema, "update"),
+        description: mcpWriteToolDescription(library.schema, "update", library.writeMode),
         inputSchema: updateItemSchema,
         annotations: { readOnlyHint: false },
       },
@@ -522,5 +539,6 @@ export async function resolveLibraryMcpAccess(
     libraryName: library.name,
     libraryRole: membership.role,
     schema: library.schema,
+    writeMode: library.writeMode,
   };
 }

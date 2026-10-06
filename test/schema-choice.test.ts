@@ -24,6 +24,11 @@ test("add library shows each schema and its fields", () => {
   assert.match(html, /Who does each step/);
   assert.match(html, /Description/);
   assert.doesNotMatch(html, /<select name="template">/);
+  assert.match(html, /<legend>How writes go live<\/legend>/);
+  assert.match(html, /name="write_mode" id="write-mode-reviewed" value="reviewed"/);
+  assert.match(html, /name="write_mode" id="write-mode-direct" value="direct"/);
+  assert.match(html, /Items stay Pending until you Publish/);
+  assert.match(html, /Saves are live immediately for readers and agents/);
 });
 
 test("readers do not see the schema choice", () => {
@@ -38,4 +43,5 @@ test("readers do not see the schema choice", () => {
     libraries: [],
   });
   assert.doesNotMatch(html, /schema-choices/);
+  assert.doesNotMatch(html, /write-mode-choices/);
 });

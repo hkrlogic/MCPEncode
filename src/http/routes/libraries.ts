@@ -18,6 +18,7 @@ import {
   listItems,
   publishItems,
   revokeLibraryAccess,
+  setLibraryWriteMode,
   writeAudit,
   type LibraryAccessRow,
   type LibraryRow,
@@ -27,6 +28,7 @@ import {
   formString,
   formToItemWrite,
   libraryTemplateFromForm,
+  libraryWriteModeFromForm,
   requireCsrf,
   sessionAccess,
 } from "../helpers.ts";
@@ -45,7 +47,7 @@ function libraryTab(value: unknown): "items" | "pending" | "archives" | "access"
 /** Fixed copy for ?table=. Query text is never echoed. */
 function tableDecisionNotice(flag: unknown): string | undefined {
   if (flag === "approved") {
-    return "Table approved. Reconnect this library’s MCP link so agents see the new columns. New items stay Pending until you Publish.";
+    return "Table approved. Reconnect this library’s MCP link so agents see the new columns.";
   }
   if (flag === "rejected") return "Table proposal rejected. The library is unchanged.";
   if (flag === "blocked") {
@@ -53,6 +55,18 @@ function tableDecisionNotice(flag: unknown): string | undefined {
   }
   if (flag === "missing") return "No table is waiting for approval.";
   if (flag === "unreadable") return "That table proposal could not be read, so it was not approved. Reject it and propose again.";
+  return undefined;
+}
+
+/** Fixed copy for ?mode=. Query text is never echoed. */
+function writeModeNotice(flag: unknown): string | undefined {
+  if (flag === "reviewed") {
+    return "This library is Reviewed. New and edited items stay Pending until you Publish.";
+  }
+  if (flag === "direct") {
+    return "This library is Direct. Saves are live immediately for readers and agents.";
+  }
+  if (flag === "invalid") return "Choose Reviewed or Direct.";
   return undefined;
 }
 
@@ -126,8 +140,9 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       return;
     }
     const template = libraryTemplateFromForm(formString(req.body, "template"));
+    const writeMode = libraryWriteModeFromForm(formString(req.body, "write_mode"));
     const parsed = libraryInputSchema.safeParse({ name: formString(req.body, "name") });
-    if (!parsed.success) {
+    if (!parsed.success || !writeMode) {
       const libraries = await listLibrariesForSubject(db, access.sub);
       const orphans = await listOrphanLibraries(db);
       res.status(400).send(
@@ -136,14 +151,51 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           csrf: access.csrf,
           libraries,
           orphans,
-          error: parsed.error.issues[0]?.message ?? "Invalid library",
+          error: !writeMode
+            ? "Choose Reviewed or Direct for how writes go live."
+            : (parsed.error?.issues[0]?.message ?? "Invalid library"),
         }),
       );
       return;
     }
-    const row = await createLibrary(db, parsed.data.name, access.sub, template);
-    await writeAudit(db, { actorSub: access.sub, tool: "ui.create_library", success: true, detail: row.id });
+    const row = await createLibrary(db, parsed.data.name, access.sub, template, undefined, writeMode);
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.create_library",
+      success: true,
+      detail: `${row.id}:${row.writeMode}`,
+    });
     res.redirect(`/libraries/${row.id}`);
+  });
+
+  app.post("/libraries/:id/write-mode", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only publishers on this library can change how writes go live."));
+      return;
+    }
+    const writeMode = libraryWriteModeFromForm(formString(req.body, "write_mode"));
+    if (!writeMode) {
+      res.redirect(`/libraries/${ctxLib.library.id}?mode=invalid`);
+      return;
+    }
+    const row = await setLibraryWriteMode(db, ctxLib.library.id, writeMode, access.sub);
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.set_write_mode",
+      success: Boolean(row),
+      detail: `${ctxLib.library.id}:${writeMode}`,
+    });
+    res.redirect(`/libraries/${ctxLib.library.id}?mode=${writeMode}`);
   });
 
   app.post("/libraries/:id/claim", async (req, res) => {
@@ -211,7 +263,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
     const tab = libraryTab(req.query.tab);
     const publishedCount =
       typeof req.query.published === "string" ? req.query.published : undefined;
-    const notice = tableDecisionNotice(req.query.table);
+    const notice = tableDecisionNotice(req.query.table) ?? writeModeNotice(req.query.mode);
     const waiting =
       ctxLib.library.tableProposal != null || ctxLib.library.tableProposalUnreadable;
     const itemCount =
@@ -558,6 +610,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       return;
     }
     await writeAudit(db, { actorSub: access.sub, tool: "ui.create", success: true, detail: result.item.id });
-    res.redirect(`/items/${result.item.id}?notice=created`);
+    const notice = result.item.status === "published" ? "created_live" : "created";
+    res.redirect(`/items/${result.item.id}?notice=${notice}`);
   });
 }

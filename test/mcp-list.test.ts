@@ -47,7 +47,10 @@ test("agent instructions are scoped to one library and use list_items / open_ite
   assert.match(text, /one column at a time/i);
   assert.match(text, /confirmed the design/);
   assert.match(text, /propose_table/);
-  assert.match(text, /Do not invent an approve or reject tool/);
+  assert.match(text, /Do not invent an approve, reject, or write-mode tool/);
+  assert.match(text, /How writes go live/);
+  assert.match(text, /Reviewed/);
+  assert.match(text, /Direct/);
   assert.ok(text.includes(NOT_CONNECTED));
   assert.match(UNAUTHORIZED_MCP, /Not signed in/);
   assert.match(FORBIDDEN_LIBRARY, /cannot open this library/);
@@ -61,6 +64,7 @@ test("publisher MCP tools include create and update but not publish", async () =
       libraryName: library.name,
       libraryRole: "publisher" as const,
       schema: library.schema,
+      writeMode: library.writeMode,
     };
     const editorTools = registeredToolNames(buildMcpServer(db, authFor("edit"), ctx));
     assert.ok(editorTools.includes("list_items"));
@@ -101,6 +105,7 @@ test("MCP access requires a library access-list row for the subject", async () =
       libraryName: "HR",
       libraryRole: "reader",
       schema: schemaForStarter("general"),
+      writeMode: "reviewed",
     });
   });
 });
@@ -110,6 +115,7 @@ test("create_library grants the creator as publisher", async () => {
     const row = await createLibrary(db, "Access control policy", "editor", "policy");
     assert.equal(row.template, "policy");
     assert.equal(row.schema.starter, "policy");
+    assert.equal(row.writeMode, "reviewed");
     assert.ok(row.schema.fields.some((field) => field.key === "policy"));
     const scoped = await resolveLibraryMcpAccess(db, authFor("edit", "editor"), row.id);
     assert.deepEqual(scoped, {
@@ -117,6 +123,7 @@ test("create_library grants the creator as publisher", async () => {
       libraryName: row.name,
       libraryRole: "publisher",
       schema: row.schema,
+      writeMode: "reviewed",
     });
   });
 });

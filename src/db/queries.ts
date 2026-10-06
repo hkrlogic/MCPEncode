@@ -12,6 +12,7 @@ export {
   listLibraries,
   getLibrary,
   createLibrary,
+  setLibraryWriteMode,
   deleteLibrary,
   defaultLibraryId,
   resolveLibrary,

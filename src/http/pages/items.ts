@@ -48,14 +48,18 @@ export function addItemPage(input: {
       : kind === "procedure"
         ? procedureItemFields({ name: "", labels: "", summary: "" })
         : itemFields({ name: "", labels: "", body: "", summaryRequired: true });
+  const liveHint =
+    input.library.writeMode === "direct"
+      ? "This library is Direct — saving makes the item live immediately."
+      : "It stays Pending until you Publish.";
   const hint =
     kind === "table"
-      ? `Each item is one row${tableName ? ` of ${esc(tableName)}` : ""}. It stays Pending until you Publish.`
+      ? `Each item is one row${tableName ? ` of ${esc(tableName)}` : ""}. ${liveHint}`
       : kind === "policy"
-      ? "Every policy has the same fields: who owns it, when it is in force, and what it requires."
+      ? `Every policy has the same fields: who owns it, when it is in force, and what it requires. ${liveHint}`
       : kind === "procedure"
-        ? "Every procedure has the same fields: which policy it carries out, when to start, the steps, and who does them."
-        : "";
+        ? `Every procedure has the same fields: which policy it carries out, when to start, the steps, and who does them. ${liveHint}`
+        : liveHint;
   return layout({
     title: `Add item · ${input.library.name}`,
     csrf: input.csrf,
@@ -203,11 +207,13 @@ export function editPage(input: {
   shell?: AppShell;
 }): string {
   const publishBanner =
-    input.item.status === "published"
-      ? `<p class="notice" role="status">Saving moves this item to Pending and hides it from the kiosk until you Publish again.</p>`
-      : input.item.status === "draft"
-        ? `<p class="hint">This item is Pending. Publish from the item page when it is ready for the kiosk.</p>`
-        : `<p class="hint">This item is Archived. Restore it before publishing.</p>`;
+    input.library.writeMode === "direct"
+      ? `<p class="notice" role="status">This library is Direct — saving makes this item live for readers and agents.</p>`
+      : input.item.status === "published"
+        ? `<p class="notice" role="status">Saving moves this item to Pending and hides it from the kiosk until you Publish again.</p>`
+        : input.item.status === "draft"
+          ? `<p class="hint">This item is Pending. Publish from the item page when it is ready for the kiosk.</p>`
+          : `<p class="hint">This item is Archived. Restore it before publishing.</p>`;
   return layout({
     title: `Edit ${input.item.name} · MCPEncode`,
     csrf: input.csrf,

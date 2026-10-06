@@ -16,7 +16,7 @@ By default the POC runs a **development identity provider** in the same process 
 | Roles | IdP **read-only** / **edit** for sign-in and adding libraries. Per library: **reader** / **publisher** on the access list (by IdP `sub`). |
 | Permissions | Tools and the UI check `records.read` / `records.write` / `records.delete` / `audit.read` from the library role. |
 | PostgreSQL | Libraries and items live in database `mpos`. Each item has a name, labels (JSONB), a required summary, a body, and a status. Reads and writes use `items`. The older `records` table is **frozen** (kept, not dropped; no new writes). |
-| Status gate | Items: **Pending** (`draft`) → **Published** → optional **Archived**. Edit always saves a draft (published items unpublish on edit). Publish / unpublish / archive are UI actions. Readers and reader MCP only see published. |
+| Status gate | Items: **Pending** (`draft`) → **Published** → optional **Archived**. Each library is **Reviewed** or **Direct**. Reviewed: edit saves a draft (published items unpublish on edit); Publish is a UI action. Direct: successful saves are Published immediately. Readers and reader MCP only see published. |
 | Cursor | One MCP link per library: `http://127.0.0.1:3000/libraries/{id}/mcp` (copy from Open library). Global `/mcp` is retired. |
 | Browser | `http://127.0.0.1:3000/` — signed-out landing, then libraries you can open. General libraries use a Jspreadsheet CE grid (first row = titles) saved as Markdown tables; Policy and Procedure libraries use fixed fields. |
 
@@ -79,11 +79,12 @@ Each connection is one library. Lookups do not take a library name or id.
 | `whoami` | any library role | sub, library, role, permissions |
 | `list_items` | `records.read` | Pass `q` to answer. One clear match returns the full item. Several matches return short summaries. Omit `q` to browse names and summaries. |
 | `open_item` | `records.read` | full Markdown for one id (when `list_items` returned several matches) |
-| `create_item` / `update_item` | `records.write` | name, body / template fields, labels — always saves as **draft** |
+| `create_library` | `records.write` | name, schema starter, **write_mode** (`reviewed` or `direct`); optional table proposal |
+| `create_item` / `update_item` | `records.write` | name, body / template fields, labels — **Reviewed** saves as draft; **Direct** saves as published |
 | `delete_item` | `records.delete` | by id only |
 | `list_audit` | `audit.read` | who invoked which tool |
 
-There is no publish tool and no `run_sql` tool. Publishing is a human action in the UI. Queries are parameterized in code.
+There is no publish tool, no write-mode tool, and no `run_sql` tool. In Reviewed libraries, publishing is a human action in the UI. Write mode can only be changed in the publisher UI. Queries are parameterized in code.
 
 ## Security notes (why it is built this way)
 

@@ -20,7 +20,13 @@ You keep **libraries** of **items**. Auth is to a library. Each item has a **nam
 
 ## Status gate
 
-Items: `draft` → `published` (optional `archived`). Readonly MCP only sees published. Edit saves drafts; publish is an explicit action.
+Items: `draft` → `published` (optional `archived`). Readonly MCP only sees published.
+
+Each library has a **write mode**:
+- **Reviewed** (default) — create/update save as Pending; a human Publishes.
+- **Direct** — successful create/update is Published immediately.
+
+Choose the mode when adding a library. Publishers can change it later in the UI only (not over MCP).
 
 ## Run
 

@@ -40,6 +40,18 @@ export const libraryInputSchema = z.object({
 /** Schema starters an agent or API must pick when adding a library. */
 export const LIBRARY_SCHEMA_STARTERS = ["general", "policy", "procedure"] as const;
 
+/**
+ * How item writes become visible on a library.
+ * reviewed = Pending until a human Publishes (default).
+ * direct = successful create/update is Published immediately.
+ */
+export const LIBRARY_WRITE_MODES = ["reviewed", "direct"] as const;
+export type LibraryWriteMode = (typeof LIBRARY_WRITE_MODES)[number];
+
+export function isLibraryWriteMode(value: string): value is LibraryWriteMode {
+  return (LIBRARY_WRITE_MODES as readonly string[]).includes(value);
+}
+
 /** MCP / API shape for adding a library. Schema is chosen only after the design conversation. */
 export const createLibraryInputSchema = z.object({
   name: z
@@ -52,6 +64,11 @@ export const createLibraryInputSchema = z.object({
     .enum(LIBRARY_SCHEMA_STARTERS)
     .describe(
       "policy or procedure only after the human confirmed that fixed shape. general when table is set — general is the placeholder until they approve the table.",
+    ),
+  write_mode: z
+    .enum(LIBRARY_WRITE_MODES)
+    .describe(
+      "reviewed = items stay Pending until a human Publishes. direct = saves are live immediately. Ask the human which one; do not guess.",
     ),
   table: proposeTableInputSchema
     .optional()

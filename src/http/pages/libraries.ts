@@ -4,6 +4,7 @@ import type { LibraryAccessRow } from "../../db/access.ts";
 import type { ItemSummary, LibraryRow } from "../../db/models.ts";
 import type { TableProposal } from "../../items/table-proposal.ts";
 import { esc, itemListMarkup, kindKicker, layout, type AppShell } from "./layout.ts";
+import { writeModeBlurb, writeModeLabel } from "./schema-choice.ts";
 
 export function librariesPage(input: {
   access: Access;
@@ -41,10 +42,35 @@ export function librariesPage(input: {
 }
 
 function libraryKicker(library: LibraryRow): string {
+  const mode = writeModeLabel(library.writeMode);
   if (library.template === "table" && library.schema.tableName) {
-    return `<p class="kicker">${esc(`Table · ${library.schema.tableName}`)}</p>`;
+    return `<p class="kicker">${esc(`Table · ${library.schema.tableName}`)} · ${esc(mode)}</p>`;
   }
-  return kindKicker(library.template);
+  const kind = kindKicker(library.template);
+  if (kind) {
+    return kind.replace("</p>", ` · ${esc(mode)}</p>`);
+  }
+  return `<p class="kicker">${esc(mode)}</p>`;
+}
+
+/** Publishers can switch Reviewed ↔ Direct here. MCP cannot change this. */
+function writeModePanel(library: LibraryRow, csrf: string): string {
+  const other = library.writeMode === "direct" ? "reviewed" : "direct";
+  const confirm =
+    other === "direct"
+      ? "Switch to Direct? New and edited items will be live immediately — no Publish step."
+      : "Switch to Reviewed? New and edited items will stay Pending until you Publish.";
+  return `
+    <section class="write-mode-panel" aria-labelledby="write-mode-heading">
+      <h2 id="write-mode-heading" class="sr-only">How writes go live</h2>
+      <p class="write-mode-current"><strong>${esc(writeModeLabel(library.writeMode))}</strong> — ${esc(writeModeBlurb(library.writeMode))}</p>
+      <form method="post" action="/libraries/${esc(library.id)}/write-mode"
+            onsubmit="return confirm('${esc(confirm)}');">
+        <input type="hidden" name="csrf" value="${esc(csrf)}">
+        <input type="hidden" name="write_mode" value="${other}">
+        <button class="btn secondary" type="submit">Change to ${esc(writeModeLabel(other))}</button>
+      </form>
+    </section>`;
 }
 
 function columnTypeLabel(type: TableProposal["columns"][number]["type"]): string {
@@ -302,12 +328,21 @@ export function libraryPage(input: {
       )}
     </section>`;
 
+  const pendingHint =
+    input.library.writeMode === "direct"
+      ? "Not live right now. In Direct mode, saving an item makes it live again."
+      : "Drafts waiting to be published. Not visible to the kiosk.";
+  const pendingSelectHint =
+    input.library.writeMode === "direct"
+      ? `${pendingHint} You can still Publish selected items.`
+      : `${pendingHint} Select items and Publish when ready.`;
+
   const pendingPanel =
     pending.length === 0
       ? `
         <section class="library-items" aria-labelledby="pending-heading">
           <h2 id="pending-heading" class="sr-only">Pending</h2>
-          <p class="hint library-tab-hint">Drafts waiting to be published. Not visible to the kiosk.</p>
+          <p class="hint library-tab-hint">${esc(pendingHint)}</p>
           ${itemListMarkup([], input.library.id, input.q ? emptySearch : "Nothing pending.", false)}
         </section>`
       : `
@@ -315,7 +350,7 @@ export function libraryPage(input: {
           <h2 id="pending-heading" class="sr-only">Pending</h2>
           <form method="post" action="/libraries/${esc(input.library.id)}/items/publish" class="pending-publish" id="pending-publish">
             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-            <p class="hint library-tab-hint">Drafts waiting to be published. Not visible to the kiosk. Select items and Publish when ready.</p>
+            <p class="hint library-tab-hint">${esc(pendingSelectHint)}</p>
             <div class="pending-toolbar">
               <label class="pending-select-all">
                 <input type="checkbox" id="pending-select-all">
@@ -401,6 +436,7 @@ export function libraryPage(input: {
         ${input.notice ? `<p class="notice" role="status">${esc(input.notice)}</p>` : ""}
         ${bulkNotice}
         ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
+        ${canWrite ? writeModePanel(input.library, input.csrf) : ""}
         ${canWrite ? tableProposalPanel({ library: input.library, csrf: input.csrf, itemCount: input.itemCount ?? 0 }) : ""}
         ${tabs}
         ${search}
