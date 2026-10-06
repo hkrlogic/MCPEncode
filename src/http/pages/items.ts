@@ -101,6 +101,7 @@ export function itemPage(input: {
   const gateForms = canWrite
     ? `
         <div class="gate-actions">
+          <a class="btn secondary" href="/items/${esc(input.item.id)}/edit">Edit</a>
           ${
             status === "draft"
               ? `<form method="post" action="/items/${esc(input.item.id)}/publish">
@@ -131,23 +132,19 @@ export function itemPage(input: {
           }
         </div>`
     : "";
-  const actions = canWrite
-    ? `<details class="item-menu">
+  const actions =
+    canWrite && can(input.access, "records.delete")
+      ? `<details class="item-menu">
          <summary>Actions</summary>
          <div class="menu-list">
-           <a href="/items/${esc(input.item.id)}/edit">Edit</a>
-           ${
-             can(input.access, "records.delete")
-               ? `<form method="post" action="/items/${esc(input.item.id)}/delete"
-                    onsubmit="return confirm('Delete this item?');">
-                    <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-                    <button class="menu-danger" type="submit">Delete</button>
-                  </form>`
-               : ""
-           }
+           <form method="post" action="/items/${esc(input.item.id)}/delete"
+                onsubmit="return confirm('Delete this item?');">
+             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+             <button class="menu-danger" type="submit">Delete</button>
+           </form>
          </div>
        </details>`
-    : "";
+      : "";
   const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
   const agentPreview = canWrite
     ? `<section class="gate-panel">

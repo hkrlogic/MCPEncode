@@ -8,8 +8,6 @@ import {
   getLibrary,
   getLibraryAccess,
   getItem,
-  listLibrariesForSubject,
-  listOrphanLibraries,
   publishItem,
   restoreItem,
   unpublishItem,
@@ -17,6 +15,7 @@ import {
   writeAudit,
 } from "../../db/queries.ts";
 import type { AppShell } from "../pages/layout.ts";
+import { loadAppShell } from "../shell.ts";
 import {
   policyBody,
   policyControl,
@@ -53,13 +52,8 @@ async function itemShell(
   access: SessionUser,
   libraryId: string,
 ): Promise<AppShell> {
-  return {
-    libraries: await listLibrariesForSubject(db, access.sub),
-    orphans: can(access, "records.write") ? await listOrphanLibraries(db) : [],
-    activeLibraryId: libraryId,
-    csrf: access.csrf,
-    canAddLibrary: can(access, "records.write"),
-  };
+  const shell = await loadAppShell(db, access);
+  return { ...shell, activeLibraryId: libraryId };
 }
 
 export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): void {

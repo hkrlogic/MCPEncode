@@ -68,6 +68,11 @@ export type ItemSummary = {
   summary: string;
   status: ItemStatus;
   updated_at: number;
+  /**
+   * Column values for a table library. Set only when a list asks for them.
+   * Absent on the normal catalog list so MCP stays a summary.
+   */
+  values?: Record<string, string>;
 };
 
 export type AuditRow = {

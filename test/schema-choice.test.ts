@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ROLE_PERMISSIONS } from "../src/auth/rbac.ts";
-import { librariesPage } from "../src/http/pages.ts";
+import { addLibraryPage, librariesPage } from "../src/http/pages.ts";
 
 const editor = {
   sub: "alice",
@@ -11,7 +11,7 @@ const editor = {
 };
 
 test("add library shows each schema and its fields", () => {
-  const html = librariesPage({
+  const html = addLibraryPage({
     access: editor,
     csrf: "token",
     libraries: [],
@@ -44,4 +44,15 @@ test("readers do not see the schema choice", () => {
   });
   assert.doesNotMatch(html, /schema-choices/);
   assert.doesNotMatch(html, /write-mode-choices/);
+  assert.doesNotMatch(html, /href="\/libraries\/new"/);
+});
+
+test("publishers open Add library in the main pane", () => {
+  const html = librariesPage({
+    access: editor,
+    csrf: "token",
+    libraries: [],
+  });
+  assert.match(html, /href="\/libraries\/new"/);
+  assert.doesNotMatch(html, /schema-choices/);
 });

@@ -1,7 +1,6 @@
 /** Shared HTML layout, status labels, and list markup for publisher pages. */
 import type { Access } from "../../auth/rbac.ts";
 import type { ItemRow, ItemStatus, ItemSummary, LibraryRow, PublishedSnapshot } from "../../db/models.ts";
-import { schemaChoicesMarkup, writeModeChoicesMarkup } from "./schema-choice.ts";
 
 export function libraryKind(template: LibraryRow["template"]): string {
   if (template === "policy") return "Policy";
@@ -109,7 +108,9 @@ export function publishDiff(item: ItemRow, snapshot: PublishedSnapshot | null): 
         (change) => `
       <li>
         <p class="diff-field">${esc(change.field)}</p>
+        <p class="diff-label">Published</p>
         <pre class="diff-before">${esc(change.before)}</pre>
+        <p class="diff-label">Now</p>
         <pre class="diff-after">${esc(change.after)}</pre>
       </li>`,
       )
@@ -171,6 +172,8 @@ export type ShellLibrary = {
   name: string;
   template: string;
   access_role?: string;
+  /** Drafts waiting to publish. Set only when this person is a publisher on the library. */
+  pendingCount?: number;
 };
 
 export type AppShell = {
@@ -179,25 +182,25 @@ export type AppShell = {
   activeLibraryId?: string;
   csrf: string;
   canAddLibrary: boolean;
-  addError?: string;
+  /** Add library page: the sidebar link is the current page. */
+  addingLibrary?: boolean;
 };
 
+/** confirm() text safe to place in a double-quoted onsubmit attribute. */
+export function onConfirm(message: string): string {
+  const js = message
+    .replaceAll("\\", "\\\\")
+    .replaceAll("'", "\\'")
+    .replaceAll("\r", " ")
+    .replaceAll("\n", " ");
+  return `return confirm('${esc(js)}');`;
+}
+
 function librarySidebar(shell: AppShell): string {
-  const addForm = shell.canAddLibrary
-    ? `
-    <details class="sidebar-add"${shell.addError ? " open" : ""}>
-      <summary>Add library</summary>
-      <form method="post" action="/libraries" class="sidebar-add-form">
-        ${shell.addError ? `<p class="error" role="alert">${esc(shell.addError)}</p>` : ""}
-        <input type="hidden" name="csrf" value="${esc(shell.csrf)}">
-        <label>Name
-          <input name="name" required maxlength="200" autocomplete="off" placeholder="Remote access">
-        </label>
-        ${schemaChoicesMarkup()}
-        ${writeModeChoicesMarkup()}
-        <button class="btn" type="submit">Add library</button>
-      </form>
-    </details>`
+  const addLink = shell.canAddLibrary
+    ? `<a class="sidebar-add-link${shell.addingLibrary ? " is-active" : ""}" href="/libraries/new"${
+        shell.addingLibrary ? ' aria-current="page"' : ""
+      }>Add library</a>`
     : "";
 
   const rows =
@@ -214,12 +217,19 @@ function librarySidebar(shell: AppShell): string {
                   : row.access_role === "reader"
                     ? "Reader"
                     : "";
+              const pending =
+                typeof row.pendingCount === "number" && row.pendingCount > 0
+                  ? `<a class="sidebar-pending" href="/libraries/${esc(row.id)}?tab=pending">${row.pendingCount}<span class="sr-only"> pending</span></a>`
+                  : "";
               return `
-            <li>
+            <li class="sidebar-lib-row${active ? " is-active" : ""}">
               <a class="sidebar-lib${active ? " is-active" : ""}" href="/libraries/${esc(row.id)}"${active ? ' aria-current="page"' : ""}>
-                <span class="sidebar-lib-name">${esc(row.name)}</span>
-                ${kind || role ? `<span class="sidebar-lib-meta">${esc([kind, role].filter(Boolean).join(" · "))}</span>` : ""}
+                <span class="sidebar-lib-text">
+                  <span class="sidebar-lib-name">${esc(row.name)}</span>
+                  ${kind || role ? `<span class="sidebar-lib-meta">${esc([kind, role].filter(Boolean).join(" · "))}</span>` : ""}
+                </span>
               </a>
+              ${pending}
             </li>`;
             })
             .join("")}
@@ -250,13 +260,21 @@ function librarySidebar(shell: AppShell): string {
     <aside class="lib-sidebar" aria-label="Libraries">
       <div class="sidebar-head">
         <h2 class="sidebar-title">Libraries</h2>
-        ${addForm}
+        ${addLink}
       </div>
       <nav class="sidebar-nav" aria-label="Your libraries">
         ${rows}
         ${orphans}
       </nav>
     </aside>`;
+}
+
+function shellCurrentLabel(shell: AppShell): string {
+  if (shell.addingLibrary) return "Add library";
+  const active =
+    shell.libraries.find((row) => row.id === shell.activeLibraryId) ??
+    shell.orphans?.find((row) => row.id === shell.activeLibraryId);
+  return active?.name ?? "Choose a library";
 }
 
 export function layout(input: {
@@ -305,7 +323,16 @@ export function layout(input: {
   const content =
     shellMode && input.shell
       ? `<div class="app-shell">
-          ${librarySidebar(input.shell)}
+          <div class="lib-drawer">
+            <input type="checkbox" id="lib-nav-toggle" class="lib-nav-toggle">
+            <label for="lib-nav-toggle" class="lib-nav-label">
+              <span class="lib-nav-kicker">Libraries</span>
+              <span class="lib-nav-current">${esc(shellCurrentLabel(input.shell))}</span>
+              <span class="lib-nav-action lib-nav-show">Show</span>
+              <span class="lib-nav-action lib-nav-hide">Hide</span>
+            </label>
+            ${librarySidebar(input.shell)}
+          </div>
           <main class="app-main" id="main">
             ${input.body}
           </main>

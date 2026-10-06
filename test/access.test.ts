@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  addDraftItem,
   createLibrary,
   grantLibraryAccess,
   listLibrariesForSubject,
   listOrphanLibraries,
+  pendingCountsForPublisher,
   revokeLibraryAccess,
 } from "../src/db/queries.ts";
 import { DEFAULT_LIBRARY_ID } from "../src/db/migrate.ts";
@@ -42,6 +44,30 @@ test("creator is publisher; readers are scoped to granted libraries only", async
       bob.some((row) => row.id === a.id),
       false,
     );
+  });
+});
+
+test("pending counts are visible only to publishers on that library", async () => {
+  await withTestDatabase(async (db) => {
+    const library = await createLibrary(db, "Windows patching", "alice", "general");
+    await grantLibraryAccess(db, {
+      libraryId: library.id,
+      subject: "carol",
+      role: "reader",
+      grantedBy: "alice",
+    });
+    const saved = await addDraftItem(
+      db,
+      library.id,
+      { name: "Patch Tuesday", body: "Apply updates", labels: [] },
+      "alice",
+    );
+    assert.equal(saved.ok, true);
+
+    const alice = await pendingCountsForPublisher(db, "alice");
+    assert.equal(alice.get(library.id), 1);
+    const carol = await pendingCountsForPublisher(db, "carol");
+    assert.equal(carol.has(library.id), false);
   });
 });
 

@@ -81,6 +81,26 @@ export async function listLibrariesForSubject(
   }));
 }
 
+/**
+ * Draft counts for libraries where this subject is a publisher.
+ * Readers get an empty map: pending items are not visible to them.
+ */
+export async function pendingCountsForPublisher(
+  db: Database,
+  subject: string,
+): Promise<Map<string, number>> {
+  const rows = await allRows<{ id: string; n: string | number }>(
+    db,
+    `SELECT i.library_id AS id, COUNT(*) AS n
+     FROM items i
+     INNER JOIN library_access a ON a.library_id = i.library_id
+     WHERE a.subject = ? AND a.role = 'publisher' AND i.status = 'draft'
+     GROUP BY i.library_id`,
+    subject,
+  );
+  return new Map(rows.map((row) => [row.id, Number(row.n)]));
+}
+
 /** Libraries with nobody on the access list (safe for an IdP editor to claim). */
 export async function listOrphanLibraries(
   db: Database,

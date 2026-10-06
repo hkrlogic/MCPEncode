@@ -3,28 +3,62 @@ import { can, type Access } from "../../auth/rbac.ts";
 import type { LibraryAccessRow } from "../../db/access.ts";
 import type { ItemSummary, LibraryRow } from "../../db/models.ts";
 import type { TableProposal } from "../../items/table-proposal.ts";
-import { esc, itemListMarkup, kindKicker, layout, type AppShell } from "./layout.ts";
-import { writeModeBlurb, writeModeLabel } from "./schema-choice.ts";
+import type { SchemaFieldDef } from "../../items/library-schema.ts";
+import { esc, itemListMarkup, kindKicker, layout, onConfirm, type AppShell } from "./layout.ts";
+import { schemaChoicesMarkup, writeModeBlurb, writeModeChoicesMarkup, writeModeLabel } from "./schema-choice.ts";
 
 export function librariesPage(input: {
   access: Access;
   csrf: string;
-  libraries: { id: string; name: string; template: string; access_role: string }[];
-  orphans?: { id: string; name: string; template: string }[];
-  error?: string;
+  libraries: AppShell["libraries"];
+  orphans?: AppShell["orphans"];
 }): string {
+  const canWrite = can(input.access, "records.write");
   const shell: AppShell = {
     libraries: input.libraries,
     orphans: input.orphans,
     csrf: input.csrf,
-    canAddLibrary: can(input.access, "records.write"),
-    addError: input.error,
+    canAddLibrary: canWrite,
   };
-
-  const empty =
-    input.libraries.length === 0 && (!input.orphans || input.orphans.length === 0)
-      ? `<p class="empty-pane-lead">Add a library in the left pane to get started.</p>`
-      : `<p class="empty-pane-lead">Open a library from the left pane to work with its items.</p>`;
+  const waiting = input.libraries.filter((row) => (row.pendingCount ?? 0) > 0);
+  const waitingList =
+    waiting.length === 0
+      ? ""
+      : `
+        <section class="home-waiting" aria-labelledby="waiting-heading">
+          <h2 id="waiting-heading">Pending</h2>
+          <p class="hint">These libraries have items waiting to publish.</p>
+          <ul class="item-list">
+            ${waiting
+              .map((row) => {
+                const count = row.pendingCount ?? 0;
+                const label = count === 1 ? "1 pending" : `${count} pending`;
+                return `
+              <li>
+                <a href="/libraries/${esc(row.id)}?tab=pending">
+                  <span class="item-name">${esc(row.name)}</span>
+                  <span class="excerpt">${esc(label)}</span>
+                </a>
+              </li>`;
+              })
+              .join("")}
+          </ul>
+        </section>`;
+  const noWaiting =
+    waiting.length > 0
+      ? ""
+      : input.libraries.length === 0 && (!input.orphans || input.orphans.length === 0)
+        ? `<p class="empty-pane-lead">Add a library to get started.</p>`
+        : `<p class="empty-pane-lead">Nothing is waiting to publish.</p>
+           <p class="hint">Open a library from the left pane to work with its items.</p>`;
+  const orphanHint =
+    input.orphans && input.orphans.length > 0
+      ? `<p class="hint">Unclaimed libraries are in the left pane. Claim one to become its publisher.</p>`
+      : "";
+  const add =
+    canWrite && input.libraries.length === 0
+      ? `<p class="empty-action"><a class="btn" href="/libraries/new">Add library</a></p>`
+      : "";
 
   return layout({
     title: "Libraries · MCPEncode",
@@ -34,8 +68,55 @@ export function librariesPage(input: {
     body: `
       <div class="empty-pane">
         <h1>Libraries</h1>
-        ${empty}
+        ${waitingList}
+        ${noWaiting}
+        ${orphanHint}
+        ${add}
         <p class="hint">Each library has its own items, access list, and MCP link.</p>
+      </div>
+    `,
+  });
+}
+
+/** Add library is its own step in the main pane. The sidebar stays a list. */
+export function addLibraryPage(input: {
+  access: Access;
+  csrf: string;
+  libraries: AppShell["libraries"];
+  orphans?: AppShell["orphans"];
+  error?: string;
+  name?: string;
+}): string {
+  const shell: AppShell = {
+    libraries: input.libraries,
+    orphans: input.orphans,
+    csrf: input.csrf,
+    canAddLibrary: can(input.access, "records.write"),
+    addingLibrary: true,
+  };
+  return layout({
+    title: "Add library · MCPEncode",
+    csrf: input.csrf,
+    access: input.access,
+    shell,
+    body: `
+      <div class="library-view">
+        <header class="library-head">
+          <div>
+            <h1>Add library</h1>
+          </div>
+        </header>
+        <p class="hint">Name the library, choose its fields, and choose when items go live.</p>
+        ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
+        <form method="post" action="/libraries" class="capture add-library-form">
+          <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+          <label>Name
+            <input name="name" required maxlength="200" autocomplete="off" placeholder="Remote access" value="${esc(input.name ?? "")}">
+          </label>
+          ${schemaChoicesMarkup()}
+          ${writeModeChoicesMarkup()}
+          <button class="btn" type="submit">Add library</button>
+        </form>
       </div>
     `,
   });
@@ -61,16 +142,13 @@ function writeModePanel(library: LibraryRow, csrf: string): string {
       ? "Switch to Direct? New and edited items will be live immediately — no Publish step."
       : "Switch to Reviewed? New and edited items will stay Pending until you Publish.";
   return `
-    <section class="write-mode-panel" aria-labelledby="write-mode-heading">
-      <h2 id="write-mode-heading" class="sr-only">How writes go live</h2>
-      <p class="write-mode-current"><strong>${esc(writeModeLabel(library.writeMode))}</strong> — ${esc(writeModeBlurb(library.writeMode))}</p>
-      <form method="post" action="/libraries/${esc(library.id)}/write-mode"
-            onsubmit="return confirm('${esc(confirm)}');">
-        <input type="hidden" name="csrf" value="${esc(csrf)}">
-        <input type="hidden" name="write_mode" value="${other}">
-        <button class="btn secondary" type="submit">Change to ${esc(writeModeLabel(other))}</button>
-      </form>
-    </section>`;
+    <form class="write-mode-switch" method="post" action="/libraries/${esc(library.id)}/write-mode"
+          onsubmit="${onConfirm(confirm)}">
+      <p class="write-mode-current">${esc(writeModeBlurb(library.writeMode))}</p>
+      <input type="hidden" name="csrf" value="${esc(csrf)}">
+      <input type="hidden" name="write_mode" value="${other}">
+      <button class="btn secondary" type="submit">Change to ${esc(writeModeLabel(other))}</button>
+    </form>`;
 }
 
 function columnTypeLabel(type: TableProposal["columns"][number]["type"]): string {
@@ -176,10 +254,15 @@ function accessPanel(input: {
             <li>
               <span class="access-sub"><code>${esc(row.subject)}</code></span>
               <span class="access-role">${row.role === "publisher" ? "Publisher" : "Reader"}</span>
-              <form method="post" action="/libraries/${esc(input.library.id)}/access/revoke" class="inline">
+              <form method="post" action="/libraries/${esc(input.library.id)}/access/revoke" class="access-remove"
+                    onsubmit="${onConfirm(`Remove ${row.subject} from ${input.library.name}?`)}">
                 <input type="hidden" name="csrf" value="${esc(input.csrf)}">
                 <input type="hidden" name="subject" value="${esc(row.subject)}">
-                <button type="submit" class="linkish"${row.subject === input.viewerSub && row.role === "publisher" ? " title=\"You can remove yourself only when another publisher remains\"" : ""}>Remove</button>
+                <button type="submit" class="btn secondary"${
+                  row.subject === input.viewerSub && row.role === "publisher"
+                    ? ' title="You can remove yourself only when another publisher remains"'
+                    : ""
+                }>Remove</button>
               </form>
             </li>`,
             )
@@ -189,7 +272,10 @@ function accessPanel(input: {
   return `
     <section class="library-access" aria-labelledby="access-heading">
       <h2 id="access-heading" class="sr-only">Access</h2>
-      <p class="hint">Grant by IdP subject (<code>sub</code>). Your subject is <code>${esc(input.viewerSub)}</code>.</p>
+      <p class="viewer-sub">Your subject is <code id="viewer-sub">${esc(input.viewerSub)}</code>
+        <button type="button" class="btn secondary" data-copy="#viewer-sub">Copy</button>
+      </p>
+      <p class="hint">Grant by IdP subject. A reader can look up published items. A publisher can add, edit, and publish.</p>
       ${rows}
       <form method="post" action="/libraries/${esc(input.library.id)}/access" class="capture">
         <input type="hidden" name="csrf" value="${esc(input.csrf)}">
@@ -209,6 +295,75 @@ function accessPanel(input: {
 
 /** Publisher sections. Opening a library starts on the published item list. */
 type LibraryTab = "items" | "pending" | "archives" | "access";
+
+const GRID_CELL_MAX = 80;
+
+/** Short columns on a table library. Longer sections stay on the open item. */
+function controlColumns(library: LibraryRow): SchemaFieldDef[] {
+  if (library.schema.starter !== "table") return [];
+  return library.schema.fields.filter((field) => field.kind === "control");
+}
+
+function clipCell(value: string): { text: string; full: string } {
+  const clean = value.replace(/\s+/g, " ").trim();
+  if (clean.length <= GRID_CELL_MAX) return { text: clean, full: "" };
+  return { text: `${clean.slice(0, GRID_CELL_MAX - 1)}…`, full: clean };
+}
+
+function emptyItems(message: string, libraryId: string, offerAdd: boolean): string {
+  const action = offerAdd
+    ? `<p class="empty-action"><a class="btn" href="/libraries/${esc(libraryId)}/items/new">Add item</a></p>`
+    : "";
+  return `<div class="empty-block"><p class="empty">${esc(message)}</p>${action}</div>`;
+}
+
+function tableGrid(library: LibraryRow, items: ItemSummary[], selectable: boolean): string {
+  const columns = controlColumns(library);
+  const pickHead = selectable ? `<th scope="col"><span class="sr-only">Select</span></th>` : "";
+  const head = columns.map((column) => `<th scope="col">${esc(column.label)}</th>`).join("");
+  const body = items
+    .map((row) => {
+      const pick = selectable
+        ? `<td class="item-grid-pick"><label class="item-grid-check"><input type="checkbox" name="item_id" value="${esc(row.id)}"><span class="sr-only">Select ${esc(row.name)}</span></label></td>`
+        : "";
+      const cells = columns
+        .map((column) => {
+          const shown = clipCell(row.values?.[column.key] ?? "");
+          const title = shown.full ? ` title="${esc(shown.full)}"` : "";
+          return `<td${title}>${esc(shown.text)}</td>`;
+        })
+        .join("");
+      return `<tr>${pick}<td><a href="/items/${esc(row.id)}?library=${esc(library.id)}">${esc(row.name)}</a></td>${cells}</tr>`;
+    })
+    .join("");
+  return `<div class="item-grid-wrap"><table class="item-grid"><thead><tr>${pickHead}<th scope="col">Name</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function libraryItemRows(library: LibraryRow, items: ItemSummary[], selectable: boolean): string {
+  if (library.schema.starter === "table") return tableGrid(library, items, selectable);
+  return itemListMarkup(items, library.id, "", false, { selectable });
+}
+
+function rowsOrEmpty(
+  library: LibraryRow,
+  items: ItemSummary[],
+  emptyMessage: string,
+  offerAdd: boolean,
+  selectable: boolean,
+  searching: boolean,
+): string {
+  if (items.length === 0) {
+    if (searching) return "";
+    return emptyItems(emptyMessage, library.id, offerAdd);
+  }
+  return libraryItemRows(library, items, selectable);
+}
+
+function searchStatus(libraryId: string, tab: LibraryTab, searching: boolean, count: number): string {
+  if (!searching) return "";
+  const label = count === 0 ? "No items match." : count === 1 ? "1 item matches." : `${count} items match.`;
+  return `<p class="search-meta" role="status">${esc(label)} <a href="${libraryTabHref(libraryId, tab)}">Clear</a></p>`;
+}
 
 /** Tab links keep the current search so switching sections does not drop it. */
 function libraryTabHref(libraryId: string, tab: LibraryTab, q?: string): string {
@@ -290,7 +445,7 @@ export function libraryPage(input: {
          <summary>Actions</summary>
          <div class="menu-list">
            <form method="post" action="/libraries/${esc(input.library.id)}/delete"
-                onsubmit="return confirm('Delete this library and every item in it?');">
+                onsubmit="${onConfirm(`Delete ${input.library.name} and every item in it?`)}">
              <input type="hidden" name="csrf" value="${esc(input.csrf)}">
              <button class="menu-danger" type="submit">Delete library</button>
            </form>
@@ -301,7 +456,7 @@ export function libraryPage(input: {
   const published = input.items.filter((row) => row.status === "published");
   const pending = input.items.filter((row) => row.status === "draft");
   const archived = input.items.filter((row) => row.status === "archived");
-  const emptySearch = input.q ? "No items match that search." : "No items yet.";
+  const searching = Boolean(input.q?.trim());
   const requested = input.tab ?? "items";
   // Readers only receive published items, so the other sections stay closed.
   const tab: LibraryTab =
@@ -317,15 +472,11 @@ export function libraryPage(input: {
         )}</p>`
       : "";
 
+  const listedItems = canWrite ? published : input.items;
   const itemsPanel = `
     <section class="library-items" aria-labelledby="items-heading">
       <h2 id="items-heading" class="sr-only">Items</h2>
-      ${itemListMarkup(
-        canWrite ? published : input.items,
-        input.library.id,
-        input.q ? emptySearch : "No published items yet.",
-        false,
-      )}
+      ${rowsOrEmpty(input.library, listedItems, "No published items yet.", canWrite, false, searching)}
     </section>`;
 
   const pendingHint =
@@ -343,7 +494,7 @@ export function libraryPage(input: {
         <section class="library-items" aria-labelledby="pending-heading">
           <h2 id="pending-heading" class="sr-only">Pending</h2>
           <p class="hint library-tab-hint">${esc(pendingHint)}</p>
-          ${itemListMarkup([], input.library.id, input.q ? emptySearch : "Nothing pending.", false)}
+          ${rowsOrEmpty(input.library, [], "Nothing pending.", canWrite, false, searching)}
         </section>`
       : `
         <section class="library-items" aria-labelledby="pending-heading">
@@ -358,9 +509,7 @@ export function libraryPage(input: {
               </label>
               <button class="btn" type="submit" id="pending-publish-btn" disabled>Publish selected</button>
             </div>
-            ${itemListMarkup(pending, input.library.id, input.q ? emptySearch : "Nothing pending.", false, {
-              selectable: true,
-            })}
+            ${rowsOrEmpty(input.library, pending, "Nothing pending.", false, true, searching)}
           </form>
         </section>`;
 
@@ -368,7 +517,7 @@ export function libraryPage(input: {
     <section class="library-items" aria-labelledby="archives-heading">
       <h2 id="archives-heading" class="sr-only">Archives</h2>
       <p class="hint library-tab-hint">Hidden from the kiosk and from Pending.</p>
-      ${itemListMarkup(archived, input.library.id, input.q ? emptySearch : "No archived items.", false)}
+      ${rowsOrEmpty(input.library, archived, "No archived items.", false, false, searching)}
     </section>`;
 
   const accessBlock =
@@ -401,7 +550,8 @@ export function libraryPage(input: {
           <label class="sr-only" for="q">Search items</label>
           <input id="q" name="q" value="${esc(input.q ?? "")}" placeholder="Search items" autocomplete="off">
           <button type="submit">Search</button>
-        </form>`;
+        </form>
+        ${searchStatus(input.library.id, tab, searching, tab === "pending" ? pending.length : tab === "archives" ? archived.length : listedItems.length)}`;
 
   // The link stays in the header so publishers can copy it without leaving the item list.
   const mcpBlock = `
@@ -433,10 +583,10 @@ export function libraryPage(input: {
             ${deleteLibrary}
           </div>
         </header>
+        ${canWrite ? writeModePanel(input.library, input.csrf) : ""}
         ${input.notice ? `<p class="notice" role="status">${esc(input.notice)}</p>` : ""}
         ${bulkNotice}
         ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
-        ${canWrite ? writeModePanel(input.library, input.csrf) : ""}
         ${canWrite ? tableProposalPanel({ library: input.library, csrf: input.csrf, itemCount: input.itemCount ?? 0 }) : ""}
         ${tabs}
         ${search}

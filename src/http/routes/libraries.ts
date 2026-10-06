@@ -12,9 +12,7 @@ import {
   getLibraryAccess,
   rejectTableProposal,
   grantLibraryAccess,
-  listLibrariesForSubject,
   listLibraryAccess,
-  listOrphanLibraries,
   listItems,
   publishItems,
   revokeLibraryAccess,
@@ -33,7 +31,8 @@ import {
   sessionAccess,
 } from "../helpers.ts";
 import { libraryMcpUrl } from "../library-url.ts";
-import { addItemPage, errorPage, librariesPage, libraryPage, loginPage } from "../pages.ts";
+import { addItemPage, addLibraryPage, errorPage, librariesPage, libraryPage, loginPage } from "../pages.ts";
+import { loadAppShell } from "../shell.ts";
 import type { AppRouteContext } from "./context.ts";
 
 type SessionUser = Access & { csrf: string };
@@ -71,10 +70,25 @@ function writeModeNotice(flag: unknown): string | undefined {
 }
 
 async function publisherShell(db: AppRouteContext["db"], access: SessionUser) {
+  const shell = await loadAppShell(db, access);
   return {
-    shellLibraries: await listLibrariesForSubject(db, access.sub),
-    shellOrphans: can(access, "records.write") ? await listOrphanLibraries(db) : [],
+    shellLibraries: shell.libraries,
+    shellOrphans: shell.orphans,
   };
+}
+
+function listLibraryItems(
+  db: AppRouteContext["db"],
+  library: LibraryRow,
+  query: { q?: string; limit?: number },
+  publishedOnly: boolean,
+) {
+  return listItems(
+    db,
+    { library_id: library.id, q: query.q, limit: query.limit ?? 200 },
+    { publishedOnly },
+    { includeDetails: library.schema.starter === "table" },
+  );
 }
 
 async function libraryContext(
@@ -123,10 +137,15 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.send(loginPage());
       return;
     }
-    const libraries = await listLibrariesForSubject(db, access.sub);
-    const orphans =
-      can(access, "records.write") ? await listOrphanLibraries(db) : [];
-    res.send(librariesPage({ access, csrf: access.csrf, libraries, orphans }));
+    const shell = await loadAppShell(db, access);
+    res.send(
+      librariesPage({
+        access,
+        csrf: access.csrf,
+        libraries: shell.libraries,
+        orphans: shell.orphans,
+      }),
+    );
   });
 
   app.post("/libraries", async (req, res) => {
@@ -143,14 +162,14 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
     const writeMode = libraryWriteModeFromForm(formString(req.body, "write_mode"));
     const parsed = libraryInputSchema.safeParse({ name: formString(req.body, "name") });
     if (!parsed.success || !writeMode) {
-      const libraries = await listLibrariesForSubject(db, access.sub);
-      const orphans = await listOrphanLibraries(db);
+      const shell = await loadAppShell(db, access);
       res.status(400).send(
-        librariesPage({
+        addLibraryPage({
           access,
           csrf: access.csrf,
-          libraries,
-          orphans,
+          libraries: shell.libraries,
+          orphans: shell.orphans,
+          name: formString(req.body, "name").slice(0, 200),
           error: !writeMode
             ? "Choose Reviewed or Direct for how writes go live."
             : (parsed.error?.issues[0]?.message ?? "Invalid library"),
@@ -233,6 +252,27 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
     res.redirect(`/libraries/${library.id}`);
   });
 
+  app.get("/libraries/new", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!can(access, "records.write")) {
+      res.status(403).send(errorPage("You cannot add libraries with this account."));
+      return;
+    }
+    const shell = await loadAppShell(db, access);
+    res.send(
+      addLibraryPage({
+        access,
+        csrf: access.csrf,
+        libraries: shell.libraries,
+        orphans: shell.orphans,
+      }),
+    );
+  });
+
   app.get("/libraries/:id", async (req, res) => {
     const access = await sessionAccess(req, config);
     if (!access) {
@@ -270,10 +310,11 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       can(ctxLib.libraryAccess, "records.write") && waiting
         ? await countLibraryItems(db, ctxLib.library.id)
         : 0;
-    const items = await listItems(
+    const items = await listLibraryItems(
       db,
-      { library_id: ctxLib.library.id, q, limit: 200 },
-      { publishedOnly: ctxLib.libraryAccess.libraryRole === "reader" },
+      ctxLib.library,
+      { q, limit: 200 },
+      ctxLib.libraryAccess.libraryRole === "reader",
     );
     const accessList = can(ctxLib.libraryAccess, "records.write")
       ? await listLibraryAccess(db, ctxLib.library.id)
@@ -358,11 +399,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.redirect(`/libraries/${ctxLib.library.id}?tab=access`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not grant access";
-      const items = await listItems(
-        db,
-        { library_id: ctxLib.library.id, limit: 50 },
-        { publishedOnly: false },
-      );
+      const items = await listLibraryItems(db, ctxLib.library, { limit: 50 }, false);
       const accessList = await listLibraryAccess(db, ctxLib.library.id);
       const shell = await publisherShell(db, access);
       res.status(400).send(
@@ -409,11 +446,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.redirect(`/libraries/${ctxLib.library.id}?tab=access`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not revoke access";
-      const items = await listItems(
-        db,
-        { library_id: ctxLib.library.id, limit: 50 },
-        { publishedOnly: false },
-      );
+      const items = await listLibraryItems(db, ctxLib.library, { limit: 50 }, false);
       const accessList = await listLibraryAccess(db, ctxLib.library.id);
       const shell = await publisherShell(db, access);
       res.status(400).send(
@@ -455,11 +488,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.redirect("/");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not delete this library";
-      const items = await listItems(
-        db,
-        { library_id: ctxLib.library.id, limit: 50 },
-        { publishedOnly: false },
-      );
+      const items = await listLibraryItems(db, ctxLib.library, { limit: 50 }, false);
       const accessList = await listLibraryAccess(db, ctxLib.library.id);
       await writeAudit(db, {
         actorSub: access.sub,

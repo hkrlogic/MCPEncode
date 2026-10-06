@@ -8,6 +8,7 @@ import {
   type ItemInput,
   type ListQuery,
 } from "../items/schema.ts";
+import { parseTableValues } from "../items/table-proposal.ts";
 import { itemForLibrary } from "../items/templates.ts";
 import type { ItemRow, ItemSummary, ReadScope } from "./models.ts";
 import { writePublishAudit } from "./audit.ts";
@@ -38,10 +39,12 @@ type ListHit = {
   summary: string;
   status: string;
   updated_at: number;
+  /** Present only when the list asked for table column values. */
+  details?: string | null;
 };
 
-function toSummary(row: ListHit): ItemSummary {
-  return {
+function toSummary(row: ListHit, includeValues: boolean): ItemSummary {
+  const summary: ItemSummary = {
     id: row.id,
     library_id: row.library_id,
     name: row.name,
@@ -51,6 +54,11 @@ function toSummary(row: ListHit): ItemSummary {
     status: asStatus(row.status),
     updated_at: row.updated_at,
   };
+  if (includeValues) {
+    const values = parseTableValues(typeof row.details === "string" ? row.details : null);
+    if (values) summary.values = values;
+  }
+  return summary;
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -78,6 +86,7 @@ export async function listItems(
   db: Database,
   query: ListQuery = {},
   scope: ReadScope = { publishedOnly: true },
+  options: { includeDetails?: boolean } = {},
 ): Promise<ItemSummary[]> {
   if (!query.library_id) {
     throw new Error("library_id is required");
@@ -104,16 +113,20 @@ export async function listItems(
     params.push(pattern, pattern, pattern);
   }
   params.push(limit, offset);
+  // details is the table-row JSON. The catalog list omits it; the library grid asks for it.
+  const columns = options.includeDetails
+    ? "id, library_id, name, entity_key, labels, summary, status, updated_at, details"
+    : "id, library_id, name, entity_key, labels, summary, status, updated_at";
   const rows = await allRows<ListHit>(
     db,
-    `SELECT id, library_id, name, entity_key, labels, summary, status, updated_at
+    `SELECT ${columns}
      FROM items
      WHERE ${where.join(" AND ")}
      ORDER BY updated_at DESC
      LIMIT ? OFFSET ?`,
     ...params,
   );
-  return rows.map((row) => toSummary(row));
+  return rows.map((row) => toSummary(row, options.includeDetails === true));
 }
 
 /** Exact entity_key lookup inside one library. */
