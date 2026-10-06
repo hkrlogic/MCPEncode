@@ -43,6 +43,23 @@ export const FORBIDDEN_LIBRARY =
   "Signed in, but this account cannot open this library. Ask a publisher on the library to grant your IdP subject access.";
 
 /**
+ * How publishers should collect and store live data in a Direct library
+ * so another agent can find it later with list_items / open_item.
+ */
+export function directHandoffGuide(): string {
+  return `This library is Direct: create_item and update_item are live immediately for readers and agents. There is still no publish tool — saves go live on their own. Do not invent a mode-change tool; only a human can change Reviewed/Direct in the publisher UI.
+
+Collecting and storing for the next agent:
+1. Before you create, list_items with q set to the entity name (host, ticket, person, run title). If one item matches, update_item that id. If several match, open_item the right one, then update_item. Only create_item when none match.
+2. Use one stable item per real-world entity. Prefer update over a second create for the same thing.
+3. Name must be stable and searchable (for example "Host CONTOSO-01" or "Patch scan 2026-10-06").
+4. Summary must be a one-line handoff the next agent can search on — what matters right now.
+5. Add useful labels (for example os, severity, run date). Labels help the next agent scoop the right item.
+6. After you write, tell the human the item name (and id when useful). Do not invent a second copy.
+7. When you are the scooping agent: list_items with q, open_item only if several match, cite the item, then act. Do not invent missing facts.`;
+}
+
+/**
  * Sent on MCP initialize for a library-scoped connection.
  * Tool names are Lookups: list_items / open_item.
  */
@@ -53,7 +70,7 @@ export function agentInstructions(
 ): string {
   const writeBlurb =
     writeMode === "direct"
-      ? "This library is Direct: create_item and update_item are live immediately for readers and agents. There is still no publish tool — saves go live on their own. Do not invent a mode-change tool; only a human can change Reviewed/Direct in the publisher UI."
+      ? directHandoffGuide()
       : "create_item and update_item save drafts only. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call.";
 
   return `You look up human-authored items in the library "${libraryName}". Cite an item or say it is not in the library. Do not invent.

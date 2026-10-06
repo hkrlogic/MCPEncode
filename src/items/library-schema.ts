@@ -289,8 +289,8 @@ export function mcpWriteToolDescription(
   const head =
     writeMode === "direct"
       ? kind === "create"
-        ? "Add a library item. This library is Direct — the item is live immediately for readers and agents."
-        : "Replace one library item. This library is Direct — the saved version is live immediately."
+        ? "Add a library item only when list_items found no match for that entity. This library is Direct — the item is live immediately for readers and agents. Use a stable name, a one-line summary the next agent can search on, and useful labels. Prefer update_item when the entity already exists."
+        : "Replace one library item by id after list_items found it. This library is Direct — the saved version is live immediately. Keep the name stable; refresh the summary and labels so the next agent can scoop it."
       : kind === "create"
         ? "Add a library item as a draft (Pending). Not visible to readers or the kiosk until a human Publishes it in the publisher UI."
         : "Replace one library item. Saves as draft: if published, it becomes Pending until a human Publishes again in the publisher UI.";

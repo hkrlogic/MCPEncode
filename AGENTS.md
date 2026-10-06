@@ -28,6 +28,8 @@ Each library has a **write mode**:
 
 Choose the mode when adding a library. Publishers can change it later in the UI only (not over MCP).
 
+Direct MCP connections include handoff instructions: search before create, one item per entity, stable name, searchable summary, useful labels, then the next agent scoops with `list_items` / `open_item`.
+
 ## Run
 
 ```bash

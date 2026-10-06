@@ -10,6 +10,7 @@ import {
   updateItem,
 } from "../src/db/queries.ts";
 import { libraryPage } from "../src/http/pages.ts";
+import { mcpWriteToolDescription, schemaForStarter } from "../src/items/library-schema.ts";
 import { agentInstructions } from "../src/mcp/server.ts";
 import { withTestDatabase } from "./db.ts";
 
@@ -138,8 +139,30 @@ test("library page explains write mode to publishers only", async () => {
 test("direct agent instructions say saves are live", () => {
   const reviewed = agentInstructions("Policies", { starter: "policy", fields: [] }, "reviewed");
   assert.match(reviewed, /save drafts only/);
+  assert.doesNotMatch(reviewed, /Collecting and storing for the next agent/);
   const direct = agentInstructions("Patch scans", { starter: "general", fields: [] }, "direct");
   assert.match(direct, /Direct/);
   assert.match(direct, /live immediately/);
+  assert.match(direct, /Collecting and storing for the next agent/);
+  assert.match(direct, /Before you create, list_items/);
+  assert.match(direct, /Prefer update over a second create/);
+  assert.match(direct, /Summary must be a one-line handoff/);
+  assert.match(direct, /Add useful labels/);
+  assert.match(direct, /scooping agent/);
   assert.doesNotMatch(direct, /save drafts only/);
+});
+
+test("direct write tool descriptions teach search-then-upsert handoff", () => {
+  const schema = schemaForStarter("general");
+  const create = mcpWriteToolDescription(schema, "create", "direct");
+  assert.match(create, /list_items found no match/);
+  assert.match(create, /stable name/);
+  assert.match(create, /one-line summary/);
+  assert.match(create, /Prefer update_item/);
+  const update = mcpWriteToolDescription(schema, "update", "direct");
+  assert.match(update, /after list_items found it/);
+  assert.match(update, /next agent can scoop/);
+  const reviewed = mcpWriteToolDescription(schema, "create", "reviewed");
+  assert.match(reviewed, /Pending/);
+  assert.doesNotMatch(reviewed, /list_items found no match/);
 });
