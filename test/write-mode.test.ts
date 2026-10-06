@@ -144,7 +144,8 @@ test("direct agent instructions say saves are live", () => {
   assert.match(direct, /Direct/);
   assert.match(direct, /live immediately/);
   assert.match(direct, /Collecting and storing for the next agent/);
-  assert.match(direct, /Before you create, list_items/);
+  assert.match(direct, /stable entity_key/);
+  assert.match(direct, /list_items with entity_key/);
   assert.match(direct, /Prefer update over a second create/);
   assert.match(direct, /Summary must be a one-line handoff/);
   assert.match(direct, /Add useful labels/);
@@ -155,14 +156,14 @@ test("direct agent instructions say saves are live", () => {
 test("direct write tool descriptions teach search-then-upsert handoff", () => {
   const schema = schemaForStarter("general");
   const create = mcpWriteToolDescription(schema, "create", "direct");
-  assert.match(create, /list_items found no match/);
+  assert.match(create, /entity_key/);
   assert.match(create, /stable name/);
   assert.match(create, /one-line summary/);
   assert.match(create, /Prefer update_item/);
   const update = mcpWriteToolDescription(schema, "update", "direct");
-  assert.match(update, /after list_items found it/);
+  assert.match(update, /prefer entity_key/);
   assert.match(update, /next agent can scoop/);
   const reviewed = mcpWriteToolDescription(schema, "create", "reviewed");
   assert.match(reviewed, /Pending/);
-  assert.doesNotMatch(reviewed, /list_items found no match/);
+  assert.match(reviewed, /entity_key/);
 });

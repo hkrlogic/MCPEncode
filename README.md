@@ -84,7 +84,7 @@ Each connection is one library. Lookups do not take a library name or id.
 | `delete_item` | `records.delete` | by id only |
 | `list_audit` | `audit.read` | who invoked which tool |
 
-There is no publish tool, no write-mode tool, and no `run_sql` tool. In Reviewed libraries, publishing is a human action in the UI. Write mode can only be changed in the publisher UI. Direct library MCP instructions tell agents to search before create, keep one item per entity, and use a stable name, summary, and labels so another agent can scoop the data. Queries are parameterized in code.
+There is no publish tool, no write-mode tool, and no `run_sql` tool. In Reviewed libraries, publishing is a human action in the UI. Write mode can only be changed in the publisher UI. Direct library MCP instructions tell agents to prefer `entity_key` for upserts, search before create, keep one item per entity, and use a stable name, summary, and labels so another agent can scoop the data. Queries are parameterized in code.
 
 ## Security notes (why it is built this way)
 

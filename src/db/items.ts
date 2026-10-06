@@ -1,7 +1,13 @@
 /** Item CRUD and status gate (draft / published / archived). */
 import type { Database } from "./types.ts";
 import type { ItemWriteInput } from "../items/library-schema.ts";
-import { excerptOf, type ItemInput, type ListQuery } from "../items/schema.ts";
+import {
+  excerptOf,
+  isValidEntityKey,
+  normalizeEntityKey,
+  type ItemInput,
+  type ListQuery,
+} from "../items/schema.ts";
 import { itemForLibrary } from "../items/templates.ts";
 import type { ItemRow, ItemSummary, ReadScope } from "./models.ts";
 import { writePublishAudit } from "./audit.ts";
@@ -27,6 +33,7 @@ type ListHit = {
   id: string;
   library_id: string;
   name: string;
+  entity_key: string | null;
   labels: string | string[];
   summary: string;
   status: string;
@@ -38,11 +45,33 @@ function toSummary(row: ListHit): ItemSummary {
     id: row.id,
     library_id: row.library_id,
     name: row.name,
+    entity_key: typeof row.entity_key === "string" && row.entity_key ? row.entity_key : null,
     labels: parseLabels(row.labels),
     summary: excerptOf(row.summary),
     status: asStatus(row.status),
     updated_at: row.updated_at,
   };
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "23505");
+}
+
+/** Normalize and validate an optional entity key for storage. */
+export function entityKeyForSave(raw: string | undefined | null): {
+  ok: true;
+  key: string | null;
+} | { ok: false; message: string } {
+  const key = normalizeEntityKey(raw);
+  if (key == null) return { ok: true, key: null };
+  if (!isValidEntityKey(key)) {
+    return {
+      ok: false,
+      message:
+        "Entity key must start with a letter or digit and use only letters, digits, and . _ : / -",
+    };
+  }
+  return { ok: true, key };
 }
 
 export async function listItems(
@@ -55,9 +84,14 @@ export async function listItems(
   }
   const limit = Math.min(Math.max(query.limit ?? 50, 1), LIST_LIMIT_MAX);
   const offset = Math.min(Math.max(query.offset ?? 0, 0), LIST_OFFSET_MAX);
-  // Name, labels, and summary only. The body stays in the table.
+  // Name, labels, summary, and optional exact entity_key. The body stays in the table.
   const where = [libraryWhere(scope)];
   const params: unknown[] = [query.library_id];
+  const entityKey = normalizeEntityKey(query.entity_key);
+  if (entityKey) {
+    where.push("entity_key = ?");
+    params.push(entityKey);
+  }
   const label = query.label?.trim().toLowerCase();
   if (label) {
     where.push("labels @> ?::jsonb");
@@ -72,7 +106,7 @@ export async function listItems(
   params.push(limit, offset);
   const rows = await allRows<ListHit>(
     db,
-    `SELECT id, library_id, name, labels, summary, status, updated_at
+    `SELECT id, library_id, name, entity_key, labels, summary, status, updated_at
      FROM items
      WHERE ${where.join(" AND ")}
      ORDER BY updated_at DESC
@@ -80,6 +114,25 @@ export async function listItems(
     ...params,
   );
   return rows.map((row) => toSummary(row));
+}
+
+/** Exact entity_key lookup inside one library. */
+export async function getItemByEntityKey(
+  db: Database,
+  libraryId: string,
+  entityKey: string,
+  scope: ReadScope = { publishedOnly: true },
+): Promise<ItemRow | undefined> {
+  const key = normalizeEntityKey(entityKey);
+  if (!key) return undefined;
+  const statusClause = scope.publishedOnly ? "AND status = 'published'" : "";
+  const row = await getRow<SqlItem>(
+    db,
+    `SELECT ${ITEM_COLUMNS} FROM items WHERE library_id = ? AND entity_key = ? ${statusClause} LIMIT 1`,
+    libraryId,
+    key,
+  );
+  return row ? toItem(row) : undefined;
 }
 
 export async function getItem(
@@ -101,7 +154,11 @@ export async function getItem(
   return row ? toItem(row) : undefined;
 }
 
-type ItemSave = ItemInput & { summary?: string; details?: string | null };
+type ItemSave = ItemInput & {
+  summary?: string;
+  details?: string | null;
+  entity_key?: string | null;
+};
 
 export async function countLibraryItems(db: Database, libraryId: string): Promise<number> {
   const row = await getRow<{ n: string | number }>(
@@ -124,15 +181,26 @@ export async function addDraftItem(
   input: ItemWriteInput,
   actorSub: string,
 ): Promise<{ ok: true; item: ItemRow } | { ok: false; message: string }> {
-  return db.transaction(async (tx) => {
-    const library = await lockLibrary(tx, libraryId);
-    if (!library) return { ok: false, message: "Library not found." };
-    const saved = itemForLibrary(library.schema, input);
-    if (!saved.ok) return saved;
-    const status = library.writeMode === "direct" ? "published" : "draft";
-    const item = await createItem(tx, saved.item, actorSub, libraryId, { status });
-    return { ok: true, item };
-  });
+  try {
+    return await db.transaction(async (tx) => {
+      const library = await lockLibrary(tx, libraryId);
+      if (!library) return { ok: false, message: "Library not found." };
+      const saved = itemForLibrary(library.schema, input);
+      if (!saved.ok) return saved;
+      const status = library.writeMode === "direct" ? "published" : "draft";
+      const item = await createItem(tx, saved.item, actorSub, libraryId, { status });
+      return { ok: true, item };
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return {
+        ok: false,
+        message:
+          "An item with this entity_key already exists in this library. Call list_items with entity_key, then update_item that id.",
+      };
+    }
+    throw error;
+  }
 }
 
 export async function createItem(
@@ -146,6 +214,9 @@ export async function createItem(
   const id = crypto.randomUUID();
   const library_id = libraryId || (await defaultLibraryId(db));
   if (!library_id) throw new Error("library_id is required");
+  const keyed =
+    input.entity_key === undefined ? { ok: true as const, key: null } : entityKeyForSave(input.entity_key);
+  if (!keyed.ok) throw new Error(keyed.message);
   const status = options.status === "published" ? "published" : "draft";
   const summary = input.summary?.trim() || summaryFor(input.name, input.body);
   const snapshot =
@@ -162,12 +233,13 @@ export async function createItem(
   await runSql(
     db,
     `INSERT INTO items (
-       id, library_id, name, labels, summary, body, details, status, published_snapshot,
+       id, library_id, name, entity_key, labels, summary, body, details, status, published_snapshot,
        created_by, updated_by, created_at, updated_at
-     ) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     library_id,
     input.name,
+    keyed.key,
     JSON.stringify(input.labels),
     summary,
     input.body,
@@ -205,6 +277,12 @@ export async function updateItem(
   const writeMode = library?.writeMode ?? "reviewed";
   const now = Date.now();
   const summary = input.summary?.trim() || summaryFor(input.name, input.body);
+  // Omit entity_key on update keeps the existing key; null/empty clears it.
+  const keyed =
+    input.entity_key === undefined
+      ? { ok: true as const, key: existing.entity_key }
+      : entityKeyForSave(input.entity_key);
+  if (!keyed.ok) throw new Error(keyed.message);
 
   if (writeMode === "direct") {
     // Direct: any successful save is live. Snapshot tracks the live copy.
@@ -217,23 +295,33 @@ export async function updateItem(
       details: input.details ?? null,
       published_at: now,
     });
-    await runSql(
-      db,
-      `UPDATE items
-       SET name = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
-           status = 'published', published_snapshot = ?,
-           updated_by = ?, updated_at = ?
-       WHERE id = ?`,
-      input.name,
-      JSON.stringify(input.labels),
-      summary,
-      input.body,
-      input.details ?? null,
-      snapshot,
-      actorSub,
-      now,
-      id,
-    );
+    try {
+      await runSql(
+        db,
+        `UPDATE items
+         SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
+             status = 'published', published_snapshot = ?,
+             updated_by = ?, updated_at = ?
+         WHERE id = ?`,
+        input.name,
+        keyed.key,
+        JSON.stringify(input.labels),
+        summary,
+        input.body,
+        input.details ?? null,
+        snapshot,
+        actorSub,
+        now,
+        id,
+      );
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new Error(
+          "An item with this entity_key already exists in this library. Use that item’s id, or choose a different entity_key.",
+        );
+      }
+      throw error;
+    }
     if (fromStatus !== "published") {
       await writePublishAudit(db, {
         libraryId: existing.library_id,
@@ -248,22 +336,32 @@ export async function updateItem(
 
   // Reviewed: editing a published item moves it back to Pending.
   const unpublish = existing.status === "published";
-  await runSql(
-    db,
-    `UPDATE items
-     SET name = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
-         status = CASE WHEN status = 'published' THEN 'draft' ELSE status END,
-         updated_by = ?, updated_at = ?
-     WHERE id = ?`,
-    input.name,
-    JSON.stringify(input.labels),
-    summary,
-    input.body,
-    input.details ?? null,
-    actorSub,
-    now,
-    id,
-  );
+  try {
+    await runSql(
+      db,
+      `UPDATE items
+       SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
+           status = CASE WHEN status = 'published' THEN 'draft' ELSE status END,
+           updated_by = ?, updated_at = ?
+       WHERE id = ?`,
+      input.name,
+      keyed.key,
+      JSON.stringify(input.labels),
+      summary,
+      input.body,
+      input.details ?? null,
+      actorSub,
+      now,
+      id,
+    );
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new Error(
+        "An item with this entity_key already exists in this library. Use that item’s id, or choose a different entity_key.",
+      );
+    }
+    throw error;
+  }
   if (unpublish) {
     await writePublishAudit(db, {
       libraryId: existing.library_id,

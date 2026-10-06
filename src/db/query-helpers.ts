@@ -9,6 +9,7 @@ export type SqlItem = {
   id: string;
   library_id: string;
   name: string;
+  entity_key: string | null;
   labels: string | string[];
   summary: string;
   body: string;
@@ -26,7 +27,7 @@ export type SqlItem = {
  * pull the full-text document blob over the wire.
  */
 export const ITEM_COLUMNS =
-  "id, library_id, name, labels, summary, body, details, status, published_snapshot, created_by, updated_by, created_at, updated_at";
+  "id, library_id, name, entity_key, labels, summary, body, details, status, published_snapshot, created_by, updated_by, created_at, updated_at";
 
 /** Hard caps so callers cannot ask Postgres for unbounded pages. */
 export const LIST_LIMIT_MAX = 200;
@@ -101,6 +102,7 @@ export function toItem(row: SqlItem): ItemRow {
     id: row.id,
     library_id: row.library_id,
     name: row.name,
+    entity_key: typeof row.entity_key === "string" && row.entity_key ? row.entity_key : null,
     labels: parseLabels(row.labels),
     summary: row.summary,
     body: row.body,

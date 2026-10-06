@@ -1,6 +1,38 @@
 import { z } from "zod/v4";
 import { proposeTableInputSchema } from "./table-proposal.ts";
 
+/** Max length for items.entity_key (stable agent upsert id inside one library). */
+export const MAX_ENTITY_KEY = 120;
+
+/**
+ * Normalize a stable entity key.
+ * Empty/whitespace → null. Otherwise lowercase slug-like token.
+ */
+export function normalizeEntityKey(raw: string | undefined | null): string | null {
+  if (raw == null) return null;
+  const key = raw.trim().toLowerCase();
+  if (!key) return null;
+  return key.slice(0, MAX_ENTITY_KEY);
+}
+
+/** True when the key is allowed to be stored (null/empty already handled). */
+export function isValidEntityKey(key: string): boolean {
+  return /^[a-z0-9][a-z0-9._:/-]{0,119}$/.test(key);
+}
+
+export const entityKeySchema = z
+  .string()
+  .trim()
+  .max(MAX_ENTITY_KEY, `Entity key must be ${MAX_ENTITY_KEY} characters or fewer`)
+  .refine((value) => !value || isValidEntityKey(value.toLowerCase()), {
+    message:
+      "Entity key must start with a letter or digit and use only letters, digits, and . _ : / -",
+  })
+  .optional()
+  .describe(
+    "Stable id for this real-world entity inside the library (for example host:contoso-01). Prefer this for Direct upserts.",
+  );
+
 /** Shared item shape for the HTML form and MCP tools. */
 export const itemInputSchema = z.object({
   name: z
@@ -13,6 +45,7 @@ export const itemInputSchema = z.object({
     .array(z.string().trim().min(1).max(40))
     .max(20, "At most 20 labels")
     .default([]),
+  entity_key: entityKeySchema,
 });
 
 export type ItemInput = z.infer<typeof itemInputSchema>;
@@ -22,6 +55,7 @@ export const listQuerySchema = z.object({
   library_name: z.string().trim().min(1).max(200).optional(),
   label: z.string().trim().min(1).max(40).optional(),
   q: z.string().trim().min(1).max(200).optional(),
+  entity_key: z.string().trim().min(1).max(MAX_ENTITY_KEY).optional(),
   // UI may page up to 200; MCP tools keep a tighter max in their own schemas.
   limit: z.number().int().min(1).max(200).optional(),
   offset: z.number().int().min(0).max(10_000).optional(),

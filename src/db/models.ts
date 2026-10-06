@@ -38,11 +38,13 @@ export type PublishedSnapshot = {
   published_at: number;
 };
 
-/** App-facing item. Columns on disk are name, labels, summary, body, status. */
+/** App-facing item. Columns on disk are name, labels, summary, body, status, entity_key. */
 export type ItemRow = {
   id: string;
   library_id: string;
   name: string;
+  /** Stable upsert key inside this library. Null when unset. */
+  entity_key: string | null;
   labels: string[];
   summary: string;
   body: string;
@@ -61,6 +63,7 @@ export type ItemSummary = {
   id: string;
   library_id: string;
   name: string;
+  entity_key: string | null;
   labels: string[];
   summary: string;
   status: ItemStatus;

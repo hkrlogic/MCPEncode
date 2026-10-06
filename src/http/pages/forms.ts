@@ -17,6 +17,19 @@ export function summaryField(summary: string, required: boolean): string {
   `;
 }
 
+/** Optional stable id for agent upsert inside this library. */
+export function entityKeyField(entityKey: string): string {
+  return `
+    <label>Entity key
+      <input name="entity_key" maxlength="120" value="${esc(entityKey)}"
+        placeholder="host:contoso-01" autocomplete="off"
+        pattern="[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}"
+        title="Starts with a letter or digit; letters, digits, and . _ : / -">
+    </label>
+    <p class="hint">Optional. Stable id so agents can update the same item later.</p>
+  `;
+}
+
 export function tableMarkup(table: MdTable): string {
   return `
     <div class="section">
@@ -55,6 +68,7 @@ export function itemFields(input: {
   labels: string;
   body: string;
   summaryRequired: boolean;
+  entityKey?: string;
 }): string {
   return `
         <div class="row">
@@ -65,6 +79,7 @@ export function itemFields(input: {
             <input name="labels" value="${esc(input.labels)}" placeholder="ops, poc" autocomplete="off">
           </label>
         </div>
+        ${entityKeyField(input.entityKey ?? "")}
         ${captureEditor(input.body, input.summaryRequired)}
   `;
 }
@@ -76,6 +91,7 @@ export function schemaItemFields(input: {
   labels: string;
   summary: string;
   values: Record<string, string>;
+  entityKey?: string;
 }): string {
   const controls = input.schema.fields.filter((field) => field.kind === "control");
   const bodies = input.schema.fields.filter((field) => field.kind === "body");
@@ -112,6 +128,7 @@ export function schemaItemFields(input: {
             <input name="labels" value="${esc(input.labels)}" placeholder="ops, on-call" autocomplete="off">
           </label>
         </div>
+        ${entityKeyField(input.entityKey ?? "")}
         <label>Summary
           <input name="summary" required maxlength="160" value="${esc(input.summary)}"
             placeholder="One line. This is what search shows." autocomplete="off">
@@ -125,6 +142,7 @@ export function policyItemFields(input: {
   name: string;
   labels: string;
   summary: string;
+  entityKey?: string;
   owner?: string;
   approvedBy?: string;
   version?: string;
@@ -146,6 +164,7 @@ export function policyItemFields(input: {
             <input name="labels" value="${esc(input.labels)}" placeholder="remote, access" autocomplete="off">
           </label>
         </div>
+        ${entityKeyField(input.entityKey ?? "")}
         <label>Summary
           <input name="summary" required maxlength="160" value="${esc(input.summary)}"
             placeholder="One line. This is what search shows." autocomplete="off">
@@ -200,6 +219,7 @@ export function procedureItemFields(input: {
   name: string;
   labels: string;
   summary: string;
+  entityKey?: string;
   owner?: string;
   relatedPolicy?: string;
   whenToUse?: string;
@@ -215,6 +235,7 @@ export function procedureItemFields(input: {
             <input name="labels" value="${esc(input.labels)}" placeholder="visitor, lobby" autocomplete="off">
           </label>
         </div>
+        ${entityKeyField(input.entityKey ?? "")}
         <label>Summary
           <input name="summary" required maxlength="160" value="${esc(input.summary)}"
             placeholder="One line. This is what search shows." autocomplete="off">

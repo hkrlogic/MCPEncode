@@ -56,6 +56,7 @@ export function parseItem(body: unknown) {
       [formString(body, "body"), formString(body, "description")].filter((part) => part.trim()).join("\n\n"),
     ),
     labels: parseLabelField(formString(body, "labels")),
+    entity_key: formString(body, "entity_key"),
   });
 }
 
@@ -80,12 +81,14 @@ export function formToItemWrite(body: unknown, schema: LibrarySchema): ItemWrite
         [formString(body, "body"), formString(body, "description")].filter((part) => part.trim()).join("\n\n"),
       ),
       labels: parseLabelField(formString(body, "labels")),
+      entity_key: formString(body, "entity_key"),
     };
   }
   const input: ItemWriteInput = {
     name: formString(body, "name"),
     summary: formString(body, "summary"),
     labels: parseLabelField(formString(body, "labels")),
+    entity_key: formString(body, "entity_key"),
   };
   for (const field of schema.fields) {
     input[field.key] = formString(body, field.key);

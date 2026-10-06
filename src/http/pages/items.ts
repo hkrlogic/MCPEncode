@@ -177,6 +177,11 @@ export function itemPage(input: {
             <h1>${esc(input.item.name)}</h1>
             <p class="notice" role="status">${esc(noticeMessage(input.notice, status))}</p>
             ${input.item.summary ? `<p class="lead">${esc(input.item.summary)}</p>` : ""}
+            ${
+              input.item.entity_key
+                ? `<p class="meta">Entity key <code>${esc(input.item.entity_key)}</code></p>`
+                : ""
+            }
             ${labels ? `<p class="meta">${labels}</p>` : ""}
             ${gateForms}
           </div>
@@ -236,6 +241,7 @@ export function editPage(input: {
                   name: input.item.name,
                   labels: input.item.labels.join(", "),
                   summary: input.item.summary,
+                  entityKey: input.item.entity_key ?? "",
                   values: parseTableValues(input.item.details) ?? {},
                 })
               : input.library.template === "policy"
@@ -243,6 +249,7 @@ export function editPage(input: {
                   name: input.item.name,
                   labels: input.item.labels.join(", "),
                   summary: input.item.summary,
+                  entityKey: input.item.entity_key ?? "",
                   owner: input.item.policy?.owner,
                   approvedBy: input.item.policy?.approved_by,
                   version: input.item.policy?.version,
@@ -260,6 +267,7 @@ export function editPage(input: {
                     name: input.item.name,
                     labels: input.item.labels.join(", "),
                     summary: input.item.summary,
+                    entityKey: input.item.entity_key ?? "",
                     owner: input.item.procedure?.owner,
                     relatedPolicy: input.item.procedure?.related_policy,
                     whenToUse: input.item.procedure?.when_to_use,
@@ -270,6 +278,7 @@ export function editPage(input: {
                   name: input.item.name,
                   labels: input.item.labels.join(", "),
                   body: input.item.body,
+                  entityKey: input.item.entity_key ?? "",
                   summaryRequired: false,
                 })
           }

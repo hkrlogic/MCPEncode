@@ -3,7 +3,12 @@
  * publisher approved. Agents may propose a table; they never apply one.
  */
 import { z } from "zod/v4";
-import { itemInputSchema, type ItemInput } from "./schema.ts";
+import {
+  entityKeySchema,
+  itemInputSchema,
+  normalizeEntityKey,
+  type ItemInput,
+} from "./schema.ts";
 import { formatTableItem } from "./table-proposal.ts";
 import {
   formatPolicy,
@@ -34,7 +39,11 @@ export type LibrarySchema = {
   tableName?: string;
 };
 
-export type SavedItem = ItemInput & { summary?: string; details?: string | null };
+export type SavedItem = ItemInput & {
+  summary?: string;
+  details?: string | null;
+  entity_key?: string | null;
+};
 
 /**
  * Tool/form payload. Keys beyond name/labels/summary come from the library schema,
@@ -45,6 +54,7 @@ export type ItemWriteInput = {
   body?: string;
   labels?: string[];
   summary?: string;
+  entity_key?: string;
   owner?: string;
   approved_by?: string;
   version?: string;
@@ -65,7 +75,20 @@ export type ItemWriteInput = {
   [key: string]: string | string[] | undefined;
 };
 
-const META_KEYS = new Set(["name", "labels", "summary", "body", "rule"]);
+const META_KEYS = new Set(["name", "labels", "summary", "body", "rule", "entity_key"]);
+
+function attachEntityKey(
+  item: SavedItem,
+  input: ItemWriteInput,
+): { ok: true; item: SavedItem } | { ok: false; message: string } {
+  // Omit means "leave unset" on create / "keep existing" on update.
+  if (input.entity_key === undefined) return { ok: true, item };
+  const parsed = entityKeySchema.safeParse(input.entity_key);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid entity key" };
+  }
+  return { ok: true, item: { ...item, entity_key: normalizeEntityKey(parsed.data) } };
+}
 
 function policyStarterFields(): SchemaFieldDef[] {
   return [
@@ -234,6 +257,7 @@ function mcpZodForField(field: SchemaFieldDef): z.ZodType {
 export function mcpItemWriteShape(schema: LibrarySchema): Record<string, z.ZodType> {
   const shape: Record<string, z.ZodType> = {
     name: z.string().trim().min(1).max(200).describe("Item name"),
+    entity_key: entityKeySchema,
     labels: z
       .array(z.string().trim().min(1).max(40))
       .max(20)
@@ -289,13 +313,13 @@ export function mcpWriteToolDescription(
   const head =
     writeMode === "direct"
       ? kind === "create"
-        ? "Add a library item only when list_items found no match for that entity. This library is Direct — the item is live immediately for readers and agents. Use a stable name, a one-line summary the next agent can search on, and useful labels. Prefer update_item when the entity already exists."
-        : "Replace one library item by id after list_items found it. This library is Direct — the saved version is live immediately. Keep the name stable; refresh the summary and labels so the next agent can scoop it."
+        ? "Add a library item only when list_items with entity_key (or q) found no match. This library is Direct — the item is live immediately. Set entity_key for the real-world entity, a stable name, a one-line summary, and useful labels. Prefer update_item when the entity already exists."
+        : "Replace one library item by id after list_items found it (prefer entity_key). This library is Direct — the saved version is live immediately. Keep entity_key and name stable; refresh the summary and labels so the next agent can scoop it."
       : kind === "create"
-        ? "Add a library item as a draft (Pending). Not visible to readers or the kiosk until a human Publishes it in the publisher UI."
-        : "Replace one library item. Saves as draft: if published, it becomes Pending until a human Publishes again in the publisher UI.";
+        ? "Add a library item as a draft (Pending). Not visible to readers or the kiosk until a human Publishes it in the publisher UI. Optional entity_key is a stable id for later updates."
+        : "Replace one library item. Saves as draft: if published, it becomes Pending until a human Publishes again in the publisher UI. Optional entity_key is a stable id for later updates.";
   const summaryBit = schema.starter === "general" ? "" : ", summary";
-  return `${head} This library uses the ${schema.starter} schema. Send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}. Optional: labels. Do not invent fields. Use only when the human asked.`;
+  return `${head} This library uses the ${schema.starter} schema. Send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}. Optional: entity_key, labels. Do not invent fields. Use only when the human asked.`;
 }
 
 function isoDate(label: string) {
@@ -390,11 +414,12 @@ export function itemForLibrarySchema(
       name: input.name,
       body: input.body ?? "",
       labels: input.labels ?? [],
+      entity_key: input.entity_key,
     });
     if (!parsed.success) {
       return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid item" };
     }
-    return { ok: true, item: { ...parsed.data, details: null } };
+    return attachEntityKey({ ...parsed.data, details: null }, input);
   }
 
   const shape: Record<string, z.ZodType> = {
@@ -436,16 +461,16 @@ export function itemForLibrarySchema(
     const details = Object.fromEntries(
       schema.fields.map((field) => [field.key, data[field.key] ?? ""]),
     ) as PolicyDetails;
-    return {
-      ok: true,
-      item: {
+    return attachEntityKey(
+      {
         name: data.name,
         body: formatPolicy(details),
         labels: data.labels,
         summary: data.summary,
         details: JSON.stringify(details),
       },
-    };
+      input,
+    );
   }
 
   if (schema.starter === "procedure") {
@@ -453,31 +478,31 @@ export function itemForLibrarySchema(
     const details = Object.fromEntries(
       schema.fields.map((field) => [field.key, data[field.key] ?? ""]),
     ) as ProcedureDetails;
-    return {
-      ok: true,
-      item: {
+    return attachEntityKey(
+      {
         name: data.name,
         body: formatProcedure(details),
         labels: data.labels,
         summary: data.summary,
         details: JSON.stringify(details),
       },
-    };
+      input,
+    );
   }
 
   if (schema.starter === "table") {
     const data = parsed.data as Record<string, string> & { name: string; summary: string; labels: string[] };
     const values = Object.fromEntries(schema.fields.map((field) => [field.key, data[field.key] ?? ""]));
-    return {
-      ok: true,
-      item: {
+    return attachEntityKey(
+      {
         name: data.name,
         body: formatTableItem(schema.tableName || "Table", schema.fields, values),
         labels: data.labels,
         summary: data.summary,
         details: JSON.stringify({ _kind: "table", values }),
       },
-    };
+      input,
+    );
   }
 
   return { ok: false, message: schemaFieldMessage(schema) };

@@ -96,7 +96,7 @@ test("MCP create_item tool schema is per-library (dynamic)", () => {
   const policy = mcpItemWriteKeys(schemaForStarter("policy"));
   const procedure = mcpItemWriteKeys(schemaForStarter("procedure"));
 
-  assert.deepEqual(general, ["body", "labels", "name"]);
+  assert.deepEqual(general, ["body", "entity_key", "labels", "name"]);
   assert.ok(policy.includes("purpose"));
   assert.ok(policy.includes("policy"));
   assert.equal(policy.includes("steps"), false);
