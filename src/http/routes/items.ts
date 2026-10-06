@@ -189,7 +189,24 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       return;
     }
     const wasPublished = item.status === "published";
-    const row = await updateItem(db, req.params.id, parsed.data, access.sub);
+    let row;
+    try {
+      row = await updateItem(db, req.params.id, parsed.data, access.sub);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save item.";
+      const shell = await itemShell(db, access, library.id);
+      res.status(400).send(
+        editPage({
+          access: libraryAccess,
+          csrf: access.csrf,
+          item,
+          library,
+          error: message,
+          shell,
+        }),
+      );
+      return;
+    }
     if (!row) {
       res.status(404).send(errorPage("Item not found."));
       return;
