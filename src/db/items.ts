@@ -21,7 +21,7 @@ import {
   type SqlItem,
   getRow,
 } from "./query-helpers.ts";
-import { defaultLibraryId, lockLibrary } from "./libraries.ts";
+import { defaultLibraryId, getLibrary, lockLibrary } from "./libraries.ts";
 
 type ListHit = {
   id: string;
@@ -113,7 +113,8 @@ export async function countLibraryItems(db: Database, libraryId: string): Promis
 }
 
 /**
- * Validate against the library schema and insert a draft.
+ * Validate against the library schema and insert an item.
+ * Reviewed libraries save as Pending; Direct libraries save as Published.
  * Holds the library row lock so this cannot land under a schema that was
  * just replaced by table approval.
  */
@@ -128,7 +129,8 @@ export async function addDraftItem(
     if (!library) return { ok: false, message: "Library not found." };
     const saved = itemForLibrary(library.schema, input);
     if (!saved.ok) return saved;
-    const item = await createItem(tx, saved.item, actorSub, libraryId);
+    const status = library.writeMode === "direct" ? "published" : "draft";
+    const item = await createItem(tx, saved.item, actorSub, libraryId, { status });
     return { ok: true, item };
   });
 }
@@ -138,29 +140,54 @@ export async function createItem(
   input: ItemSave,
   actorSub: string,
   libraryId?: string,
+  options: { status?: "draft" | "published" } = {},
 ): Promise<ItemRow> {
   const now = Date.now();
   const id = crypto.randomUUID();
   const library_id = libraryId || (await defaultLibraryId(db));
   if (!library_id) throw new Error("library_id is required");
+  const status = options.status === "published" ? "published" : "draft";
+  const summary = input.summary?.trim() || summaryFor(input.name, input.body);
+  const snapshot =
+    status === "published"
+      ? snapshotFromItem({
+          name: input.name,
+          labels: input.labels,
+          summary,
+          body: input.body,
+          details: input.details ?? null,
+          published_at: now,
+        })
+      : null;
   await runSql(
     db,
     `INSERT INTO items (
-       id, library_id, name, labels, summary, body, details, status,
+       id, library_id, name, labels, summary, body, details, status, published_snapshot,
        created_by, updated_by, created_at, updated_at
-     ) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, 'draft', ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     library_id,
     input.name,
     JSON.stringify(input.labels),
-    input.summary?.trim() || summaryFor(input.name, input.body),
+    summary,
     input.body,
     input.details ?? null,
+    status,
+    snapshot,
     actorSub,
     actorSub,
     now,
     now,
   );
+  if (status === "published") {
+    await writePublishAudit(db, {
+      libraryId: library_id,
+      itemId: id,
+      actorSub,
+      fromStatus: "draft",
+      toStatus: "published",
+    });
+  }
   const created = await getItem(db, id, { publishedOnly: false });
   if (!created) throw new Error("failed to read item after insert");
   return created;
@@ -174,7 +201,52 @@ export async function updateItem(
 ): Promise<ItemRow | undefined> {
   const existing = await getItem(db, id, { publishedOnly: false });
   if (!existing) return undefined;
+  const library = await getLibrary(db, existing.library_id);
+  const writeMode = library?.writeMode ?? "reviewed";
   const now = Date.now();
+  const summary = input.summary?.trim() || summaryFor(input.name, input.body);
+
+  if (writeMode === "direct") {
+    // Direct: any successful save is live. Snapshot tracks the live copy.
+    const fromStatus = existing.status;
+    const snapshot = snapshotFromItem({
+      name: input.name,
+      labels: input.labels,
+      summary,
+      body: input.body,
+      details: input.details ?? null,
+      published_at: now,
+    });
+    await runSql(
+      db,
+      `UPDATE items
+       SET name = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
+           status = 'published', published_snapshot = ?,
+           updated_by = ?, updated_at = ?
+       WHERE id = ?`,
+      input.name,
+      JSON.stringify(input.labels),
+      summary,
+      input.body,
+      input.details ?? null,
+      snapshot,
+      actorSub,
+      now,
+      id,
+    );
+    if (fromStatus !== "published") {
+      await writePublishAudit(db, {
+        libraryId: existing.library_id,
+        itemId: id,
+        actorSub,
+        fromStatus,
+        toStatus: "published",
+      });
+    }
+    return getItem(db, id, { publishedOnly: false });
+  }
+
+  // Reviewed: editing a published item moves it back to Pending.
   const unpublish = existing.status === "published";
   await runSql(
     db,
@@ -185,7 +257,7 @@ export async function updateItem(
      WHERE id = ?`,
     input.name,
     JSON.stringify(input.labels),
-    input.summary?.trim() || summaryFor(input.name, input.body),
+    summary,
     input.body,
     input.details ?? null,
     actorSub,

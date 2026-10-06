@@ -281,14 +281,19 @@ export function mcpItemWriteKeys(schema: LibrarySchema): string[] {
 export function mcpWriteToolDescription(
   schema: LibrarySchema,
   kind: "create" | "update",
+  writeMode: "reviewed" | "direct" = "reviewed",
 ): string {
   const fieldList = schema.fields
     .map((field) => (field.required ? field.key : `${field.key} (optional)`))
     .join(", ");
   const head =
-    kind === "create"
-      ? "Add a library item as a draft (Pending). Not visible to readers or the kiosk until a human Publishes it in the publisher UI."
-      : "Replace one library item. Saves as draft: if published, it becomes Pending until a human Publishes again in the publisher UI.";
+    writeMode === "direct"
+      ? kind === "create"
+        ? "Add a library item. This library is Direct — the item is live immediately for readers and agents."
+        : "Replace one library item. This library is Direct — the saved version is live immediately."
+      : kind === "create"
+        ? "Add a library item as a draft (Pending). Not visible to readers or the kiosk until a human Publishes it in the publisher UI."
+        : "Replace one library item. Saves as draft: if published, it becomes Pending until a human Publishes again in the publisher UI.";
   const summaryBit = schema.starter === "general" ? "" : ", summary";
   return `${head} This library uses the ${schema.starter} schema. Send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}. Optional: labels. Do not invent fields. Use only when the human asked.`;
 }

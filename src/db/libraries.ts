@@ -1,6 +1,7 @@
 /** Library CRUD and name/id resolution for lookups. */
 import type { Database } from "./types.ts";
 import { librarySchemaOf, schemaForStarter } from "../items/library-schema.ts";
+import { isLibraryWriteMode, type LibraryWriteMode } from "../items/schema.ts";
 import { parseStoredTableProposal, type TableProposal, type TableProposalDraft } from "../items/table-proposal.ts";
 import { isLibraryTemplate, type LibraryTemplate } from "../items/templates.ts";
 import { grantLibraryAccess } from "./access.ts";
@@ -11,8 +12,16 @@ function libraryTemplate(value: string | undefined): LibraryTemplate {
   return value && isLibraryTemplate(value) ? value : "general";
 }
 
-type SqlLibrary = Omit<LibraryRow, "template" | "schema" | "tableProposal" | "tableProposalUnreadable"> & {
+function libraryWriteMode(value: string | undefined): LibraryWriteMode {
+  return value && isLibraryWriteMode(value) ? value : "reviewed";
+}
+
+type SqlLibrary = Omit<
+  LibraryRow,
+  "template" | "schema" | "tableProposal" | "tableProposalUnreadable" | "writeMode"
+> & {
   template?: string;
+  write_mode?: string;
   schema?: unknown;
   table_proposal?: unknown;
 };
@@ -24,6 +33,7 @@ function toLibrary(row: SqlLibrary): LibraryRow {
     id: row.id,
     name: row.name,
     template,
+    writeMode: libraryWriteMode(row.write_mode),
     schema: librarySchemaOf(template, row.schema),
     tableProposal: stored.proposal,
     tableProposalUnreadable: stored.unreadable,
@@ -65,9 +75,13 @@ export async function createLibrary(
   actorSub: string,
   template: LibraryTemplate = "general",
   table?: TableProposalDraft,
+  writeMode: LibraryWriteMode = "reviewed",
 ): Promise<LibraryRow> {
   if (table && template !== "general") {
     throw new Error("A custom table is stored on a general library until a publisher approves it");
+  }
+  if (!isLibraryWriteMode(writeMode)) {
+    throw new Error("write_mode must be reviewed or direct");
   }
   const now = Date.now();
   const id = crypto.randomUUID();
@@ -79,11 +93,12 @@ export async function createLibrary(
   await db.transaction(async (tx) => {
     await runSql(
       tx,
-      `INSERT INTO libraries (id, name, template, schema, table_proposal, created_by, updated_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)`,
+      `INSERT INTO libraries (id, name, template, write_mode, schema, table_proposal, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)`,
       id,
       name.trim(),
       template,
+      writeMode,
       JSON.stringify(schema),
       proposal ? JSON.stringify(proposal) : null,
       actorSub,
@@ -101,6 +116,34 @@ export async function createLibrary(
   const created = await getLibrary(db, id);
   if (!created) throw new Error("failed to read library after insert");
   return created;
+}
+
+/**
+ * Change how writes become visible. UI only — MCP has no tool for this.
+ * Does not rewrite existing items; the next save follows the new mode.
+ */
+export async function setLibraryWriteMode(
+  db: Database,
+  id: string,
+  writeMode: LibraryWriteMode,
+  actorSub: string,
+): Promise<LibraryRow | undefined> {
+  if (!isLibraryWriteMode(writeMode)) {
+    throw new Error("write_mode must be reviewed or direct");
+  }
+  const existing = await getLibrary(db, id);
+  if (!existing) return undefined;
+  if (existing.writeMode === writeMode) return existing;
+  const now = Date.now();
+  await runSql(
+    db,
+    "UPDATE libraries SET write_mode = ?, updated_by = ?, updated_at = ? WHERE id = ?",
+    writeMode,
+    actorSub,
+    now,
+    id,
+  );
+  return getLibrary(db, id);
 }
 
 /**

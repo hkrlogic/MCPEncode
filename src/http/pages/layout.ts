@@ -1,7 +1,7 @@
 /** Shared HTML layout, status labels, and list markup for publisher pages. */
 import type { Access } from "../../auth/rbac.ts";
 import type { ItemRow, ItemStatus, ItemSummary, LibraryRow, PublishedSnapshot } from "../../db/models.ts";
-import { schemaChoicesMarkup } from "./schema-choice.ts";
+import { schemaChoicesMarkup, writeModeChoicesMarkup } from "./schema-choice.ts";
 
 export function libraryKind(template: LibraryRow["template"]): string {
   if (template === "policy") return "Policy";
@@ -38,8 +38,14 @@ export function noticeMessage(notice: string | undefined, status: ItemStatus): s
   if (notice === "created") {
     return "Item saved as Pending. Publish it when it is ready for the kiosk.";
   }
+  if (notice === "created_live") {
+    return "Item saved and live. Readers and agents can see it now.";
+  }
   if (notice === "pending") {
     return "Moved to Pending. It is hidden from the kiosk until you Publish again.";
+  }
+  if (notice === "saved_live") {
+    return "Saved and live. Readers and agents see this version now.";
   }
   if (notice === "published") {
     return "Published. Readers and the kiosk can see this item.";
@@ -188,6 +194,7 @@ function librarySidebar(shell: AppShell): string {
           <input name="name" required maxlength="200" autocomplete="off" placeholder="Remote access">
         </label>
         ${schemaChoicesMarkup()}
+        ${writeModeChoicesMarkup()}
         <button class="btn" type="submit">Add library</button>
       </form>
     </details>`

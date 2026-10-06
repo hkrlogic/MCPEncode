@@ -1,9 +1,10 @@
 /**
- * Add-library schema picker.
+ * Add-library schema picker and write-mode picker.
  * Field lists come from the same starters copied onto a library at create,
  * so the choice on screen matches the fields items will use.
  */
 import { schemaForStarter } from "../../items/library-schema.ts";
+import type { LibraryWriteMode } from "../../items/schema.ts";
 import type { LibraryTemplate } from "../../items/templates.ts";
 import { esc } from "./layout.ts";
 
@@ -20,6 +21,18 @@ const SCHEMA_BLURB: Record<(typeof SCHEMA_CHOICES)[number], string> = {
   general: "Name, labels, a one-line summary, and a markdown description.",
   policy: "Owner, version, dates, purpose, scope, and the policy text.",
   procedure: "Owner, related policy, when to use it, steps, and who does each step.",
+};
+
+const WRITE_MODE_CHOICES = ["reviewed", "direct"] as const satisfies readonly LibraryWriteMode[];
+
+const WRITE_MODE_TITLE: Record<LibraryWriteMode, string> = {
+  reviewed: "Reviewed",
+  direct: "Direct",
+};
+
+const WRITE_MODE_BLURB: Record<LibraryWriteMode, string> = {
+  reviewed: "Items stay Pending until you Publish.",
+  direct: "Saves are live immediately for readers and agents.",
 };
 
 function fieldRows(starter: (typeof SCHEMA_CHOICES)[number]): { label: string; required: boolean }[] {
@@ -57,4 +70,31 @@ export function schemaChoicesMarkup(): string {
       <legend>Schema</legend>
       ${options}
     </fieldset>`;
+}
+
+/** Radios posted as `write_mode`. Required on Add library — no silent default in the UI. */
+export function writeModeChoicesMarkup(): string {
+  const options = WRITE_MODE_CHOICES.map((mode) => {
+    const id = `write-mode-${mode}`;
+    return `
+      <div class="schema-option">
+        <input class="schema-radio" type="radio" name="write_mode" id="${id}" value="${mode}" aria-describedby="${id}-blurb" required>
+        <label for="${id}">${WRITE_MODE_TITLE[mode]}</label>
+        <p class="schema-blurb" id="${id}-blurb">${esc(WRITE_MODE_BLURB[mode])}</p>
+      </div>`;
+  }).join("");
+
+  return `
+    <fieldset class="schema-choices write-mode-choices">
+      <legend>How writes go live</legend>
+      ${options}
+    </fieldset>`;
+}
+
+export function writeModeLabel(mode: LibraryWriteMode): string {
+  return WRITE_MODE_TITLE[mode];
+}
+
+export function writeModeBlurb(mode: LibraryWriteMode): string {
+  return WRITE_MODE_BLURB[mode];
 }

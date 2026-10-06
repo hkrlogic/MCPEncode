@@ -3,7 +3,12 @@ import type { Request, Response } from "express";
 import type { AppConfig } from "../config.ts";
 import { accessFromIdentity, type Access } from "../auth/rbac.ts";
 import { readSession } from "../auth/session.ts";
-import { itemInputSchema, parseLabelField } from "../items/schema.ts";
+import {
+  isLibraryWriteMode,
+  itemInputSchema,
+  parseLabelField,
+  type LibraryWriteMode,
+} from "../items/schema.ts";
 import type { ItemWriteInput, LibrarySchema } from "../items/library-schema.ts";
 import {
   itemForLibrary,
@@ -57,6 +62,12 @@ export function parseItem(body: unknown) {
 export function libraryTemplateFromForm(value: string): LibraryTemplate {
   if (value === "policy" || value === "procedure") return value;
   return "general";
+}
+
+/** Form must post write_mode. Returns undefined when missing or unknown. */
+export function libraryWriteModeFromForm(value: string): LibraryWriteMode | undefined {
+  const trimmed = value.trim();
+  return isLibraryWriteMode(trimmed) ? trimmed : undefined;
 }
 
 /** Form fields for one library. General keeps the markdown body; other schemas use their columns. */

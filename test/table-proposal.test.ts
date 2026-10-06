@@ -143,6 +143,7 @@ test("the library page shows a proposal only to a publisher", () => {
     id: "00000000-0000-4000-8000-000000000099",
     name: "Ops",
     template: "general",
+    writeMode: "reviewed",
     schema: schemaForStarter("general"),
     tableProposal: { ...proposal.draft, proposedBy: "mpos-editor", proposedAt: Date.UTC(2026, 9, 5, 16, 0) },
     tableProposalUnreadable: false,
