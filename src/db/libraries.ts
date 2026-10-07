@@ -1,4 +1,5 @@
 /** Library CRUD and name/id resolution for lookups. */
+import { randomBytes } from "node:crypto";
 import type { Database } from "./types.ts";
 import { librarySchemaOf, schemaForStarter } from "../items/library-schema.ts";
 import { isLibraryWriteMode, type LibraryWriteMode } from "../items/schema.ts";
@@ -16,12 +17,18 @@ function libraryWriteMode(value: string | undefined): LibraryWriteMode {
   return value && isLibraryWriteMode(value) ? value : "reviewed";
 }
 
+/** Secret path segment for the library MCP URL (base64url, 32 bytes). */
+function freshConnectToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
 type SqlLibrary = Omit<
   LibraryRow,
-  "template" | "schema" | "tableProposal" | "tableProposalUnreadable" | "writeMode"
+  "template" | "schema" | "tableProposal" | "tableProposalUnreadable" | "writeMode" | "connectToken"
 > & {
   template?: string;
   write_mode?: string;
+  connect_token?: string;
   schema?: unknown;
   table_proposal?: unknown;
 };
@@ -37,6 +44,7 @@ function toLibrary(row: SqlLibrary): LibraryRow {
     schema: librarySchemaOf(template, row.schema),
     tableProposal: stored.proposal,
     tableProposalUnreadable: stored.unreadable,
+    connectToken: row.connect_token ?? "",
     created_by: row.created_by,
     updated_by: row.updated_by,
     created_at: row.created_at,
@@ -85,6 +93,7 @@ export async function createLibrary(
   }
   const now = Date.now();
   const id = crypto.randomUUID();
+  const connectToken = freshConnectToken();
   const schema = schemaForStarter(template);
   const proposal: TableProposal | null = table
     ? { ...table, proposedBy: actorSub, proposedAt: now }
@@ -93,14 +102,15 @@ export async function createLibrary(
   await db.transaction(async (tx) => {
     await runSql(
       tx,
-      `INSERT INTO libraries (id, name, template, write_mode, schema, table_proposal, created_by, updated_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)`,
+      `INSERT INTO libraries (id, name, template, write_mode, schema, table_proposal, connect_token, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)`,
       id,
       name.trim(),
       template,
       writeMode,
       JSON.stringify(schema),
       proposal ? JSON.stringify(proposal) : null,
+      connectToken,
       actorSub,
       actorSub,
       now,
@@ -116,6 +126,29 @@ export async function createLibrary(
   const created = await getLibrary(db, id);
   if (!created) throw new Error("failed to read library after insert");
   return created;
+}
+
+/**
+ * Issue a new Connect link secret. Old MCP URLs stop working; access grants stay.
+ * UI only — agents cannot rotate the link over MCP.
+ */
+export async function rotateLibraryConnectToken(
+  db: Database,
+  id: string,
+  actorSub: string,
+): Promise<LibraryRow | undefined> {
+  const existing = await getLibrary(db, id);
+  if (!existing) return undefined;
+  const now = Date.now();
+  await runSql(
+    db,
+    "UPDATE libraries SET connect_token = ?, updated_by = ?, updated_at = ? WHERE id = ?",
+    freshConnectToken(),
+    actorSub,
+    now,
+    id,
+  );
+  return getLibrary(db, id);
 }
 
 /**

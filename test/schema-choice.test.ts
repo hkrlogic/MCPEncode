@@ -6,8 +6,8 @@ import { addLibraryPage, librariesPage } from "../src/http/pages.ts";
 const editor = {
   sub: "alice",
   clientId: "test",
-  role: "edit" as const,
-  permissions: ROLE_PERMISSIONS.edit,
+  role: "sa" as const,
+  permissions: ROLE_PERMISSIONS.sa,
 };
 
 test("add library shows each schema and its fields", () => {
@@ -16,17 +16,26 @@ test("add library shows each schema and its fields", () => {
     csrf: "token",
     libraries: [],
   });
-  assert.match(html, /<legend>Schema<\/legend>/);
+  assert.match(html, /<legend>Data schema<\/legend>/);
+  assert.match(html, /schema-choices-segmented/);
+  assert.match(html, /schema-segments/);
   assert.match(html, /name="template" id="schema-general" value="general"/);
   assert.match(html, /name="template" id="schema-policy" value="policy"/);
   assert.match(html, /name="template" id="schema-procedure" value="procedure"/);
+  assert.match(html, /name="template" id="schema-custom" value="custom"/);
+  assert.match(html, /class="schema-detail schema-detail-general"/);
+  assert.match(html, /class="schema-detail schema-detail-custom"/);
+  assert.match(html, /agentic LLM chat/);
+  assert.match(html, /I would like to make a new library/);
+  assert.match(html, /schema-prompt-samples/);
   assert.match(html, /Effective date/);
   assert.match(html, /Who does each step/);
   assert.match(html, /Description/);
   assert.doesNotMatch(html, /<select name="template">/);
-  assert.match(html, /<legend>How writes go live<\/legend>/);
+  assert.match(html, /<legend>Write settings<\/legend>/);
   assert.match(html, /name="write_mode" id="write-mode-reviewed" value="reviewed"/);
   assert.match(html, /name="write_mode" id="write-mode-direct" value="direct"/);
+  assert.match(html, /<label for="write-mode-direct">Live Sync<\/label>/);
   assert.match(html, /Items stay Pending until you Publish/);
   assert.match(html, /Saves are live immediately for readers and agents/);
 });

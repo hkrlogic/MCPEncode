@@ -24,11 +24,11 @@ Items: `draft` → `published` (optional `archived`). Readonly MCP only sees pub
 
 Each library has a **write mode**:
 - **Reviewed** (default) — create/update save as Pending; a human Publishes.
-- **Direct** — successful create/update is Published immediately.
+- **Live Sync** — successful create/update is Published immediately. The stored value stays `direct`.
 
 Choose the mode when adding a library. Publishers can change it later in the UI only (not over MCP).
 
-Direct MCP connections include handoff instructions: prefer `entity_key` for upserts, search before create, one item per entity, stable name, searchable summary, useful labels, then the next agent scoops with `list_items` / `open_item`.
+Live Sync MCP connections include handoff instructions: prefer `entity_key` for upserts, search before create, one item per entity, stable name, searchable summary, useful labels, then the next agent scoops with `list_items` / `open_item`.
 
 ## Run
 
@@ -38,11 +38,13 @@ docker compose up -d postgres
 npm start
 ```
 
-Open `http://127.0.0.1:3000/`. Each library has its own MCP link: `http://127.0.0.1:3000/libraries/{id}/mcp` (copy it from Open library). The global `/mcp` URL is retired.
+Sign-in is built in. The first browser visit creates the account (no demo passwords). `AUTH_MODE=oidc` is an optional external identity provider.
+
+Open `http://127.0.0.1:3000/`. Each library has its own MCP link under **Connect** (includes a secret path segment). Rotate that link under Actions if it leaks — Access grants stay. Remove on Access drops one person. The global `/mcp` URL is retired.
 
 ## Access
 
-Grant by IdP `sub` on each library (**reader** or **publisher**). Publishers manage that list. Agents connect with that library’s link only.
+**SA** (app role) manages accounts, adds libraries, opens every library, and hard-deletes items. **Publisher** / **Reader** are per-library. Publishers archive items and may delete their library; only SA hard-deletes items. With built-in sign-in, grant Access by username. Agents connect with that library’s Connect link only.
 
 ## Related
 

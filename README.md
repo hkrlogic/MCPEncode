@@ -6,18 +6,18 @@ A **POC** of a Model Context Protocol (MCP) server with real OAuth 2.1 login, tw
 
 OAuth 2.1 proves who you are. **MCPEncode** only checks the access token, maps the role to permissions, then lets Cursor and the browser use the same libraries.
 
-By default the POC runs a **development identity provider** in the same process (no Docker IdP). That still uses authorization-code + PKCE and audience-bound JWTs. Point `AUTH_MODE=oidc` at Keycloak when Docker Desktop is running if you want an external issuer.
+Sign-in is built into the app. The first visit creates the account. Passwords are hashed in PostgreSQL. There is no shared demo password. OAuth 2.1 authorization-code + PKCE still lets Cursor and other clients sign in. An external identity provider is optional (`AUTH_MODE=oidc`). The library access list still decides who can open each library.
 
 ## What you get
 
 | Piece | Role |
 | --- | --- |
-| Identity | OAuth 2.1 authorization code + PKCE. MCPEncode never stores passwords. |
+| Identity | OAuth 2.1 authorization code + PKCE. Accounts and scrypt password hashes live in PostgreSQL. |
 | Roles | IdP **read-only** / **edit** for sign-in and adding libraries. Per library: **reader** / **publisher** on the access list (by IdP `sub`). |
 | Permissions | Tools and the UI check `records.read` / `records.write` / `records.delete` / `audit.read` from the library role. |
 | PostgreSQL | Libraries and items live in database `mpos`. Each item has a name, labels (JSONB), a required summary, a body, and a status. Reads and writes use `items`. The older `records` table is **frozen** (kept, not dropped; no new writes). |
-| Status gate | Items: **Pending** (`draft`) → **Published** → optional **Archived**. Each library is **Reviewed** or **Direct**. Reviewed: edit saves a draft (published items unpublish on edit); Publish is a UI action. Direct: successful saves are Published immediately. Readers and reader MCP only see published. |
-| Cursor | One MCP link per library: `http://127.0.0.1:3000/libraries/{id}/mcp` (copy from Open library). Global `/mcp` is retired. |
+| Status gate | Items: **Pending** (`draft`) → **Published** → optional **Archived**. Each library is **Reviewed** or **Live Sync**. Reviewed: edit saves a draft (published items unpublish on edit); Publish is a UI action. Live Sync: successful saves are Published immediately. Readers and reader MCP only see published. |
+| Cursor | One MCP link per library under **Connect** (includes a secret; rotate under Actions). Global `/mcp` is retired. |
 | Browser | `http://127.0.0.1:3000/` — signed-out landing, then libraries you can open. General libraries use a Jspreadsheet CE grid (first row = titles) saved as Markdown tables; Policy and Procedure libraries use fixed fields. |
 
 Read-only callers never see write tools in Cursor, and the add/edit forms are omitted in the UI.
@@ -25,7 +25,7 @@ Read-only callers never see write tools in Cursor, and the add/edit forms are om
 ## Prerequisites
 
 - Node.js 22+
-- Docker Desktop (PostgreSQL). Also used if you switch `AUTH_MODE=oidc` for Keycloak.
+- Docker Desktop (PostgreSQL). Zitadel is optional and not required to sign in.
 
 ## Run
 
@@ -36,39 +36,31 @@ npm install
 npm start
 ```
 
-Open [http://127.0.0.1:3000/](http://127.0.0.1:3000/) and sign in. Postgres listens on `127.0.0.1:5432` only. Connection settings are in `.env` (see `.env.example`).
+Open [http://127.0.0.1:3000/](http://127.0.0.1:3000/) and choose **Sign in**. The first visit asks you to create the account (username, password of at least 12 characters). That account can add libraries. Later visits are a normal sign-in. Postgres listens on `127.0.0.1:5432` only. Connection settings are in `.env` (see `.env.example`).
 
-Demo users (change these before this is more than a laptop demo):
-
-| Username | Password | Role |
-| --- | --- | --- |
-| `editor` | `editor-pass` | edit |
-| `reader` | `reader-pass` | read-only |
+An editor can open **Accounts** to create more people. Copy a subject from that page and grant it on a library. There are no built-in usernames or passwords.
 
 ### Cursor
 
-Open a library in the publisher and copy its **MCP link**. Put that URL in `.cursor/mcp.json` (replace `PASTE_LIBRARY_ID`) with client id `mpos-mcp`. In **Settings → Tools & MCP**, connect **publisher**. Cursor will 401, discover the IdP, and open a browser login.
+Open a library in the publisher and copy its **MCP link**. Put that URL in `.cursor/mcp.json`. With the built-in sign-in, the client id is `mpos-mcp`. After Zitadel bootstrap, the client id and scopes in that file are the ones Zitadel generated. In **Settings → Tools & MCP**, connect **publisher**. Cursor will 401, discover the issuer, and open a browser login.
 
-Use `127.0.0.1` consistently. `localhost` is a different token audience and login will fail. The token audience is that library URL.
+Use `127.0.0.1` consistently. `localhost` is a different host. With the built-in sign-in, the token audience is that library URL. With Zitadel, the token audience is the Zitadel project, and the access list still gates the library.
 
-Cursor’s desktop OAuth return URL is `http://localhost:8787/callback`. Leave that port free while connecting (the kiosk does not use 8787; it returns to its own `/oauth/callback`). The built-in sign-in accepts that address, and any other client’s callback, without adding it to a list. The sign-in page shows where you will be sent back.
+Cursor’s desktop OAuth return URL is `http://localhost:8787/callback`. Leave that port free while connecting (the kiosk returns to `http://127.0.0.1:8765/oauth/callback`). The built-in sign-in accepts any absolute callback. Zitadel only accepts the callbacks registered by bootstrap: Cursor’s desktop URL, Cursor’s app URL, and the kiosk URL.
 
-### Optional: Keycloak in Docker
+### Zitadel
 
-Start **Docker Desktop** first (the engine must be running — `docker.sock` missing means it is not). Then:
+Start **Docker Desktop** first. Then:
 
 ```bash
 docker compose up -d
+npm run zitadel:bootstrap
+npm start
 ```
 
-Set in `.env`:
+Bootstrap writes `AUTH_MODE=oidc`, the issuer `http://127.0.0.1:8080` (or `ZITADEL_HOST_PORT` if you changed it), the project id as `AUTH_AUDIENCE`, and both client ids. The admin console is that same origin. The admin login name is `zitadel-admin@mcpencode.127.0.0.1` (Zitadel adds the organization domain). The password is `ZITADEL_ADMIN_PASSWORD` in `.env`. Set `ZITADEL_EDITOR_PASSWORD` and `ZITADEL_READER_PASSWORD` before bootstrap if you want those two users. Do not commit those passwords.
 
-```
-AUTH_MODE=oidc
-AUTH_ISSUER=http://127.0.0.1:8080/realms/mpos
-```
-
-Keycloak admin: [http://127.0.0.1:8080](http://127.0.0.1:8080) (`admin` / `admin`).
+`ZITADEL_MASTERKEY` must stay the same for the life of the Zitadel database. People you add later are created in that console. Put their Zitadel user id (`sub`) on a library access list.
 
 ## MCP tools (Lookups)
 
@@ -80,16 +72,16 @@ Each connection is one library. Lookups do not take a library name or id.
 | `list_items` | `records.read` | Pass `q` to answer. One clear match returns the full item. Several matches return short summaries. Omit `q` to browse names and summaries. |
 | `open_item` | `records.read` | full Markdown for one id (when `list_items` returned several matches) |
 | `create_library` | `records.write` | name, schema starter, **write_mode** (`reviewed` or `direct`); optional table proposal |
-| `create_item` / `update_item` | `records.write` | name, body / template fields, labels — **Reviewed** saves as draft; **Direct** saves as published |
+| `create_item` / `update_item` | `records.write` | name, body / template fields, labels — **Reviewed** saves as draft; **Live Sync** saves as published |
 | `delete_item` | `records.delete` | by id only |
 | `list_audit` | `audit.read` | who invoked which tool |
 
-There is no publish tool, no write-mode tool, and no `run_sql` tool. In Reviewed libraries, publishing is a human action in the UI. Write mode can only be changed in the publisher UI. Direct library MCP instructions tell agents to prefer `entity_key` for upserts, search before create, keep one item per entity, and use a stable name, summary, and labels so another agent can scoop the data. Queries are parameterized in code.
+There is no publish tool, no write-mode tool, and no `run_sql` tool. In Reviewed libraries, publishing is a human action in the UI. Write mode can only be changed in the publisher UI. Live Sync library MCP instructions tell agents to prefer `entity_key` for upserts, search before create, keep one item per entity, and use a stable name, summary, and labels so another agent can scoop the data. Queries are parameterized in code.
 
 ## Security notes (why it is built this way)
 
-- In **oidc** mode MCPEncode is only a resource server and does not issue tokens. The default **embedded** mode runs a development IdP in-process (OAuth 2.1 + PKCE). Do not expose that to a network. MCP clients may return to any absolute callback URL (the browser sign-in for this app still returns only to its own `/callback`). The code is single-use and PKCE is required. Keycloak’s `mpos-mcp` client uses the same open callback list (`*`); import the realm again if Keycloak was already running with the old list.
-- Access tokens must pass signature, issuer, expiry, and **audience** = the library MCP URL (or `AUTH_AUDIENCE` / `PUBLIC_BASE_URL` for the web UI).
+- In **oidc** mode MCPEncode is only a resource server and does not issue tokens. The default **embedded** mode runs a development IdP in-process (OAuth 2.1 + PKCE). Do not expose that to a network. MCP clients may return to any absolute callback URL (the browser sign-in for this app still returns only to its own `/callback`). The code is single-use and PKCE is required. Zitadel registers an explicit callback list (Cursor and the kiosk). It does not use a wildcard redirect.
+- Access tokens must pass signature, issuer, expiry, and audience. Embedded mode requires the library MCP URL. Zitadel mode requires `AUTH_AUDIENCE` (the Zitadel project id) on every library link; the access list is the per-library check.
 - Library access is an allow-list of IdP subjects (`sub`) with reader or publisher role.
 - The access token is never written to Postgres. Only the user id (`sub`) is stored as `created_by` / `updated_by` / access subjects.
 
@@ -117,7 +109,7 @@ Verifier tests mint local JWTs and do not need Docker. Tests that touch librarie
 - `src/mcp/` — tools (search-then-fetch)
 - `migrations/` — Postgres SQL applied once on startup (`mariadb_archive/` is historical only, not applied). Does not drop `records`.
 - `public/` — browser editor and styles
-- `keycloak/` — realm import (two users, two clients, audience mapper)
+- `src/auth/zitadel-bootstrap.ts` — optional. Creates a Zitadel project, roles, and apps when `AUTH_MODE=oidc`
 - `AGENTS.md` — product vocabulary and run notes for agents
 
 ## Product freeze

@@ -22,6 +22,17 @@ function asStringArray(value: unknown): string[] {
   return [];
 }
 
+/**
+ * Zitadel puts project roles on this claim as an object. The keys are the
+ * role names (`mpos-editor`, `mpos-readonly`); the values are org ids.
+ */
+const ZITADEL_ROLES_CLAIM = "urn:zitadel:iam:org:project:roles";
+
+function zitadelRoleNames(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.keys(value);
+}
+
 function rolesFromPayload(payload: JWTPayload): string[] {
   const realm = payload.realm_access;
   const realmRoles =
@@ -29,6 +40,7 @@ function rolesFromPayload(payload: JWTPayload): string[] {
       ? asStringArray((realm as { roles: unknown }).roles)
       : [];
   return [
+    ...zitadelRoleNames(payload[ZITADEL_ROLES_CLAIM]),
     ...asStringArray(payload.mpos_roles),
     ...asStringArray(payload.roles),
     ...realmRoles,
@@ -53,9 +65,12 @@ export function accessFromAuthInfo(auth: AuthInfo): Access {
  * Library MCP mounts pass that library's MCP URL; the web login uses publicBaseUrl.
  */
 export function createTokenVerifier(options: VerifierOptions): OAuthTokenVerifier {
-  const jwks = options.localKey
-    ? null
-    : createRemoteJWKSet(new URL(options.jwksUrl ?? `${options.issuer}/protocol/openid-connect/certs`));
+  if (!options.localKey && !options.jwksUrl) {
+    throw new Error(
+      "Set AUTH_JWKS_URL or use an issuer whose discovery document includes jwks_uri",
+    );
+  }
+  const jwks = options.localKey ? null : createRemoteJWKSet(new URL(options.jwksUrl!));
 
   return {
     async verifyAccessToken(token: string): Promise<AuthInfo> {
@@ -85,7 +100,7 @@ export function createTokenVerifier(options: VerifierOptions): OAuthTokenVerifie
       if (!role) {
         throw new OAuthError(
           OAuthErrorCode.InsufficientScope,
-          "token has neither mpos:readonly nor mpos:edit",
+          "token has neither mpos:readonly nor mpos:edit/mpos:sa",
         );
       }
 

@@ -1,6 +1,7 @@
 /** OAuth login, callback, and logout routes. */
 import type express from "express";
 import type { Role } from "../../auth/rbac.ts";
+import { loginScopes } from "../../auth/scopes.ts";
 import { signSession } from "../../auth/session.ts";
 import { cookieHeader, readCookie } from "../cookies.ts";
 import { OAUTH_COOKIE, SESSION_COOKIE, setCookies } from "../helpers.ts";
@@ -20,11 +21,15 @@ export function registerAuthRoutes(app: express.Express, ctx: AppRouteContext): 
     authorize.searchParams.set("client_id", config.webClientId);
     authorize.searchParams.set("redirect_uri", `${config.publicBaseUrl}/callback`);
     authorize.searchParams.set("response_type", "code");
-    authorize.searchParams.set("scope", "openid mpos:readonly mpos:edit");
+    authorize.searchParams.set("scope", loginScopes(config).join(" "));
     authorize.searchParams.set("state", state);
     authorize.searchParams.set("code_challenge", challenge);
     authorize.searchParams.set("code_challenge_method", "S256");
-    authorize.searchParams.set("resource", config.authAudience);
+    // Zitadel does not implement resource indicators and rejects the parameter
+    // on some grants. The embedded IdP uses it as the token audience.
+    if (config.authMode !== "oidc") {
+      authorize.searchParams.set("resource", config.authAudience);
+    }
     setCookies(res, [cookieHeader(OAUTH_COOKIE, handshake, { maxAge: 600 })]);
     res.redirect(authorize.toString());
   });
@@ -46,8 +51,10 @@ export function registerAuthRoutes(app: express.Express, ctx: AppRouteContext): 
       redirect_uri: `${config.publicBaseUrl}/callback`,
       client_id: config.webClientId,
       code_verifier: handshake.verifier,
-      resource: config.authAudience,
     });
+    if (config.authMode !== "oidc") {
+      body.set("resource", config.authAudience);
+    }
     const tokenRes = await fetch(authServer.tokenEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },

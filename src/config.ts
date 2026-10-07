@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 
 /**
- * Runtime configuration. Values come from the environment so the same
- * process can sit behind Keycloak locally or any OAuth 2.1 issuer later.
+ * Runtime configuration. Leave AUTH_MODE unset to use the built-in accounts.
+ * AUTH_MODE=oidc points at an external issuer instead.
  */
 export type AuthMode = "embedded" | "oidc";
 

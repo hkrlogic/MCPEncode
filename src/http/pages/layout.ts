@@ -1,6 +1,12 @@
 /** Shared HTML layout, status labels, and list markup for publisher pages. */
 import type { Access } from "../../auth/rbac.ts";
 import type { ItemRow, ItemStatus, ItemSummary, LibraryRow, PublishedSnapshot } from "../../db/models.ts";
+import { isLibraryWriteMode, type LibraryWriteMode } from "../../items/schema.ts";
+
+/** Keep in sync with writeModeLabel in schema-choice (avoid a layout ↔ schema-choice import cycle). */
+function shellWriteModeLabel(mode: LibraryWriteMode): string {
+  return mode === "direct" ? "Live Sync" : "Publisher Review";
+}
 
 export function libraryKind(template: LibraryRow["template"]): string {
   if (template === "policy") return "Policy";
@@ -21,6 +27,22 @@ export function esc(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+/** Header control that opens the library MCP URL panel. */
+export function mcpLinkSummary(): string {
+  return `<summary class="text-summary">Connect</summary>`;
+}
+
+/** Compact header control: overflow menu for destructive actions. */
+export function actionsMenuSummary(): string {
+  return `<summary class="icon-summary" aria-label="Actions">
+    <svg class="icon-summary-svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="5" r="1.75" fill="currentColor"/>
+      <circle cx="12" cy="12" r="1.75" fill="currentColor"/>
+      <circle cx="12" cy="19" r="1.75" fill="currentColor"/>
+    </svg>
+  </summary>`;
 }
 
 export function statusLabel(status: ItemStatus): string {
@@ -161,9 +183,10 @@ export function itemListMarkup(
 }
 
 export function roleLabel(access: Access): string {
+  if (access.role === "sa") return "SA";
   if (access.libraryRole === "publisher") return "Publisher";
   if (access.libraryRole === "reader") return "Reader";
-  return access.role === "edit" ? "Editor" : "Reader";
+  return "Reader";
 }
 
 /** Left-pane library list for the publisher shell. */
@@ -171,6 +194,8 @@ export type ShellLibrary = {
   id: string;
   name: string;
   template: string;
+  /** How writes go live. Shown under the name instead of schema/role. */
+  writeMode?: "reviewed" | "direct";
   access_role?: string;
   /** Drafts waiting to publish. Set only when this person is a publisher on the library. */
   pendingCount?: number;
@@ -184,6 +209,8 @@ export type AppShell = {
   canAddLibrary: boolean;
   /** Add library page: the sidebar link is the current page. */
   addingLibrary?: boolean;
+  /** Home and Accounts: this sign-in can create more accounts. */
+  showAccounts?: boolean;
 };
 
 /** confirm() text safe to place in a double-quoted onsubmit attribute. */
@@ -198,9 +225,9 @@ export function onConfirm(message: string): string {
 
 function librarySidebar(shell: AppShell): string {
   const addLink = shell.canAddLibrary
-    ? `<a class="sidebar-add-link${shell.addingLibrary ? " is-active" : ""}" href="/libraries/new"${
+    ? `<a class="sidebar-add-link${shell.addingLibrary ? " is-active" : ""}" href="/libraries/new" aria-label="Add library"${
         shell.addingLibrary ? ' aria-current="page"' : ""
-      }>Add library</a>`
+      }><span aria-hidden="true">+</span></a>`
     : "";
 
   const rows =
@@ -210,13 +237,10 @@ function librarySidebar(shell: AppShell): string {
           ${shell.libraries
             .map((row) => {
               const active = row.id === shell.activeLibraryId;
-              const kind = libraryKind(row.template as LibraryRow["template"]);
-              const role =
-                row.access_role === "publisher"
-                  ? "Publisher"
-                  : row.access_role === "reader"
-                    ? "Reader"
-                    : "";
+              const mode =
+                row.writeMode && isLibraryWriteMode(row.writeMode)
+                  ? shellWriteModeLabel(row.writeMode)
+                  : "";
               const pending =
                 typeof row.pendingCount === "number" && row.pendingCount > 0
                   ? `<a class="sidebar-pending" href="/libraries/${esc(row.id)}?tab=pending">${row.pendingCount}<span class="sr-only"> pending</span></a>`
@@ -226,7 +250,7 @@ function librarySidebar(shell: AppShell): string {
               <a class="sidebar-lib${active ? " is-active" : ""}" href="/libraries/${esc(row.id)}"${active ? ' aria-current="page"' : ""}>
                 <span class="sidebar-lib-text">
                   <span class="sidebar-lib-name">${esc(row.name)}</span>
-                  ${kind || role ? `<span class="sidebar-lib-meta">${esc([kind, role].filter(Boolean).join(" · "))}</span>` : ""}
+                  ${mode ? `<span class="sidebar-lib-meta">${esc(mode)}</span>` : ""}
                 </span>
               </a>
               ${pending}
@@ -259,8 +283,10 @@ function librarySidebar(shell: AppShell): string {
   return `
     <aside class="lib-sidebar" aria-label="Libraries">
       <div class="sidebar-head">
-        <h2 class="sidebar-title">Libraries</h2>
-        ${addLink}
+        <div class="sidebar-head-row">
+          <h2 class="sidebar-title"><a href="/">Libraries</a></h2>
+          ${addLink}
+        </div>
       </div>
       <nav class="sidebar-nav" aria-label="Your libraries">
         ${rows}
@@ -293,11 +319,9 @@ export function layout(input: {
         <a class="brand" href="/">MCPEncode</a>
         ${
           shellMode
-            ? `<p class="nav-context">${
-                input.library
-                  ? `<span class="nav-current">${esc(input.library.name)}</span>`
-                  : `<span class="nav-muted">Libraries</span>`
-              }</p>`
+            ? input.library
+              ? `<p class="nav-context"><span class="nav-current">${esc(input.library.name)}</span></p>`
+              : ""
             : `<div class="nav-trail">
           <a class="nav-link" href="/">Library</a>
           ${
@@ -310,6 +334,11 @@ export function layout(input: {
         }
         <div class="nav-end">
           <span class="nav-role">${esc(roleLabel(input.access))}</span>
+          ${
+            input.shell?.showAccounts
+              ? `<a class="nav-signout" href="/accounts">Accounts</a>`
+              : ""
+          }
           <a class="nav-signout" href="/logout">Sign out</a>
         </div>
       </nav>`
@@ -350,7 +379,7 @@ export function layout(input: {
   ${input.csrf ? `<meta name="csrf-token" content="${esc(input.csrf)}">` : ""}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@450;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@450;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   ${input.extraHead ?? ""}
 </head>

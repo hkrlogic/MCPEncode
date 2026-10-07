@@ -14,7 +14,10 @@ import {
   createMcpHandler,
 } from "@modelcontextprotocol/server";
 import type { Database } from "../db/types.ts";
+import { getLibrary } from "../db/queries.ts";
 import type { AppConfig } from "../config.ts";
+import { libraryTokenAudience } from "../auth/audience.ts";
+import { loginScopes } from "../auth/scopes.ts";
 import { createTokenVerifier } from "../auth/verifier.ts";
 import {
   FORBIDDEN_LIBRARY,
@@ -23,7 +26,13 @@ import {
   resolveLibraryMcpAccess,
 } from "../mcp/server.ts";
 import type { AuthServerEndpoints } from "./discovery.ts";
-import { isLibraryId, libraryMcpUrl } from "./library-url.ts";
+import {
+  connectTokensMatch,
+  isConnectToken,
+  isLibraryId,
+  libraryMcpUrl,
+} from "./library-url.ts";
+import { registerAccountRoutes } from "./routes/accounts.ts";
 import { registerAuthRoutes } from "./routes/auth.ts";
 import type { AppRouteContext } from "./routes/context.ts";
 import { registerEditorRoutes } from "./routes/editor.ts";
@@ -68,6 +77,8 @@ export function createApp(input: {
     allowedHosts: allowedNames,
     ...(loopbackBind ? { allowedOrigins: allowedNames } : {}),
   });
+  // One reverse proxy on a public bind, so the sign-in limit sees the browser address.
+  if (!loopbackBind) app.set("trust proxy", 1);
   app.use(express.urlencoded({ extended: false }));
 
   // Authorization Server metadata (RFC 8414) at the publisher origin.
@@ -79,25 +90,36 @@ export function createApp(input: {
   });
 
   // Per-library Protected Resource Metadata (RFC 9728 path-aware well-known).
+  // The connect token must match so a rotated link cannot be rediscovered.
   app.get(
-    "/.well-known/oauth-protected-resource/libraries/:libraryId/mcp",
-    (req, res) => {
-      const libraryId = req.params.libraryId;
-      if (!isLibraryId(libraryId)) {
-        res.status(404).json({ error: "not_found" });
-        return;
-      }
-      const resourceUrl = new URL(libraryMcpUrl(config.publicBaseUrl, libraryId));
-      const metadata = buildOAuthProtectedResourceMetadata({
-        oauthMetadata: authServer.metadata,
-        resourceServerUrl: resourceUrl,
-        resourceName: "MCPEncode library",
-        scopesSupported: ["openid", "mpos:readonly", "mpos:edit"],
-        dangerouslyAllowInsecureIssuerUrl:
-          resourceUrl.protocol === "http:" ||
-          process.env.MCP_DANGEROUSLY_ALLOW_INSECURE_ISSUER_URL === "true",
-      });
-      res.json(metadata);
+    "/.well-known/oauth-protected-resource/libraries/:libraryId/mcp/:connectToken",
+    (req, res, next) => {
+      void (async () => {
+        const libraryId = req.params.libraryId;
+        const connectToken = req.params.connectToken;
+        if (!isLibraryId(libraryId) || !isConnectToken(connectToken)) {
+          res.status(404).json({ error: "not_found" });
+          return;
+        }
+        const library = await getLibrary(db, libraryId);
+        if (!library || !connectTokensMatch(library.connectToken, connectToken)) {
+          res.status(404).json({ error: "not_found" });
+          return;
+        }
+        const resourceUrl = new URL(
+          libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken),
+        );
+        const metadata = buildOAuthProtectedResourceMetadata({
+          oauthMetadata: authServer.metadata,
+          resourceServerUrl: resourceUrl,
+          resourceName: "MCPEncode library",
+          scopesSupported: loginScopes(config),
+          dangerouslyAllowInsecureIssuerUrl:
+            resourceUrl.protocol === "http:" ||
+            process.env.MCP_DANGEROUSLY_ALLOW_INSECURE_ISSUER_URL === "true",
+        });
+        res.json(metadata);
+      })().catch(next);
     },
   );
 
@@ -116,14 +138,16 @@ export function createApp(input: {
   );
   input.mountAuthServer?.(app);
 
+  const jwksUrl = config.authJwksUrl || authServer.metadata.jwks_uri;
   const webVerifier = createTokenVerifier({
     issuer: config.authIssuer,
     audience: config.authAudience,
-    jwksUrl: config.authJwksUrl,
+    jwksUrl,
     localKey: input.verifierKey,
   });
   const ctx: AppRouteContext = { config, db, authServer, verifier: webVerifier };
   registerAuthRoutes(app, ctx);
+  registerAccountRoutes(app, ctx);
   registerLibraryRoutes(app, ctx);
   registerItemRoutes(app, ctx);
   registerEditorRoutes(app, ctx);
@@ -137,18 +161,40 @@ export function createApp(input: {
     });
   });
 
-  // Per-library MCP. Token audience must match this library's URL.
-  app.all("/libraries/:libraryId/mcp", async (req, res, next) => {
+  // Tokenless library MCP URLs are retired — use Connect (includes the secret).
+  app.all("/libraries/:libraryId/mcp", (_req, res) => {
+    res.status(410).json({
+      error: "gone",
+      error_description:
+        "This Connect link is incomplete or was rotated. Copy the current link from the publisher (Open library → Connect).",
+    });
+  });
+
+  // Per-library MCP. Embedded tokens are bound to this library URL.
+  // Zitadel tokens are bound to the project audience; the access list scopes them.
+  app.all("/libraries/:libraryId/mcp/:connectToken", async (req, res, next) => {
     const libraryId = req.params.libraryId;
-    if (!isLibraryId(libraryId)) {
+    const connectToken = req.params.connectToken;
+    if (!isLibraryId(libraryId) || !isConnectToken(connectToken)) {
       res.status(404).json({ error: "not_found", error_description: "Library not found." });
       return;
     }
-    const resourceUrl = new URL(libraryMcpUrl(config.publicBaseUrl, libraryId));
+    const library = await getLibrary(db, libraryId);
+    if (!library || !connectTokensMatch(library.connectToken, connectToken)) {
+      res.status(404).json({
+        error: "not_found",
+        error_description:
+          "Library not found, or this Connect link was rotated. Copy the current link from the publisher.",
+      });
+      return;
+    }
+    const resourceUrl = new URL(
+      libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken),
+    );
     const verifier = createTokenVerifier({
       issuer: config.authIssuer,
-      audience: resourceUrl.toString().replace(/\/$/, ""),
-      jwksUrl: config.authJwksUrl,
+      audience: libraryTokenAudience(config, resourceUrl.toString()),
+      jwksUrl,
       localKey: input.verifierKey,
     });
     const authGate = requireBearerAuth({

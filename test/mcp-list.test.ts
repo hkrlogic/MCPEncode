@@ -13,14 +13,14 @@ import {
   resolveLibraryMcpAccess,
 } from "../src/mcp/server.ts";
 
-function authFor(role: "edit" | "readonly", sub?: string): AuthInfo {
+function authFor(role: "sa" | "readonly", sub?: string): AuthInfo {
   return {
     token: "test",
     clientId: "mpos-mcp",
-    scopes: role === "edit" ? ["openid", "mpos:edit"] : ["openid", "mpos:readonly"],
+    scopes: role === "sa" ? ["openid", "mpos:edit", "mpos:sa"] : ["openid", "mpos:readonly"],
     expiresAt: Math.floor(Date.now() / 1000) + 3600,
     extra: {
-      sub: sub ?? (role === "edit" ? "mpos-editor" : "mpos-reader"),
+      sub: sub ?? (role === "sa" ? "mpos-editor" : "mpos-reader"),
       role,
     },
   };
@@ -50,34 +50,45 @@ test("agent instructions are scoped to one library and use list_items / open_ite
   assert.match(text, /Do not invent an approve, reject, or write-mode tool/);
   assert.match(text, /How writes go live/);
   assert.match(text, /Reviewed/);
-  assert.match(text, /Direct/);
+  assert.match(text, /Live Sync/);
   assert.ok(text.includes(NOT_CONNECTED));
   assert.match(UNAUTHORIZED_MCP, /Not signed in/);
   assert.match(FORBIDDEN_LIBRARY, /cannot open this library/);
 });
 
-test("publisher MCP tools include create and update but not publish", async () => {
+test("publisher MCP tools include create and update but not publish or hard-delete", async () => {
   await withTestDatabase(async (db) => {
     const library = await createLibrary(db, "Ops", "mpos-editor", "general");
     const ctx = {
       libraryId: library.id,
       libraryName: library.name,
       libraryRole: "publisher" as const,
+      idpRole: "readonly" as const,
       schema: library.schema,
       writeMode: library.writeMode,
     };
-    const editorTools = registeredToolNames(buildMcpServer(db, authFor("edit"), ctx));
-    assert.ok(editorTools.includes("list_items"));
-    assert.ok(editorTools.includes("open_item"));
-    assert.ok(editorTools.includes("create_item"));
-    assert.ok(editorTools.includes("update_item"));
-    assert.ok(editorTools.includes("create_library"));
-    assert.equal(editorTools.includes("list_libraries"), false);
-    assert.equal(editorTools.includes("list_records"), false);
-    assert.equal(editorTools.includes("get_record"), false);
-    assert.ok(editorTools.includes("propose_table"));
-    assert.equal(editorTools.includes("approve_table"), false);
-    assert.equal(editorTools.includes("publish_item"), false);
+    const publisherTools = registeredToolNames(
+      buildMcpServer(db, authFor("readonly", "mpos-editor"), ctx),
+    );
+    assert.ok(publisherTools.includes("list_items"));
+    assert.ok(publisherTools.includes("open_item"));
+    assert.ok(publisherTools.includes("create_item"));
+    assert.ok(publisherTools.includes("update_item"));
+    assert.equal(publisherTools.includes("create_library"), false);
+    assert.equal(publisherTools.includes("delete_item"), false);
+    assert.equal(publisherTools.includes("list_libraries"), false);
+    assert.equal(publisherTools.includes("list_records"), false);
+    assert.equal(publisherTools.includes("get_record"), false);
+    assert.ok(publisherTools.includes("propose_table"));
+    assert.equal(publisherTools.includes("approve_table"), false);
+    assert.equal(publisherTools.includes("publish_item"), false);
+
+    const saTools = registeredToolNames(
+      buildMcpServer(db, authFor("sa"), { ...ctx, idpRole: "sa" }),
+    );
+    assert.ok(saTools.includes("create_library"));
+    assert.ok(saTools.includes("delete_item"));
+
     const readerCtx = { ...ctx, libraryRole: "reader" as const };
     const readerTools = registeredToolNames(buildMcpServer(db, authFor("readonly"), readerCtx));
     assert.ok(readerTools.includes("list_items"));
@@ -87,23 +98,42 @@ test("publisher MCP tools include create and update but not publish", async () =
   });
 });
 
-test("MCP access requires a library access-list row for the subject", async () => {
+test("MCP access requires a library access-list row unless the caller is SA", async () => {
   await withTestDatabase(async (db) => {
     const library = await createLibrary(db, "HR", "alice", "general");
-    const denied = await resolveLibraryMcpAccess(db, authFor("edit", "mpos-editor"), library.id);
+    const denied = await resolveLibraryMcpAccess(
+      db,
+      authFor("readonly", "mpos-reader"),
+      library.id,
+    );
     assert.deepEqual(denied, { error: FORBIDDEN_LIBRARY });
+
+    const saOpen = await resolveLibraryMcpAccess(db, authFor("sa", "mpos-editor"), library.id);
+    assert.deepEqual(saOpen, {
+      libraryId: library.id,
+      libraryName: "HR",
+      libraryRole: "publisher",
+      idpRole: "sa",
+      schema: schemaForStarter("general"),
+      writeMode: "reviewed",
+    });
 
     await grantLibraryAccess(db, {
       libraryId: library.id,
-      subject: "mpos-editor",
+      subject: "mpos-reader",
       role: "reader",
       grantedBy: "alice",
     });
-    const allowed = await resolveLibraryMcpAccess(db, authFor("edit", "mpos-editor"), library.id);
+    const allowed = await resolveLibraryMcpAccess(
+      db,
+      authFor("readonly", "mpos-reader"),
+      library.id,
+    );
     assert.deepEqual(allowed, {
       libraryId: library.id,
       libraryName: "HR",
       libraryRole: "reader",
+      idpRole: "readonly",
       schema: schemaForStarter("general"),
       writeMode: "reviewed",
     });
@@ -117,11 +147,12 @@ test("create_library grants the creator as publisher", async () => {
     assert.equal(row.schema.starter, "policy");
     assert.equal(row.writeMode, "reviewed");
     assert.ok(row.schema.fields.some((field) => field.key === "policy"));
-    const scoped = await resolveLibraryMcpAccess(db, authFor("edit", "editor"), row.id);
+    const scoped = await resolveLibraryMcpAccess(db, authFor("readonly", "editor"), row.id);
     assert.deepEqual(scoped, {
       libraryId: row.id,
       libraryName: row.name,
       libraryRole: "publisher",
+      idpRole: "readonly",
       schema: row.schema,
       writeMode: "reviewed",
     });

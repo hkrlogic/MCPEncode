@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { memoryAccountStore } from "../src/auth/accounts.ts";
 import { createEmbeddedIdp } from "../src/auth/embedded-idp.ts";
 import type { AppConfig } from "../src/config.ts";
 
@@ -25,7 +26,7 @@ const config: AppConfig = {
 };
 
 test("OpenID discovery includes fields Cursor requires", async () => {
-  const idp = await createEmbeddedIdp(config);
+  const idp = await createEmbeddedIdp(config, memoryAccountStore());
   const { metadata } = idp.endpoints;
   assert.deepEqual(metadata.subject_types_supported, ["public"]);
   assert.deepEqual(metadata.id_token_signing_alg_values_supported, ["RS256"]);

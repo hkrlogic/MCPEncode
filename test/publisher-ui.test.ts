@@ -22,6 +22,7 @@ function library(partial: Partial<LibraryRow> = {}): LibraryRow {
     schema: { starter: "general", fields: [] },
     tableProposal: null,
     tableProposalUnreadable: false,
+    connectToken: "test-connect-token-aaaaaaaaaaaaaaaaaa",
     created_by: "alice",
     updated_by: "alice",
     created_at: 0,
@@ -32,12 +33,13 @@ function library(partial: Partial<LibraryRow> = {}): LibraryRow {
 
 const shell = {
   csrf: "token",
-  mcpUrl: "http://127.0.0.1:3000/libraries/x/mcp",
+  mcpUrl: "http://127.0.0.1:3000/libraries/x/mcp/test-connect-token-aaaaaaaaaaaaaaaaaa",
   shellLibraries: [
     {
       id: "11111111-1111-4111-8111-111111111111",
       name: "Windows patching",
       template: "general",
+      writeMode: "reviewed" as const,
       access_role: "publisher",
       pendingCount: 2,
     },
@@ -46,7 +48,7 @@ const shell = {
 
 test("home lists libraries that have items waiting to publish", () => {
   const html = librariesPage({
-    access: { sub: "alice", clientId: "test", role: "edit", permissions: ROLE_PERMISSIONS.edit },
+    access: { sub: "alice", clientId: "test", role: "sa", permissions: ROLE_PERMISSIONS.sa },
     csrf: "token",
     libraries: shell.shellLibraries,
   });
@@ -54,6 +56,8 @@ test("home lists libraries that have items waiting to publish", () => {
   assert.match(html, /3 pending|2 pending/);
   assert.match(html, /tab=pending/);
   assert.match(html, /class="sidebar-pending"/);
+  assert.match(html, /Publisher Review/);
+  assert.doesNotMatch(html, /Table · Publisher/);
 });
 
 test("an empty library offers Add item, and search offers Clear", () => {
@@ -144,7 +148,7 @@ test("publish diff labels the previous and current text", () => {
   assert.match(html, /Now name/);
 });
 
-test("Edit sits with Publish, and Remove names the library", () => {
+test("Edit sits with Publish; publishers archive; only SA hard-deletes", () => {
   const lib = library();
   const item = {
     id: "item-1",
@@ -170,10 +174,27 @@ test("Edit sits with Publish, and Remove names the library", () => {
     html: "<p>Apply</p>",
     shell: { libraries: [], csrf: "token", canAddLibrary: true },
   });
-  const editAt = html.indexOf('href="/items/item-1/edit"');
-  const actionsAt = html.indexOf(">Actions<");
-  assert.ok(editAt > 0);
-  assert.ok(actionsAt > editAt);
+  assert.ok(html.indexOf('href="/items/item-1/edit"') > 0);
+  assert.match(html, /Archive/);
+  assert.doesNotMatch(html, /aria-label="Actions"/);
+  assert.doesNotMatch(html, /action="\/items\/item-1\/delete"/);
+
+  const saHtml = itemPage({
+    access: {
+      sub: "alice",
+      clientId: "test",
+      role: "sa",
+      libraryRole: "publisher",
+      permissions: ROLE_PERMISSIONS.sa,
+    },
+    csrf: "token",
+    item,
+    library: lib,
+    html: "<p>Apply</p>",
+    shell: { libraries: [], csrf: "token", canAddLibrary: true },
+  });
+  assert.match(saHtml, /aria-label="Actions"/);
+  assert.match(saHtml, /action="\/items\/item-1\/delete"/);
 
   const access = libraryPage({
     ...shell,
@@ -193,9 +214,50 @@ test("Edit sits with Publish, and Remove names the library", () => {
     ],
   });
   assert.match(access, /id="viewer-sub"/);
-  assert.match(access, /data-copy="#viewer-sub"/);
-  assert.match(access, /A reader can look up published items/);
   assert.match(access, /Remove bob from Windows patching\?/);
+
+  const withPeople = libraryPage({
+    ...shell,
+    access: publisher,
+    library: lib,
+    items: [],
+    tab: "access",
+    viewerSub: "alice",
+    accessList: [
+      {
+        library_id: lib.id,
+        subject: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        role: "reader",
+        granted_by: "alice",
+        created_at: 0,
+      },
+    ],
+    accounts: [
+      {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        username: "bob",
+        role: "readonly",
+        disabled: false,
+      },
+    ],
+  });
+  assert.match(withPeople, /Choose someone/);
+  assert.match(withPeople, /name="username"/);
+  assert.match(withPeople, /access-person-name">bob</);
+  assert.doesNotMatch(withPeople, /viewer-sub/);
+  assert.doesNotMatch(withPeople, /<code>aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa<\/code>/);
+  assert.match(withPeople, /Remove bob from Windows patching\?/);
+
+  const libraryHtml = libraryPage({
+    ...shell,
+    access: publisher,
+    library: lib,
+    items: [],
+  });
+  assert.match(libraryHtml, /Rotate connect link/);
+  assert.match(libraryHtml, /action="\/libraries\/[^"]+\/connect\/rotate"/);
+  assert.match(libraryHtml, /Delete library/);
+  assert.match(libraryHtml, /Rotate under Actions if the link leaks/);
 });
 
 test("table lists can include column values without changing the catalog list", async () => {

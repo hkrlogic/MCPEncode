@@ -56,19 +56,28 @@ export async function countLibraryAccess(db: Database, libraryId: string): Promi
   return Number(row?.n ?? 0);
 }
 
+export type ShellLibraryRow = {
+  id: string;
+  name: string;
+  template: string;
+  write_mode: string;
+  access_role: LibraryAccessRole;
+};
+
 /** Libraries this subject may open (readers and publishers). */
 export async function listLibrariesForSubject(
   db: Database,
   subject: string,
-): Promise<{ id: string; name: string; template: string; access_role: LibraryAccessRole }[]> {
+): Promise<ShellLibraryRow[]> {
   const rows = await allRows<{
     id: string;
     name: string;
     template: string;
+    write_mode: string;
     access_role: string;
   }>(
     db,
-    `SELECT l.id, l.name, l.template, a.role AS access_role
+    `SELECT l.id, l.name, l.template, l.write_mode, a.role AS access_role
      FROM libraries l
      INNER JOIN library_access a ON a.library_id = l.id
      WHERE a.subject = ?
@@ -81,27 +90,51 @@ export async function listLibrariesForSubject(
   }));
 }
 
+/** Every library. Used for SA, who is not limited to the access list. */
+export async function listAllLibrariesForSa(db: Database): Promise<ShellLibraryRow[]> {
+  const rows = await allRows<{
+    id: string;
+    name: string;
+    template: string;
+    write_mode: string;
+  }>(
+    db,
+    `SELECT id, name, template, write_mode FROM libraries ORDER BY LOWER(name) ASC, name ASC`,
+  );
+  return rows.map((row) => ({ ...row, access_role: "publisher" as const }));
+}
+
 /**
  * Draft counts for libraries where this subject is a publisher.
  * Readers get an empty map: pending items are not visible to them.
+ * Pass everyLibrary for SA so pending badges cover the whole publisher.
  */
 export async function pendingCountsForPublisher(
   db: Database,
   subject: string,
+  options: { everyLibrary?: boolean } = {},
 ): Promise<Map<string, number>> {
-  const rows = await allRows<{ id: string; n: string | number }>(
-    db,
-    `SELECT i.library_id AS id, COUNT(*) AS n
-     FROM items i
-     INNER JOIN library_access a ON a.library_id = i.library_id
-     WHERE a.subject = ? AND a.role = 'publisher' AND i.status = 'draft'
-     GROUP BY i.library_id`,
-    subject,
-  );
+  const rows = options.everyLibrary
+    ? await allRows<{ id: string; n: string | number }>(
+        db,
+        `SELECT library_id AS id, COUNT(*) AS n
+         FROM items
+         WHERE status = 'draft'
+         GROUP BY library_id`,
+      )
+    : await allRows<{ id: string; n: string | number }>(
+        db,
+        `SELECT i.library_id AS id, COUNT(*) AS n
+         FROM items i
+         INNER JOIN library_access a ON a.library_id = i.library_id
+         WHERE a.subject = ? AND a.role = 'publisher' AND i.status = 'draft'
+         GROUP BY i.library_id`,
+        subject,
+      );
   return new Map(rows.map((row) => [row.id, Number(row.n)]));
 }
 
-/** Libraries with nobody on the access list (safe for an IdP editor to claim). */
+/** Libraries with nobody on the access list (safe for an SA to claim). */
 export async function listOrphanLibraries(
   db: Database,
 ): Promise<{ id: string; name: string; template: string }[]> {

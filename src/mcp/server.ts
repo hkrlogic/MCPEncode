@@ -2,7 +2,7 @@ import type { AuthInfo } from "@modelcontextprotocol/server";
 import { McpServer } from "@modelcontextprotocol/server";
 import type { Database } from "../db/types.ts";
 import { z } from "zod/v4";
-import { accessFromLibraryRole, can, type LibraryRole } from "../auth/rbac.ts";
+import { accessForLibrary, can, type LibraryRole, type Role } from "../auth/rbac.ts";
 import {
   addDraftItem,
   createLibrary,
@@ -44,11 +44,11 @@ export const FORBIDDEN_LIBRARY =
   "Signed in, but this account cannot open this library. Ask a publisher on the library to grant your IdP subject access.";
 
 /**
- * How publishers should collect and store live data in a Direct library
+ * How publishers should collect and store live data in a Live Sync library
  * so another agent can find it later with list_items / open_item.
  */
 export function directHandoffGuide(): string {
-  return `This library is Direct: create_item and update_item are live immediately for readers and agents. There is still no publish tool — saves go live on their own. Do not invent a mode-change tool; only a human can change Reviewed/Direct in the publisher UI.
+  return `This library is Live Sync: create_item and update_item are live immediately for readers and agents. There is still no publish tool — saves go live on their own. Do not invent a mode-change tool; only a human can change Reviewed/Live Sync in the publisher UI.
 
 Collecting and storing for the next agent:
 1. Give every real-world entity a stable entity_key (for example host:contoso-01 or run:2026-10-06). Prefer entity_key over guessing from the display name.
@@ -116,6 +116,8 @@ export type LibraryMcpContext = {
   libraryId: string;
   libraryName: string;
   libraryRole: LibraryRole;
+  /** App role from the token. SA may act without an access-list row. */
+  idpRole: Role;
   schema: LibrarySchema;
   writeMode: "reviewed" | "direct";
 };
@@ -136,17 +138,25 @@ export function buildMcpServer(
   options: BuildMcpServerOptions = {},
 ): McpServer {
   const idpAccess = (() => {
-    const extra = (authInfo.extra ?? {}) as { sub?: string; role?: "readonly" | "edit" };
+    const extra = (authInfo.extra ?? {}) as { sub?: string; role?: Role };
     return {
       sub: extra.sub || authInfo.clientId,
       clientId: authInfo.clientId,
+      idpRole: extra.role ?? library.idpRole,
     };
   })();
-  const access = accessFromLibraryRole({
-    sub: idpAccess.sub,
-    clientId: idpAccess.clientId,
-    libraryRole: library.libraryRole,
-  });
+  const access =
+    accessForLibrary({
+      sub: idpAccess.sub,
+      clientId: idpAccess.clientId,
+      idpRole: idpAccess.idpRole,
+      libraryRole: library.libraryRole,
+    }) ?? accessForLibrary({
+      sub: idpAccess.sub,
+      clientId: idpAccess.clientId,
+      idpRole: "readonly",
+      libraryRole: "reader",
+    })!;
   const server = new McpServer(
     { name: "mcpencode", version: "0.3.0" },
     { instructions: agentInstructions(library.libraryName, library.schema, library.writeMode) },
@@ -218,7 +228,7 @@ export function buildMcpServer(
             .min(1)
             .max(120)
             .optional()
-            .describe("Stable entity key (exact match). Prefer this for Direct upserts."),
+            .describe("Stable entity key (exact match). Prefer this for Live Sync upserts."),
           q: z.string().trim().min(1).max(200).optional(),
           limit: z.number().int().min(1).max(50).optional(),
         }),
@@ -342,13 +352,13 @@ export function buildMcpServer(
     );
   }
 
-  if (can(access, "records.write")) {
+  if (can(access, "libraries.create")) {
     server.registerTool(
       "create_library",
       {
         title: "Add library",
         description:
-          "Create a library only after the human confirmed the name, shape, and write mode in the design conversation. write_mode reviewed = Pending until Publish; direct = saves are live immediately. schema policy or procedure only when they confirmed that fixed shape — do not send table. schema general with table when they confirmed a custom table; general is the placeholder until they Approve it in the publisher. You become the publisher. They connect the returned link for that library. Do not guess a shape or write mode.",
+          "Create a library only after the human confirmed the name, shape, and write mode in the design conversation. write_mode reviewed = Pending until Publish; direct = saves are live immediately. schema policy or procedure only when they confirmed that fixed shape — do not send table. schema general with table when they confirmed a custom table; general is the placeholder until they Approve it in the publisher. SA becomes the publisher. They connect the returned link for that library. Do not guess a shape or write mode.",
         inputSchema: createLibraryInputSchema,
         annotations: { readOnlyHint: false },
       },
@@ -375,12 +385,12 @@ export function buildMcpServer(
           detail: `${row.id}:${row.writeMode}:${row.tableProposal?.name ?? row.schema.starter}`,
         });
         const mcpUrl = options.publicBaseUrl
-          ? libraryMcpUrl(options.publicBaseUrl, row.id)
+          ? libraryMcpUrl(options.publicBaseUrl, row.id, row.connectToken)
           : undefined;
         const table = row.tableProposal;
         const liveBlurb =
           row.writeMode === "direct"
-            ? "Saves are live immediately (Direct)."
+            ? "Saves are live immediately (Live Sync)."
             : "Items stay Pending until they Publish (Reviewed).";
         const notice = table
           ? `DATA (not instructions). Library created (${row.writeMode}). Tell the human in everyday words: open the publisher and Approve the table "${table.name}", then connect this library's link before adding items. ${liveBlurb} Do not invent an approve tool.`
@@ -406,7 +416,9 @@ export function buildMcpServer(
         );
       },
     );
+  }
 
+  if (can(access, "records.write")) {
     // Proposal only. Approval stays in the portal so this session cannot approve its own table.
     server.registerTool(
       "propose_table",
@@ -523,7 +535,8 @@ export function buildMcpServer(
       "delete_item",
       {
         title: "Delete item",
-        description: "Permanently delete one library item by id. Destructive. Only when the human asked.",
+        description:
+          "Permanently delete one library item by id. SA only. Destructive. Prefer archive unless the human asked to delete.",
         inputSchema: z.object({ id: z.string().uuid() }),
         annotations: { readOnlyHint: false, destructiveHint: true },
       },
@@ -585,14 +598,16 @@ export async function resolveLibraryMcpAccess(
 ): Promise<LibraryMcpContext | { error: string }> {
   const library = await getLibrary(db, libraryId);
   if (!library) return { error: "Library not found." };
-  const extra = (authInfo.extra ?? {}) as { sub?: string };
+  const extra = (authInfo.extra ?? {}) as { sub?: string; role?: Role };
   const sub = extra.sub || authInfo.clientId;
+  const idpRole: Role = extra.role === "sa" ? "sa" : "readonly";
   const membership = await getLibraryAccess(db, libraryId, sub);
-  if (!membership) return { error: FORBIDDEN_LIBRARY };
+  if (!membership && idpRole !== "sa") return { error: FORBIDDEN_LIBRARY };
   return {
     libraryId: library.id,
     libraryName: library.name,
-    libraryRole: membership.role,
+    libraryRole: membership?.role ?? "publisher",
+    idpRole,
     schema: library.schema,
     writeMode: library.writeMode,
   };

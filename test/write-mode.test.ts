@@ -125,14 +125,18 @@ test("library page explains write mode to publishers only", async () => {
       shellLibraries: [],
     };
     const publisherHtml = libraryPage({ ...shared, access: publisher });
-    assert.match(publisherHtml, /Direct/);
-    assert.match(publisherHtml, /Saves are live immediately for readers and agents/);
-    assert.match(publisherHtml, /Change to Reviewed/);
+    assert.match(publisherHtml, /write-mode-toggle/);
     assert.match(publisherHtml, /action="\/libraries\/[^"]+\/write-mode"/);
+    assert.match(publisherHtml, /role="switch"/);
+    assert.match(publisherHtml, /aria-checked="true"/);
+    assert.match(publisherHtml, /name="write_mode" value="reviewed"/);
+    assert.doesNotMatch(publisherHtml, /Change to Publisher Review/);
+    assert.doesNotMatch(publisherHtml, /write-mode-current/);
 
     const readerHtml = libraryPage({ ...shared, access: reader });
-    assert.doesNotMatch(readerHtml, /Change to Reviewed/);
-    assert.doesNotMatch(readerHtml, /write-mode/);
+    assert.doesNotMatch(readerHtml, /write-mode-toggle/);
+    assert.doesNotMatch(readerHtml, /role="switch"/);
+    assert.doesNotMatch(readerHtml, /class="kicker"/);
   });
 });
 
@@ -141,7 +145,7 @@ test("direct agent instructions say saves are live", () => {
   assert.match(reviewed, /save drafts only/);
   assert.doesNotMatch(reviewed, /Collecting and storing for the next agent/);
   const direct = agentInstructions("Patch scans", { starter: "general", fields: [] }, "direct");
-  assert.match(direct, /Direct/);
+  assert.match(direct, /Live Sync/);
   assert.match(direct, /live immediately/);
   assert.match(direct, /Collecting and storing for the next agent/);
   assert.match(direct, /stable entity_key/);

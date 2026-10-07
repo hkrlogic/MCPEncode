@@ -3,20 +3,23 @@ import { test } from "node:test";
 import {
   addDraftItem,
   createLibrary,
+  getLibrary,
   grantLibraryAccess,
   listLibrariesForSubject,
   listOrphanLibraries,
   pendingCountsForPublisher,
   revokeLibraryAccess,
+  rotateLibraryConnectToken,
 } from "../src/db/queries.ts";
 import { DEFAULT_LIBRARY_ID } from "../src/db/migrate.ts";
 import { withTestDatabase } from "./db.ts";
-import { libraryMcpUrl, isLibraryId } from "../src/http/library-url.ts";
+import { connectTokensMatch, libraryMcpUrl, isLibraryId } from "../src/http/library-url.ts";
 
-test("library MCP URL is stable and id-validated", () => {
+test("library MCP URL includes the connect token and id is validated", () => {
+  const token = "test-connect-token-cccccccccccccccccc";
   assert.equal(
-    libraryMcpUrl("http://127.0.0.1:3000", DEFAULT_LIBRARY_ID),
-    `http://127.0.0.1:3000/libraries/${DEFAULT_LIBRARY_ID}/mcp`,
+    libraryMcpUrl("http://127.0.0.1:3000", DEFAULT_LIBRARY_ID, token),
+    `http://127.0.0.1:3000/libraries/${DEFAULT_LIBRARY_ID}/mcp/${token}`,
   );
   assert.equal(isLibraryId(DEFAULT_LIBRARY_ID), true);
   assert.equal(isLibraryId("not-a-uuid"), false);
@@ -78,6 +81,31 @@ test("cannot revoke the last publisher", async () => {
       () => revokeLibraryAccess(db, library.id, "alice"),
       /Keep at least one publisher/,
     );
+  });
+});
+
+test("rotating the connect token kills the old URL and keeps access grants", async () => {
+  await withTestDatabase(async (db) => {
+    const library = await createLibrary(db, "Shared runbooks", "alice", "general");
+    assert.ok(library.connectToken.length >= 32);
+    const before = library.connectToken;
+    await grantLibraryAccess(db, {
+      libraryId: library.id,
+      subject: "bob",
+      role: "reader",
+      grantedBy: "alice",
+    });
+
+    const rotated = await rotateLibraryConnectToken(db, library.id, "alice");
+    assert.ok(rotated);
+    assert.notEqual(rotated.connectToken, before);
+    assert.equal(connectTokensMatch(before, rotated.connectToken), false);
+
+    const fresh = await getLibrary(db, library.id);
+    assert.equal(fresh?.connectToken, rotated.connectToken);
+
+    const subjects = await listLibrariesForSubject(db, "bob");
+    assert.equal(subjects.some((row) => row.id === library.id), true);
   });
 });
 

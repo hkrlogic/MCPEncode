@@ -4,6 +4,7 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import type { AppConfig } from "../src/config.ts";
+import { memoryAccountStore } from "../src/auth/accounts.ts";
 import { createEmbeddedIdp } from "../src/auth/embedded-idp.ts";
 import { callbackLabel, isAllowedCallback } from "../src/auth/redirect.ts";
 
@@ -58,7 +59,7 @@ test("authorize accepts a callback that was not on the old list", async () => {
     authAudience: "http://127.0.0.1:3000",
     webClientId: "mpos-web",
   } as AppConfig;
-  const idp = await createEmbeddedIdp(config);
+  const idp = await createEmbeddedIdp(config, memoryAccountStore());
   const app = express();
   app.use(express.urlencoded({ extended: false }));
   idp.mount(app);
@@ -78,7 +79,9 @@ test("authorize accepts a callback that was not on the old list", async () => {
     const page = await fetch(`${base}/id/authorize?${params}`);
     assert.equal(page.status, 200);
     const html = await page.text();
-    assert.match(html, /brand-new-client\.example/);
+    assert.match(html, /Sign in|Create account/);
+    assert.doesNotMatch(html, /After you sign in, you return to/);
+    assert.doesNotMatch(html, /<p class="hint">[^<]*return to/);
 
     const blocked = await fetch(
       `${base}/id/authorize?${new URLSearchParams({

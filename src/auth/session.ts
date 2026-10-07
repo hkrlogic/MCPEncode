@@ -32,15 +32,22 @@ export async function signSession(
 export async function readSession(token: string, secret: string): Promise<Session | undefined> {
   try {
     const { payload } = await jwtVerify(token, secretKey(secret), { algorithms: ["HS256"] });
+    // Legacy sessions may still say "edit"; treat them as SA until they sign in again.
+    const role =
+      payload.role === "sa" || payload.role === "edit"
+        ? "sa"
+        : payload.role === "readonly"
+          ? "readonly"
+          : undefined;
     if (
       typeof payload.sub !== "string" ||
       typeof payload.clientId !== "string" ||
-      (payload.role !== "readonly" && payload.role !== "edit") ||
+      !role ||
       typeof payload.csrf !== "string"
     ) {
       return undefined;
     }
-    return { sub: payload.sub, clientId: payload.clientId, role: payload.role, csrf: payload.csrf };
+    return { sub: payload.sub, clientId: payload.clientId, role, csrf: payload.csrf };
   } catch {
     return undefined;
   }

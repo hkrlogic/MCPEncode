@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { createEmbeddedIdp } from "./auth/embedded-idp.ts";
 import { legacySqliteFilePresent, loadConfig } from "./config.ts";
+import { accountStore } from "./db/accounts.ts";
 import { openDatabase } from "./db/client.ts";
 import { createApp } from "./http/app.ts";
 import { loadAuthServer } from "./http/discovery.ts";
@@ -10,7 +11,7 @@ async function main(): Promise<void> {
   const db = await openDatabase(config.database);
 
   const embedded =
-    config.authMode === "embedded" ? await createEmbeddedIdp(config) : undefined;
+    config.authMode === "embedded" ? await createEmbeddedIdp(config, accountStore(db)) : undefined;
   const authServer = embedded ? embedded.endpoints : await loadAuthServer(config.authIssuer);
 
   const app = createApp({
@@ -23,7 +24,7 @@ async function main(): Promise<void> {
 
   app.listen(config.port, config.bindHost, () => {
     console.log(`MCPEncode UI  http://${config.bindHost}:${config.port}/`);
-    console.log(`MCPEncode MCP ${config.publicBaseUrl}/libraries/{id}/mcp`);
+    console.log(`MCPEncode MCP ${config.publicBaseUrl}/libraries/{id}/mcp/{token} (copy from Connect)`);
     console.log(`Issuer   ${config.authIssuer} (${config.authMode})`);
     console.log(
       `Postgres ${config.database.host}:${config.database.port}/${config.database.database}`,

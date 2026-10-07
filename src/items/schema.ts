@@ -30,7 +30,7 @@ export const entityKeySchema = z
   })
   .optional()
   .describe(
-    "Stable id for this real-world entity inside the library (for example host:contoso-01). Prefer this for Direct upserts.",
+    "Stable id for this real-world entity inside the library (for example host:contoso-01). Prefer this for Live Sync upserts.",
   );
 
 /** Shared item shape for the HTML form and MCP tools. */

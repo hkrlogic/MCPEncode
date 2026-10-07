@@ -1,11 +1,20 @@
 /** Library list and single-library item lists. */
+import type { Account } from "../../auth/accounts.ts";
 import { can, type Access } from "../../auth/rbac.ts";
 import type { LibraryAccessRow } from "../../db/access.ts";
 import type { ItemSummary, LibraryRow } from "../../db/models.ts";
 import type { TableProposal } from "../../items/table-proposal.ts";
 import type { SchemaFieldDef } from "../../items/library-schema.ts";
-import { esc, itemListMarkup, kindKicker, layout, onConfirm, type AppShell } from "./layout.ts";
-import { schemaChoicesMarkup, writeModeBlurb, writeModeChoicesMarkup, writeModeLabel } from "./schema-choice.ts";
+import {
+  actionsMenuSummary,
+  esc,
+  itemListMarkup,
+  layout,
+  mcpLinkSummary,
+  onConfirm,
+  type AppShell,
+} from "./layout.ts";
+import { schemaChoicesMarkup, writeModeChoicesMarkup, writeModeLabel } from "./schema-choice.ts";
 
 export function librariesPage(input: {
   access: Access;
@@ -13,12 +22,13 @@ export function librariesPage(input: {
   libraries: AppShell["libraries"];
   orphans?: AppShell["orphans"];
 }): string {
-  const canWrite = can(input.access, "records.write");
+  const canAdd = can(input.access, "libraries.create");
   const shell: AppShell = {
     libraries: input.libraries,
     orphans: input.orphans,
     csrf: input.csrf,
-    canAddLibrary: canWrite,
+    canAddLibrary: canAdd,
+    showAccounts: can(input.access, "accounts.manage"),
   };
   const waiting = input.libraries.filter((row) => (row.pendingCount ?? 0) > 0);
   const waitingList =
@@ -44,21 +54,39 @@ export function librariesPage(input: {
               .join("")}
           </ul>
         </section>`;
+  const firstLibrary =
+    input.libraries.length === 0 && (!input.orphans || input.orphans.length === 0);
+  const orphanHint =
+    input.orphans && input.orphans.length > 0
+      ? `<p class="empty-pane-note">Unclaimed libraries are in the left pane. Claim one to become its publisher.</p>`
+      : "";
+
+  // First visit: one empty-state stack (title → lead → CTA → note). Other home states keep the list layout.
+  if (firstLibrary) {
+    const add = canAdd
+      ? `<p class="empty-action"><a class="btn" href="/libraries/new">Add library</a></p>`
+      : "";
+    return layout({
+      title: "Libraries · MCPEncode",
+      csrf: input.csrf,
+      access: input.access,
+      shell,
+      body: `
+      <div class="empty-pane empty-pane-start">
+        <h1>No libraries yet</h1>
+        <p class="empty-pane-lead">Add a library to get started.</p>
+        ${add}
+        <p class="empty-pane-note">Each library has its own items, access list, and MCP link.</p>
+      </div>
+    `,
+    });
+  }
+
   const noWaiting =
     waiting.length > 0
       ? ""
-      : input.libraries.length === 0 && (!input.orphans || input.orphans.length === 0)
-        ? `<p class="empty-pane-lead">Add a library to get started.</p>`
-        : `<p class="empty-pane-lead">Nothing is waiting to publish.</p>
-           <p class="hint">Open a library from the left pane to work with its items.</p>`;
-  const orphanHint =
-    input.orphans && input.orphans.length > 0
-      ? `<p class="hint">Unclaimed libraries are in the left pane. Claim one to become its publisher.</p>`
-      : "";
-  const add =
-    canWrite && input.libraries.length === 0
-      ? `<p class="empty-action"><a class="btn" href="/libraries/new">Add library</a></p>`
-      : "";
+      : `<p class="empty-pane-lead">Nothing is waiting to publish.</p>
+         <p class="empty-pane-note">Open a library from the left pane to work with its items.</p>`;
 
   return layout({
     title: "Libraries · MCPEncode",
@@ -71,8 +99,6 @@ export function librariesPage(input: {
         ${waitingList}
         ${noWaiting}
         ${orphanHint}
-        ${add}
-        <p class="hint">Each library has its own items, access list, and MCP link.</p>
       </div>
     `,
   });
@@ -91,7 +117,7 @@ export function addLibraryPage(input: {
     libraries: input.libraries,
     orphans: input.orphans,
     csrf: input.csrf,
-    canAddLibrary: can(input.access, "records.write"),
+    canAddLibrary: can(input.access, "libraries.create"),
     addingLibrary: true,
   };
   return layout({
@@ -110,44 +136,37 @@ export function addLibraryPage(input: {
         ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
         <form method="post" action="/libraries" class="capture add-library-form">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-          <label>Name
+          <label>Library name
             <input name="name" required maxlength="200" autocomplete="off" placeholder="Remote access" value="${esc(input.name ?? "")}">
           </label>
           ${schemaChoicesMarkup()}
           ${writeModeChoicesMarkup()}
-          <button class="btn" type="submit">Add library</button>
+          <button class="btn add-library-submit" type="submit">Add library</button>
         </form>
       </div>
     `,
   });
 }
 
-function libraryKicker(library: LibraryRow): string {
-  const mode = writeModeLabel(library.writeMode);
-  if (library.template === "table" && library.schema.tableName) {
-    return `<p class="kicker">${esc(`Table · ${library.schema.tableName}`)} · ${esc(mode)}</p>`;
-  }
-  const kind = kindKicker(library.template);
-  if (kind) {
-    return kind.replace("</p>", ` · ${esc(mode)}</p>`);
-  }
-  return `<p class="kicker">${esc(mode)}</p>`;
-}
-
-/** Publishers can switch Reviewed ↔ Direct here. MCP cannot change this. */
+/** Publishers can switch write mode here. MCP cannot change this. */
 function writeModePanel(library: LibraryRow, csrf: string): string {
-  const other = library.writeMode === "direct" ? "reviewed" : "direct";
-  const confirm =
-    other === "direct"
-      ? "Switch to Direct? New and edited items will be live immediately — no Publish step."
-      : "Switch to Reviewed? New and edited items will stay Pending until you Publish.";
+  const live = library.writeMode === "direct";
+  const next = live ? "reviewed" : "direct";
+  const confirm = live
+    ? `Switch to ${writeModeLabel("reviewed")}? New and edited items will stay Pending until you Publish.`
+    : `Switch to ${writeModeLabel("direct")}? New and edited items will be live immediately — no Publish step.`;
   return `
-    <form class="write-mode-switch" method="post" action="/libraries/${esc(library.id)}/write-mode"
-          onsubmit="${onConfirm(confirm)}">
-      <p class="write-mode-current">${esc(writeModeBlurb(library.writeMode))}</p>
+    <form class="write-mode-toggle" method="post" action="/libraries/${esc(library.id)}/write-mode">
       <input type="hidden" name="csrf" value="${esc(csrf)}">
-      <input type="hidden" name="write_mode" value="${other}">
-      <button class="btn secondary" type="submit">Change to ${esc(writeModeLabel(other))}</button>
+      <input type="hidden" name="write_mode" value="${next}">
+      <span class="write-mode-toggle-label${!live ? " is-current" : ""}">${esc(writeModeLabel("reviewed"))}</span>
+      <button type="submit" class="write-mode-toggle-btn${live ? " is-on" : ""}" role="switch"
+              aria-checked="${live ? "true" : "false"}"
+              aria-label="How writes go live. Now ${esc(writeModeLabel(library.writeMode))}. Switch to ${esc(writeModeLabel(next))}."
+              onclick="${onConfirm(confirm)}">
+        <span class="write-mode-toggle-knob" aria-hidden="true"></span>
+      </button>
+      <span class="write-mode-toggle-label${live ? " is-current" : ""}">${esc(writeModeLabel("direct"))}</span>
     </form>`;
 }
 
@@ -243,19 +262,34 @@ function accessPanel(input: {
   csrf: string;
   accessList: LibraryAccessRow[];
   viewerSub: string;
+  /** Built-in accounts for grant-by-username. Empty when using an external IdP. */
+  accounts?: Account[];
 }): string {
+  const byId = new Map((input.accounts ?? []).map((row) => [row.id, row]));
   const rows =
     input.accessList.length === 0
       ? `<p class="empty">No one on the access list yet.</p>`
       : `<ul class="access-list">
           ${input.accessList
-            .map(
-              (row) => `
-            <li>
-              <span class="access-sub"><code>${esc(row.subject)}</code></span>
-              <span class="access-role">${row.role === "publisher" ? "Publisher" : "Reader"}</span>
+            .map((row) => {
+              const person = byId.get(row.subject);
+              // Built-in accounts show a name. External IdP grants still show the subject.
+              const label = person
+                ? `${person.username}${person.disabled ? " (disabled)" : ""}`
+                : row.subject;
+              const confirmName = person?.username ?? row.subject;
+              const detail = person
+                ? ""
+                : `<span class="access-person-detail"><code>${esc(row.subject)}</code></span>`;
+              return `
+            <li class="access-person">
+              <div class="access-person-main">
+                <span class="access-person-name">${esc(label)}</span>
+                <span class="access-person-role">${row.role === "publisher" ? "Publisher" : "Reader"}</span>
+                ${detail}
+              </div>
               <form method="post" action="/libraries/${esc(input.library.id)}/access/revoke" class="access-remove"
-                    onsubmit="${onConfirm(`Remove ${row.subject} from ${input.library.name}?`)}">
+                    onsubmit="${onConfirm(`Remove ${confirmName} from ${input.library.name}?`)}">
                 <input type="hidden" name="csrf" value="${esc(input.csrf)}">
                 <input type="hidden" name="subject" value="${esc(row.subject)}">
                 <button type="submit" class="btn secondary"${
@@ -264,24 +298,46 @@ function accessPanel(input: {
                     : ""
                 }>Remove</button>
               </form>
-            </li>`,
-            )
+            </li>`;
+            })
             .join("")}
         </ul>`;
+
+  const grantByPerson = Boolean(input.accounts && input.accounts.length > 0);
+  const grantFields = grantByPerson
+    ? `<label>User
+          <select name="username" required>
+            <option value="">Choose someone…</option>
+            ${input.accounts!
+              .filter((row) => !row.disabled)
+              .map(
+                (row) =>
+                  `<option value="${esc(row.username)}">${esc(row.username)}${
+                    row.role === "sa" ? " (SA)" : ""
+                  }</option>`,
+              )
+              .join("")}
+          </select>
+        </label>`
+    : `<label>Subject
+          <input name="subject" required maxlength="255" autocomplete="off" placeholder="IdP sub">
+        </label>`;
+
+  // Subject copy is only useful when grants still use raw IdP ids.
+  const viewerBlock = grantByPerson
+    ? ""
+    : `<p class="viewer-sub">Your subject is <code id="viewer-sub">${esc(input.viewerSub)}</code>
+        <button type="button" class="btn secondary" data-copy="#viewer-sub">Copy</button>
+      </p>`;
 
   return `
     <section class="library-access" aria-labelledby="access-heading">
       <h2 id="access-heading" class="sr-only">Access</h2>
-      <p class="viewer-sub">Your subject is <code id="viewer-sub">${esc(input.viewerSub)}</code>
-        <button type="button" class="btn secondary" data-copy="#viewer-sub">Copy</button>
-      </p>
-      <p class="hint">Grant by IdP subject. A reader can look up published items. A publisher can add, edit, and publish.</p>
+      ${viewerBlock}
       ${rows}
       <form method="post" action="/libraries/${esc(input.library.id)}/access" class="capture">
         <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-        <label>Subject
-          <input name="subject" required maxlength="255" autocomplete="off" placeholder="IdP sub">
-        </label>
+        ${grantFields}
         <label>Role
           <select name="role">
             <option value="reader">Reader</option>
@@ -392,6 +448,8 @@ export function libraryPage(input: {
   mcpUrl: string;
   accessList?: LibraryAccessRow[];
   viewerSub?: string;
+  /** People who can be granted when using built-in sign-in. */
+  accounts?: Account[];
   orphan?: boolean;
   /** Flash after bulk Publish, e.g. "3". */
   publishedCount?: string;
@@ -402,13 +460,16 @@ export function libraryPage(input: {
   /** Libraries for the left pane. */
   shellLibraries: AppShell["libraries"];
   shellOrphans?: AppShell["orphans"];
+  /** Session can add libraries (SA). Independent of library publisher powers. */
+  canAddLibrary?: boolean;
 }): string {
   const shell: AppShell = {
     libraries: input.shellLibraries,
     orphans: input.shellOrphans,
     activeLibraryId: input.library.id,
     csrf: input.csrf,
-    canAddLibrary: can(input.access, "records.write"),
+    canAddLibrary: input.canAddLibrary ?? can(input.access, "libraries.create"),
+    showAccounts: can(input.access, "accounts.manage"),
   };
 
   if (input.orphan) {
@@ -422,7 +483,6 @@ export function libraryPage(input: {
         <div class="library-view">
           <header class="library-head">
             <div>
-              ${libraryKicker(input.library)}
               <h1>${esc(input.library.name)}</h1>
             </div>
           </header>
@@ -440,15 +500,27 @@ export function libraryPage(input: {
   const addLink = canWrite
     ? `<a class="btn" href="/libraries/${esc(input.library.id)}/items/new">Add item</a>`
     : "";
-  const deleteLibrary = can(input.access, "records.delete")
+  // Rotate Connect lives here; Remove on Access still drops one person's grant.
+  const actionsMenu = canWrite
     ? `<details class="item-menu">
-         <summary>Actions</summary>
+         ${actionsMenuSummary()}
          <div class="menu-list">
-           <form method="post" action="/libraries/${esc(input.library.id)}/delete"
-                onsubmit="${onConfirm(`Delete ${input.library.name} and every item in it?`)}">
+           <form method="post" action="/libraries/${esc(input.library.id)}/connect/rotate"
+                onsubmit="${onConfirm(
+                  `Rotate the Connect link for ${input.library.name}? Old links stop working. People on Access stay.`,
+                )}">
              <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-             <button class="menu-danger" type="submit">Delete library</button>
+             <button type="submit">Rotate connect link</button>
            </form>
+           ${
+             can(input.access, "libraries.delete")
+               ? `<form method="post" action="/libraries/${esc(input.library.id)}/delete"
+                    onsubmit="${onConfirm(`Delete ${input.library.name} and every item in it?`)}">
+                 <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+                 <button class="menu-danger" type="submit">Delete library</button>
+               </form>`
+               : ""
+           }
          </div>
        </details>`
     : "";
@@ -481,7 +553,7 @@ export function libraryPage(input: {
 
   const pendingHint =
     input.library.writeMode === "direct"
-      ? "Not live right now. In Direct mode, saving an item makes it live again."
+      ? `Not live right now. In ${writeModeLabel("direct")}, saving an item makes it live again.`
       : "Drafts waiting to be published. Not visible to the kiosk.";
   const pendingSelectHint =
     input.library.writeMode === "direct"
@@ -527,6 +599,7 @@ export function libraryPage(input: {
           csrf: input.csrf,
           accessList: input.accessList,
           viewerSub: input.viewerSub,
+          accounts: input.accounts,
         })
       : `<p class="empty">Access is managed by a publisher on this library.</p>`;
 
@@ -556,9 +629,9 @@ export function libraryPage(input: {
   // The link stays in the header so publishers can copy it without leaving the item list.
   const mcpBlock = `
     <details class="mcp-menu">
-      <summary>MCP link</summary>
+      ${mcpLinkSummary()}
       <div class="mcp-panel">
-        <p class="hint">Hand this link to Cursor or the kiosk for this library only. Sign-in is still required.</p>
+        <p class="hint">Hand this link to Cursor or the kiosk for this library only. Sign-in is still required. Rotate under Actions if the link leaks — that does not remove people on Access.</p>
         <p class="mcp-url"><code id="mcp-url">${esc(input.mcpUrl)}</code></p>
         <button type="button" class="btn secondary" data-copy="#mcp-url">Copy</button>
       </div>
@@ -574,16 +647,15 @@ export function libraryPage(input: {
       <div class="library-view">
         <header class="library-head">
           <div>
-            ${libraryKicker(input.library)}
             <h1>${esc(input.library.name)}</h1>
           </div>
           <div class="head-actions">
             ${mcpBlock}
             ${addLink}
-            ${deleteLibrary}
+            ${actionsMenu}
           </div>
+          ${canWrite ? writeModePanel(input.library, input.csrf) : ""}
         </header>
-        ${canWrite ? writeModePanel(input.library, input.csrf) : ""}
         ${input.notice ? `<p class="notice" role="status">${esc(input.notice)}</p>` : ""}
         ${bulkNotice}
         ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}

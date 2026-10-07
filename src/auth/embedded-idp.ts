@@ -1,29 +1,17 @@
+/**
+ * Identity provider that runs inside the app.
+ * Accounts are loaded from the store. There is no shared demo password.
+ */
 import express, { type Express, type Request, type Response } from "express";
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import type { AppConfig } from "../config.ts";
 import type { AuthServerEndpoints } from "../http/discovery.ts";
 import { pkceChallenge } from "../http/pkce.ts";
-import { callbackLabel, isAllowedCallback } from "./redirect.ts";
+import type { AccountStore } from "./accounts.ts";
+import { hashPassword, normalizeUsername, verifyPassword } from "./passwords.ts";
+import { SIGN_IN_WAIT, SignInLimit } from "./signin-limit.ts";
+import { isAllowedCallback } from "./redirect.ts";
 import type { Role } from "./rbac.ts";
-
-type DemoUser = { username: string; password: string; sub: string; role: Role; realmRole: string };
-
-const USERS: DemoUser[] = [
-  {
-    username: "editor",
-    password: "editor-pass",
-    sub: "mpos-editor",
-    role: "edit",
-    realmRole: "mpos-editor",
-  },
-  {
-    username: "reader",
-    password: "reader-pass",
-    sub: "mpos-reader",
-    role: "readonly",
-    realmRole: "mpos-readonly",
-  },
-];
 
 type AuthCode = {
   sub: string;
@@ -48,7 +36,7 @@ type RefreshGrant = {
 const REFRESH_TTL_MS = 12 * 60 * 60 * 1000;
 
 function scopeFor(realmRole: string): string {
-  return realmRole === "mpos-editor" ? "openid mpos:edit" : "openid mpos:readonly";
+  return realmRole === "mpos-editor" ? "openid mpos:edit mpos:sa" : "openid mpos:readonly";
 }
 
 export type EmbeddedIdp = {
@@ -60,6 +48,12 @@ export type EmbeddedIdp = {
 function q(req: Request, key: string): string {
   const value = req.query[key];
   return typeof value === "string" ? value : "";
+}
+
+/** Browser address for the sign-in limit. Express fills req.ip from the socket, or from a trusted proxy. */
+function clientAddress(req: Request): string {
+  const raw = req.ip || req.socket.remoteAddress || "";
+  return raw.replace(/^::ffff:/, "") || "unknown";
 }
 
 function form(req: Request, key: string): string {
@@ -83,30 +77,48 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
-function loginPage(input: { error?: string; hidden: Record<string, string> }): string {
+function loginPage(input: {
+  error?: string;
+  hidden: Record<string, string>;
+  /** No accounts yet: this form creates the first one. There is no shared password. */
+  setup: boolean;
+  username?: string;
+}): string {
   const fields = Object.entries(input.hidden)
     .map(([name, value]) => `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`)
     .join("");
-  const backTo = escapeHtml(callbackLabel(input.hidden.redirect_uri ?? ""));
+  const title = input.setup ? "Create account" : "Sign in";
+  const lead = input.setup
+    ? "This is the first account. It is SA — it can manage people and every library. Choose a username and a password of at least 12 characters."
+    : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign in · MCPEncode</title>
+  <title>${title} · MCPEncode</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@450;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
   <main class="sign-in">
     <section class="panel">
-      <h1>Sign in</h1>
-      <p class="hint">After you sign in, you return to <code>${backTo}</code>.</p>
+      <h1>${title}</h1>
+      ${lead ? `<p class="hint">${lead}</p>` : ""}
       ${input.error ? `<p class="error" role="alert">${escapeHtml(input.error)}</p>` : ""}
       <form method="post" action="/id/authorize">
         ${fields}
-        <label>Username <input name="username" autocomplete="username" required></label>
-        <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
-        <button class="btn" type="submit">Continue</button>
+        ${input.setup ? `<input type="hidden" name="setup" value="1">` : ""}
+        <label>Username <input name="username" autocomplete="username" required maxlength="64" value="${escapeHtml(input.username ?? "")}"></label>
+        <label>Password <input name="password" type="password" autocomplete="${input.setup ? "new-password" : "current-password"}" required></label>
+        ${
+          input.setup
+            ? `<label>Confirm password <input name="password_confirm" type="password" autocomplete="new-password" required></label>`
+            : ""
+        }
+        <button class="btn" type="submit">${input.setup ? "Create account" : "Continue"}</button>
       </form>
     </section>
   </main>
@@ -115,11 +127,23 @@ function loginPage(input: { error?: string; hidden: Record<string, string> }): s
 }
 
 /**
- * In-process OAuth 2.1 authorization server for local POC when Docker/Keycloak
- * is not available. Issues audience-bound JWTs with the same role claims the
+ * In-process OAuth 2.1 authorization server for local POC when Zitadel
+ * is not running. Issues audience-bound JWTs with the same role claims the
  * resource server already understands.
  */
-export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp> {
+function realmRoleFor(role: Role): string {
+  // Keep the Zitadel-era claim name so existing verifiers still resolve SA.
+  return role === "sa" ? "mpos-editor" : "mpos-readonly";
+}
+
+export async function createEmbeddedIdp(
+  config: AppConfig,
+  accounts: AccountStore,
+  options?: { signInLimit?: SignInLimit },
+): Promise<EmbeddedIdp> {
+  // Used when the username is unknown so a miss still spends a scrypt verification.
+  const dummyPasswordHash = await hashPassword(`unused-${crypto.randomUUID()}`);
+  const signInLimit = options?.signInLimit ?? new SignInLimit();
   const { publicKey, privateKey } = await generateKeyPair("RS256", { extractable: true });
   const jwk = (await exportJWK(publicKey)) as JWK;
   jwk.kid = "mpos-dev";
@@ -143,7 +167,7 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
       registration_endpoint: `${issuer}/register`,
       response_types_supported: ["code"],
       code_challenge_methods_supported: ["S256"],
-      scopes_supported: ["openid", "mpos:readonly", "mpos:edit"],
+      scopes_supported: ["openid", "mpos:readonly", "mpos:edit", "mpos:sa"],
       token_endpoint_auth_methods_supported: ["none"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       subject_types_supported: ["public"],
@@ -231,7 +255,7 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
       });
     });
 
-    const showAuthorize = (req: Request, res: Response, error?: string) => {
+    const showAuthorize = async (req: Request, res: Response, error?: string, username?: string) => {
       const hidden = {
         client_id: form(req, "client_id") || q(req, "client_id"),
         redirect_uri: form(req, "redirect_uri") || q(req, "redirect_uri"),
@@ -254,21 +278,55 @@ export async function createEmbeddedIdp(config: AppConfig): Promise<EmbeddedIdp>
         res.status(400).send("PKCE S256 is required");
         return;
       }
-      res.send(loginPage({ error, hidden }));
+      const setup = (await accounts.count()) === 0;
+      res.send(loginPage({ error, hidden, setup, username }));
     };
 
     app.get("/id/authorize", (req, res) => {
-      showAuthorize(req, res);
+      void showAuthorize(req, res);
     });
 
     app.post("/id/authorize", async (req, res) => {
       const username = form(req, "username");
       const password = form(req, "password");
-      const user = USERS.find((entry) => entry.username === username && entry.password === password);
-      if (!user) {
-        showAuthorize(req, res, "Unknown username or password.");
+      const settingUp = form(req, "setup") === "1";
+      const attemptKey = normalizeUsername(username) || "(blank)";
+      const address = clientAddress(req);
+      if (signInLimit.blocked(attemptKey, address)) {
+        await showAuthorize(req, res, SIGN_IN_WAIT, username);
         return;
       }
+      let user: { sub: string; role: Role; realmRole: string } | undefined;
+      if (settingUp) {
+        if (password !== form(req, "password_confirm")) {
+          signInLimit.recordFailure(attemptKey, address);
+          await showAuthorize(req, res, "Those passwords do not match.", username);
+          return;
+        }
+        const created = await accounts.createFirst({ username, password });
+        if (!created.ok) {
+          signInLimit.recordFailure(attemptKey, address);
+          await showAuthorize(req, res, created.message, username);
+          return;
+        }
+        user = { sub: created.account.id, role: created.account.role, realmRole: realmRoleFor(created.account.role) };
+      } else {
+        const account = await accounts.findByUsername(username);
+        const hash = account?.passwordHash ?? dummyPasswordHash;
+        const match = await verifyPassword(password, hash);
+        if (!account || !match) {
+          signInLimit.recordFailure(attemptKey, address);
+          await showAuthorize(req, res, "Unknown username or password.", username);
+          return;
+        }
+        if (account.disabled) {
+          signInLimit.recordFailure(attemptKey, address);
+          await showAuthorize(req, res, "This account is disabled.", username);
+          return;
+        }
+        user = { sub: account.id, role: account.role, realmRole: realmRoleFor(account.role) };
+      }
+      signInLimit.recordSuccess(attemptKey, address);
       const redirectUri = form(req, "redirect_uri");
       const clientId = form(req, "client_id");
       if (!clientId) {

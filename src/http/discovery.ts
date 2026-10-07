@@ -52,7 +52,7 @@ export async function loadAuthServer(issuer: string): Promise<AuthServerEndpoint
   }
   if (!discovery?.authorization_endpoint || !discovery.token_endpoint || !discovery.issuer) {
     throw new Error(
-      `Could not load OAuth discovery from ${issuer}. Docker is not running, so Keycloak is unreachable. Leave AUTH_MODE unset (embedded IdP) or start Docker Desktop, then: docker compose up -d`,
+      `Could not load OAuth discovery from ${issuer}. Start Zitadel (docker compose up -d) or leave AUTH_MODE unset to use the built-in sign-in.`,
       { cause: lastError },
     );
   }
@@ -63,7 +63,9 @@ export async function loadAuthServer(issuer: string): Promise<AuthServerEndpoint
     token_endpoint: discovery.token_endpoint,
     response_types_supported: discovery.response_types_supported ?? ["code"],
     code_challenge_methods_supported: discovery.code_challenge_methods_supported ?? ["S256"],
-    scopes_supported: ["openid", "mpos:readonly", "mpos:edit"],
+    scopes_supported: discovery.scopes_supported?.length
+      ? discovery.scopes_supported
+      : ["openid"],
     jwks_uri: discovery.jwks_uri,
     grant_types_supported: discovery.grant_types_supported ?? ["authorization_code"],
     token_endpoint_auth_methods_supported: discovery.token_endpoint_auth_methods_supported ?? ["none"],

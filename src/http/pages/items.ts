@@ -4,7 +4,9 @@ import type { ItemRow, LibraryRow } from "../../db/models.ts";
 import { parseTableValues } from "../../items/table-proposal.ts";
 import { labeledItemData } from "../../markdown/render.ts";
 import { itemFields, policyItemFields, procedureItemFields, schemaItemFields } from "./forms.ts";
+import { writeModeLabel } from "./schema-choice.ts";
 import {
+  actionsMenuSummary,
   editorScripts,
   esc,
   layout,
@@ -50,7 +52,7 @@ export function addItemPage(input: {
         : itemFields({ name: "", labels: "", body: "", summaryRequired: true });
   const liveHint =
     input.library.writeMode === "direct"
-      ? "This library is Direct — saving makes the item live immediately."
+      ? `This library is ${writeModeLabel("direct")} — saving makes the item live immediately.`
       : "It stays Pending until you Publish.";
   const hint =
     kind === "table"
@@ -135,7 +137,7 @@ export function itemPage(input: {
   const actions =
     canWrite && can(input.access, "records.delete")
       ? `<details class="item-menu">
-         <summary>Actions</summary>
+         ${actionsMenuSummary()}
          <div class="menu-list">
            <form method="post" action="/items/${esc(input.item.id)}/delete"
                 onsubmit="return confirm('Delete this item?');">
@@ -210,7 +212,7 @@ export function editPage(input: {
 }): string {
   const publishBanner =
     input.library.writeMode === "direct"
-      ? `<p class="notice" role="status">This library is Direct — saving makes this item live for readers and agents.</p>`
+      ? `<p class="notice" role="status">This library is ${esc(writeModeLabel("direct"))} — saving makes this item live for readers and agents.</p>`
       : input.item.status === "published"
         ? `<p class="notice" role="status">Saving moves this item to Pending and hides it from the kiosk until you Publish again.</p>`
         : input.item.status === "draft"

@@ -1,7 +1,7 @@
 /** Item view/edit/update, publish gate, delete, and /notes redirects. */
 import type express from "express";
 import type { Request, Response } from "express";
-import { accessFromLibraryRole, can, type Access } from "../../auth/rbac.ts";
+import { accessForLibrary, can, type Access } from "../../auth/rbac.ts";
 import {
   archiveItem,
   deleteItem,
@@ -36,15 +36,14 @@ async function itemLibraryAccess(
   access: SessionUser,
 ): Promise<SessionUser | undefined> {
   const membership = await getLibraryAccess(db, libraryId, access.sub);
-  if (!membership) return undefined;
-  return {
-    ...accessFromLibraryRole({
-      sub: access.sub,
-      clientId: access.clientId,
-      libraryRole: membership.role,
-    }),
-    csrf: access.csrf,
-  };
+  const libraryAccess = accessForLibrary({
+    sub: access.sub,
+    clientId: access.clientId,
+    idpRole: access.role,
+    libraryRole: membership?.role,
+  });
+  if (!libraryAccess) return undefined;
+  return { ...libraryAccess, csrf: access.csrf };
 }
 
 async function itemShell(

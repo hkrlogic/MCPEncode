@@ -20,6 +20,11 @@ export type LibraryRow = {
   tableProposal: TableProposal | null;
   /** JSON was present but not a valid proposal. Reject still clears it. */
   tableProposalUnreadable: boolean;
+  /**
+   * Secret path segment in the library MCP URL.
+   * Rotate to kill a leaked Connect link; access grants stay as they are.
+   */
+  connectToken: string;
   created_by: string;
   updated_by: string;
   created_at: number;

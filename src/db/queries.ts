@@ -12,6 +12,7 @@ export {
   listLibraries,
   getLibrary,
   createLibrary,
+  rotateLibraryConnectToken,
   setLibraryWriteMode,
   deleteLibrary,
   defaultLibraryId,
@@ -37,11 +38,13 @@ export { writeAudit, listAudit } from "./audit.ts";
 export { proposeTable, approveTableProposal, rejectTableProposal } from "./table-proposals.ts";
 export type { ProposeTableResult, ApproveTableResult } from "./table-proposals.ts";
 export type { LibraryAccessRole, LibraryAccessRow } from "./access.ts";
+export { accountStore } from "./accounts.ts";
 export {
   listLibraryAccess,
   getLibraryAccess,
   countLibraryAccess,
   listLibrariesForSubject,
+  listAllLibrariesForSa,
   pendingCountsForPublisher,
   listOrphanLibraries,
   grantLibraryAccess,

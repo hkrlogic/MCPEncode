@@ -25,7 +25,7 @@ test("accepts an audience-bound token with the editor role", async () => {
   const verifier = createTokenVerifier({ issuer, audience, localKey: publicKey });
   const auth = await verifier.verifyAccessToken(token);
   const access = accessFromAuthInfo(auth);
-  assert.equal(access.role, "edit");
+  assert.equal(access.role, "sa");
   assert.equal(access.sub, "editor-1");
   assert.ok(access.permissions.includes("records.delete"));
 });

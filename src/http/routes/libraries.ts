@@ -1,6 +1,7 @@
 /** Library list/create/delete, access list, and add-item under a library. */
 import type express from "express";
-import { accessFromLibraryRole, can, type Access, type LibraryRole } from "../../auth/rbac.ts";
+import { accessForLibrary, can, isSa, type Access, type LibraryRole } from "../../auth/rbac.ts";
+import { accountStore } from "../../db/accounts.ts";
 import {
   addDraftItem,
   approveTableProposal,
@@ -16,12 +17,15 @@ import {
   listItems,
   publishItems,
   revokeLibraryAccess,
+  rotateLibraryConnectToken,
   setLibraryWriteMode,
   writeAudit,
   type LibraryAccessRow,
   type LibraryRow,
 } from "../../db/queries.ts";
+import { normalizeUsername } from "../../auth/passwords.ts";
 import { libraryInputSchema } from "../../items/schema.ts";
+import { writeModeLabel } from "../pages/schema-choice.ts";
 import {
   formString,
   formToItemWrite,
@@ -36,6 +40,29 @@ import { loadAppShell } from "../shell.ts";
 import type { AppRouteContext } from "./context.ts";
 
 type SessionUser = Access & { csrf: string };
+
+function libraryConnectUrl(config: AppRouteContext["config"], library: LibraryRow): string {
+  return libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken);
+}
+
+/** Built-in sign-in grants by username; external IdP still uses the subject field. */
+async function resolveGrantSubject(
+  db: AppRouteContext["db"],
+  authMode: AppRouteContext["config"]["authMode"],
+  body: unknown,
+): Promise<string> {
+  if (authMode === "embedded") {
+    const username = normalizeUsername(formString(body, "username"));
+    if (!username) throw new Error("Choose someone to grant access.");
+    const account = await accountStore(db).findByUsername(username);
+    if (!account) throw new Error("That person does not have an account.");
+    if (account.disabled) throw new Error("That account is disabled. Enable it before granting access.");
+    return account.id;
+  }
+  const subject = formString(body, "subject").trim();
+  if (!subject) throw new Error("Subject is required");
+  return subject;
+}
 
 /** Library sections. Unknown values fall back to the published item list. */
 function libraryTab(value: unknown): "items" | "pending" | "archives" | "access" {
@@ -60,12 +87,20 @@ function tableDecisionNotice(flag: unknown): string | undefined {
 /** Fixed copy for ?mode=. Query text is never echoed. */
 function writeModeNotice(flag: unknown): string | undefined {
   if (flag === "reviewed") {
-    return "This library is Reviewed. New and edited items stay Pending until you Publish.";
+    return `This library is ${writeModeLabel("reviewed")}. New and edited items stay Pending until you Publish.`;
   }
   if (flag === "direct") {
-    return "This library is Direct. Saves are live immediately for readers and agents.";
+    return `This library is ${writeModeLabel("direct")}. Saves are live immediately for readers and agents.`;
   }
-  if (flag === "invalid") return "Choose Reviewed or Direct.";
+  if (flag === "invalid") return `Choose ${writeModeLabel("reviewed")} or ${writeModeLabel("direct")}.`;
+  return undefined;
+}
+
+/** Fixed copy for ?connect=. Query text is never echoed. */
+function connectNotice(flag: unknown): string | undefined {
+  if (flag === "rotated") {
+    return "Connect link rotated. Old links stop working. Copy the new link from Connect. People on Access are unchanged.";
+  }
   return undefined;
 }
 
@@ -98,7 +133,7 @@ async function libraryContext(
 ): Promise<
   | {
       library: LibraryRow;
-      membership: LibraryAccessRow;
+      membership: LibraryAccessRow | undefined;
       libraryAccess: SessionUser;
     }
   | { library: LibraryRow; orphan: true }
@@ -107,22 +142,21 @@ async function libraryContext(
   const library = await getLibrary(db, libraryId);
   if (!library) return undefined;
   const membership = await getLibraryAccess(db, library.id, access.sub);
-  if (membership) {
+  const libraryAccess = accessForLibrary({
+    sub: access.sub,
+    clientId: access.clientId,
+    idpRole: access.role,
+    libraryRole: membership?.role,
+  });
+  if (libraryAccess) {
     return {
       library,
       membership,
-      libraryAccess: {
-        ...accessFromLibraryRole({
-          sub: access.sub,
-          clientId: access.clientId,
-          libraryRole: membership.role,
-        }),
-        csrf: access.csrf,
-      },
+      libraryAccess: { ...libraryAccess, csrf: access.csrf },
     };
   }
   const members = await countLibraryAccess(db, library.id);
-  if (members === 0 && can(access, "records.write")) {
+  if (members === 0 && isSa(access)) {
     return { library, orphan: true };
   }
   return undefined;
@@ -154,11 +188,27 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.redirect("/login");
       return;
     }
-    if (!requireCsrf(req, access.csrf) || !can(access, "records.write")) {
+    if (!requireCsrf(req, access.csrf) || !can(access, "libraries.create")) {
       res.status(403).send(errorPage("You cannot add libraries with this account."));
       return;
     }
-    const template = libraryTemplateFromForm(formString(req.body, "template"));
+    const templateRaw = formString(req.body, "template");
+    // Custom schemas are designed in agent chat, not created from this form.
+    if (templateRaw === "custom") {
+      const shell = await loadAppShell(db, access);
+      res.status(400).send(
+        addLibraryPage({
+          access,
+          csrf: access.csrf,
+          libraries: shell.libraries,
+          orphans: shell.orphans,
+          name: formString(req.body, "name").slice(0, 200),
+          error: "Custom schemas are designed in your agent chat, not on this form.",
+        }),
+      );
+      return;
+    }
+    const template = libraryTemplateFromForm(templateRaw);
     const writeMode = libraryWriteModeFromForm(formString(req.body, "write_mode"));
     const parsed = libraryInputSchema.safeParse({ name: formString(req.body, "name") });
     if (!parsed.success || !writeMode) {
@@ -171,7 +221,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           orphans: shell.orphans,
           name: formString(req.body, "name").slice(0, 200),
           error: !writeMode
-            ? "Choose Reviewed or Direct for how writes go live."
+            ? `Choose ${writeModeLabel("reviewed")} or ${writeModeLabel("direct")} for how writes go live.`
             : (parsed.error?.issues[0]?.message ?? "Invalid library"),
         }),
       );
@@ -223,7 +273,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.redirect("/login");
       return;
     }
-    if (!requireCsrf(req, access.csrf) || !can(access, "records.write")) {
+    if (!requireCsrf(req, access.csrf) || !can(access, "libraries.create")) {
       res.status(403).send(errorPage("You cannot claim libraries with this account."));
       return;
     }
@@ -258,7 +308,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.redirect("/login");
       return;
     }
-    if (!can(access, "records.write")) {
+    if (!can(access, "libraries.create")) {
       res.status(403).send(errorPage("You cannot add libraries with this account."));
       return;
     }
@@ -292,7 +342,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           csrf: access.csrf,
           library: ctxLib.library,
           items: [],
-          mcpUrl: libraryMcpUrl(config.publicBaseUrl, ctxLib.library.id),
+          mcpUrl: libraryConnectUrl(config, ctxLib.library),
           orphan: true,
           ...shell,
         }),
@@ -303,7 +353,10 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
     const tab = libraryTab(req.query.tab);
     const publishedCount =
       typeof req.query.published === "string" ? req.query.published : undefined;
-    const notice = tableDecisionNotice(req.query.table) ?? writeModeNotice(req.query.mode);
+    const notice =
+      tableDecisionNotice(req.query.table) ??
+      writeModeNotice(req.query.mode) ??
+      connectNotice(req.query.connect);
     const waiting =
       ctxLib.library.tableProposal != null || ctxLib.library.tableProposalUnreadable;
     const itemCount =
@@ -319,6 +372,10 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
     const accessList = can(ctxLib.libraryAccess, "records.write")
       ? await listLibraryAccess(db, ctxLib.library.id)
       : [];
+    const accounts =
+      can(ctxLib.libraryAccess, "records.write") && config.authMode === "embedded"
+        ? await accountStore(db).list()
+        : [];
     res.send(
       libraryPage({
         access: ctxLib.libraryAccess,
@@ -327,12 +384,14 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         items,
         q,
         tab,
-        mcpUrl: libraryMcpUrl(config.publicBaseUrl, ctxLib.library.id),
+        mcpUrl: libraryConnectUrl(config, ctxLib.library),
         accessList,
+        accounts,
         viewerSub: access.sub,
         publishedCount,
         notice,
         itemCount,
+        canAddLibrary: can(access, "libraries.create"),
         ...shell,
       }),
     );
@@ -380,10 +439,11 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.status(403).send(errorPage("Only publishers on this library can manage access."));
       return;
     }
-    const subject = formString(req.body, "subject").trim();
     const roleRaw = formString(req.body, "role");
     const role: LibraryRole = roleRaw === "publisher" ? "publisher" : "reader";
+    const accounts = config.authMode === "embedded" ? await accountStore(db).list() : [];
     try {
+      const subject = await resolveGrantSubject(db, config.authMode, req.body);
       await grantLibraryAccess(db, {
         libraryId: ctxLib.library.id,
         subject,
@@ -408,11 +468,13 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           csrf: access.csrf,
           library: ctxLib.library,
           items,
-          mcpUrl: libraryMcpUrl(config.publicBaseUrl, ctxLib.library.id),
+          mcpUrl: libraryConnectUrl(config, ctxLib.library),
           accessList,
+          accounts,
           viewerSub: access.sub,
           error: message,
           tab: "access",
+          canAddLibrary: can(access, "libraries.create"),
           ...shell,
         }),
       );
@@ -455,11 +517,57 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           csrf: access.csrf,
           library: ctxLib.library,
           items,
-          mcpUrl: libraryMcpUrl(config.publicBaseUrl, ctxLib.library.id),
+          mcpUrl: libraryConnectUrl(config, ctxLib.library),
           accessList,
           viewerSub: access.sub,
           error: message,
           tab: "access",
+          ...shell,
+        }),
+      );
+    }
+  });
+
+  // Kill the Connect link. Access grants stay; people keep their roles.
+  app.post("/libraries/:id/connect/rotate", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only publishers on this library can rotate the Connect link."));
+      return;
+    }
+    try {
+      const updated = await rotateLibraryConnectToken(db, ctxLib.library.id, access.sub);
+      await writeAudit(db, {
+        actorSub: access.sub,
+        tool: "ui.rotate_connect",
+        success: Boolean(updated),
+        detail: ctxLib.library.id,
+      });
+      res.redirect(`/libraries/${ctxLib.library.id}?connect=rotated`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not rotate the Connect link";
+      const items = await listLibraryItems(db, ctxLib.library, { limit: 50 }, false);
+      const accessList = await listLibraryAccess(db, ctxLib.library.id);
+      const shell = await publisherShell(db, access);
+      res.status(400).send(
+        libraryPage({
+          access: ctxLib.libraryAccess,
+          csrf: access.csrf,
+          library: ctxLib.library,
+          items,
+          mcpUrl: libraryConnectUrl(config, ctxLib.library),
+          accessList,
+          viewerSub: access.sub,
+          error: message,
           ...shell,
         }),
       );
@@ -473,7 +581,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       return;
     }
     const ctxLib = await libraryContext(db, req.params.id, access);
-    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.delete")) {
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "libraries.delete")) {
       res.status(403).send(errorPage("Only publishers on this library can delete it."));
       return;
     }
@@ -503,7 +611,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           csrf: access.csrf,
           library: ctxLib.library,
           items,
-          mcpUrl: libraryMcpUrl(config.publicBaseUrl, ctxLib.library.id),
+          mcpUrl: libraryConnectUrl(config, ctxLib.library),
           accessList,
           viewerSub: access.sub,
           error: message,
@@ -539,7 +647,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           orphans: shell.shellOrphans,
           activeLibraryId: ctxLib.library.id,
           csrf: access.csrf,
-          canAddLibrary: can(access, "records.write"),
+          canAddLibrary: can(access, "libraries.create"),
         },
       }),
     );
@@ -632,7 +740,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
             orphans: shell.shellOrphans,
             activeLibraryId: ctxLib.library.id,
             csrf: access.csrf,
-            canAddLibrary: can(access, "records.write"),
+            canAddLibrary: can(access, "libraries.create"),
           },
         }),
       );
