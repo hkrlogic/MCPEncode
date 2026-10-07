@@ -147,6 +147,7 @@ export function itemPage(input: {
        </details>`
     : "";
   const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
+  const flash = noticeMessage(input.notice, status);
   const agentPreview = canWrite
     ? `<section class="gate-panel">
          <h2>Preview as agent</h2>
@@ -173,7 +174,7 @@ export function itemPage(input: {
             ${actions}
           </div>
           <h1>${esc(input.item.name)}</h1>
-          <p class="notice" role="status">${esc(noticeMessage(input.notice, status))}</p>
+          ${flash ? `<p class="notice" role="status">${esc(flash)}</p>` : ""}
           ${input.item.summary ? `<p class="lead">${esc(input.item.summary)}</p>` : ""}
           ${
             input.item.entity_key

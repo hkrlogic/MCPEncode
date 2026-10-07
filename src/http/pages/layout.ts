@@ -56,7 +56,11 @@ export function statusBadge(status: ItemStatus): string {
   return `<span class="status status-${esc(status)}">${esc(statusLabel(status))}</span>`;
 }
 
-export function noticeMessage(notice: string | undefined, status: ItemStatus): string {
+/**
+ * Flash copy after a save/publish/archive. Empty when there is no flash —
+ * the status pill already covers standing state.
+ */
+export function noticeMessage(notice: string | undefined, _status?: ItemStatus): string {
   if (notice === "created") {
     return "Item saved as Pending. Publish it when it is ready for the kiosk.";
   }
@@ -78,13 +82,7 @@ export function noticeMessage(notice: string | undefined, status: ItemStatus): s
   if (notice === "restored") {
     return "Restored to Pending. Publish when it is ready for the kiosk.";
   }
-  if (status === "draft") {
-    return "Pending — not visible to the kiosk until Published.";
-  }
-  if (status === "archived") {
-    return "Archived — not visible to the kiosk.";
-  }
-  return "Published — visible to readers and the kiosk.";
+  return "";
 }
 
 export function labelsEqual(a: string[], b: string[]): boolean {
