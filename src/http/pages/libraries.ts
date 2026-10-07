@@ -291,7 +291,7 @@ function accessPanel(input: {
                     onsubmit="${onConfirm(`Remove ${confirmName} from ${input.library.name}?`)}">
                 <input type="hidden" name="csrf" value="${esc(input.csrf)}">
                 <input type="hidden" name="subject" value="${esc(row.subject)}">
-                <button type="submit" class="btn secondary"${
+                <button type="submit" class="btn danger-ghost"${
                   row.subject === input.viewerSub && row.role === "publisher"
                     ? ' title="You can remove yourself only when another publisher remains"'
                     : ""
@@ -477,8 +477,10 @@ export function libraryPage(input: {
            </form>
            ${
              can(input.access, "libraries.delete")
-               ? `<form method="post" action="/libraries/${esc(input.library.id)}/delete"
-                    onsubmit="${onConfirm(`Delete ${input.library.name} and every item in it?`)}">
+               ? `<form class="menu-danger-sep" method="post" action="/libraries/${esc(input.library.id)}/delete"
+                    onsubmit="${onConfirm(
+                      `Delete library “${input.library.name}” and every item in it? This cannot be undone.`,
+                    )}">
                  <input type="hidden" name="csrf" value="${esc(input.csrf)}">
                  <button class="menu-danger" type="submit">Delete library</button>
                </form>`

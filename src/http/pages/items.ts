@@ -10,6 +10,7 @@ import {
   esc,
   layout,
   noticeMessage,
+  onConfirm,
   publishDiff,
   spreadsheetHead,
   statusBadge,
@@ -128,8 +129,8 @@ export function itemPage(input: {
                <button type="submit">Archive</button>
              </form>`,
         canDelete
-          ? `<form method="post" action="/items/${esc(input.item.id)}/delete"
-                 onsubmit="return confirm('Delete this item?');">
+          ? `<form class="menu-danger-sep" method="post" action="/items/${esc(input.item.id)}/delete"
+                 onsubmit="${onConfirm(`Delete item “${input.item.name}”? This cannot be undone.`)}">
                <input type="hidden" name="csrf" value="${esc(input.csrf)}">
                <button class="menu-danger" type="submit">Delete</button>
              </form>`
