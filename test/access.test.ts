@@ -8,6 +8,8 @@ import {
   listLibrariesForSubject,
   listOrphanLibraries,
   pendingCountsForPublisher,
+  publishItem,
+  publishedCountsForSubject,
   revokeLibraryAccess,
   rotateLibraryConnectToken,
 } from "../src/db/queries.ts";
@@ -71,6 +73,13 @@ test("pending counts are visible only to publishers on that library", async () =
     assert.equal(alice.get(library.id), 1);
     const carol = await pendingCountsForPublisher(db, "carol");
     assert.equal(carol.has(library.id), false);
+
+    assert.equal(saved.ok, true);
+    if (!saved.ok) return;
+    await publishItem(db, saved.item.id, "alice");
+    const published = await publishedCountsForSubject(db, "alice");
+    assert.equal(published.get(library.id), 1);
+    assert.equal((await pendingCountsForPublisher(db, "alice")).get(library.id) ?? 0, 0);
   });
 });
 

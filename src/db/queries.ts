@@ -46,6 +46,7 @@ export {
   listLibrariesForSubject,
   listAllLibrariesForSa,
   pendingCountsForPublisher,
+  publishedCountsForSubject,
   listOrphanLibraries,
   grantLibraryAccess,
   revokeLibraryAccess,

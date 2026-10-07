@@ -198,6 +198,8 @@ export type ShellLibrary = {
   /** How writes go live. Shown under the name instead of schema/role. */
   writeMode?: "reviewed" | "direct";
   access_role?: string;
+  /** Published items in this library (Items tab). */
+  itemCount?: number;
   /** Drafts waiting to publish. Set only when this person is a publisher on the library. */
   pendingCount?: number;
 };
@@ -242,6 +244,10 @@ function librarySidebar(shell: AppShell): string {
                 row.writeMode && isLibraryWriteMode(row.writeMode)
                   ? shellWriteModeLabel(row.writeMode)
                   : "";
+              const items =
+                typeof row.itemCount === "number"
+                  ? `<span class="sidebar-lib-count">${row.itemCount}<span class="sr-only"> items</span></span>`
+                  : "";
               const pending =
                 typeof row.pendingCount === "number" && row.pendingCount > 0
                   ? `<a class="sidebar-pending" href="/libraries/${esc(row.id)}?tab=pending">${row.pendingCount}<span class="sr-only"> pending</span></a>`
@@ -253,6 +259,7 @@ function librarySidebar(shell: AppShell): string {
                   <span class="sidebar-lib-name">${esc(row.name)}</span>
                   ${mode ? `<span class="sidebar-lib-meta">${esc(mode)}</span>` : ""}
                 </span>
+                ${items}
               </a>
               ${pending}
             </li>`;

@@ -5,6 +5,7 @@ import {
   listLibrariesForSubject,
   listOrphanLibraries,
   pendingCountsForPublisher,
+  publishedCountsForSubject,
 } from "../db/queries.ts";
 import type { Database } from "../db/types.ts";
 import { isLibraryWriteMode } from "../items/schema.ts";
@@ -20,7 +21,10 @@ export async function loadAppShell(
   const libraries = sa
     ? await listAllLibrariesForSa(db)
     : await listLibrariesForSubject(db, access.sub);
-  const counts = await pendingCountsForPublisher(db, access.sub, { everyLibrary: sa });
+  const [pending, published] = await Promise.all([
+    pendingCountsForPublisher(db, access.sub, { everyLibrary: sa }),
+    publishedCountsForSubject(db, access.sub, { everyLibrary: sa }),
+  ]);
   return {
     csrf: access.csrf,
     canAddLibrary: can(access, "libraries.create"),
@@ -31,8 +35,9 @@ export async function loadAppShell(
       template: row.template,
       writeMode: isLibraryWriteMode(row.write_mode) ? row.write_mode : "reviewed",
       access_role: row.access_role,
+      itemCount: published.get(row.id) ?? 0,
       pendingCount:
-        sa || row.access_role === "publisher" ? (counts.get(row.id) ?? 0) : undefined,
+        sa || row.access_role === "publisher" ? (pending.get(row.id) ?? 0) : undefined,
     })),
     orphans: sa ? await listOrphanLibraries(db) : [],
   };

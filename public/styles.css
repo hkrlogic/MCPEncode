@@ -405,6 +405,18 @@ a { color: var(--accent); }
   gap: 0.1rem;
   min-width: 0;
 }
+.sidebar-lib-count {
+  flex: 0 0 auto;
+  align-self: center;
+  min-width: 1.5rem;
+  padding: 0.15rem 0.35rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .sidebar-lib:hover { background: rgba(31, 77, 58, 0.06); }
 .sidebar-pending {
   display: inline-flex;
@@ -530,16 +542,20 @@ a { color: var(--accent); }
 .text-summary {
   list-style: none;
   cursor: pointer;
-  min-height: 44px;
+  box-sizing: border-box;
+  min-height: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
-  padding: 0.55rem 1.1rem;
+  padding: 0 0.85rem;
   border: 1px solid var(--accent);
   border-radius: 8px;
   background: #fff;
   color: var(--accent);
   font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-size: 0.9rem;
   font-weight: 650;
+  line-height: 1;
 }
 .text-summary:hover { background: rgba(31, 77, 58, 0.06); }
 .text-summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -1006,6 +1022,19 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 }
 .library-head .head-actions {
   flex: 0 0 auto;
+  align-items: center;
+}
+/* Match Actions (36×36). Sidebar Add library (+) stays 28px on purpose. */
+.head-actions .btn,
+.library-view .head-actions .btn {
+  box-sizing: border-box;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 0.85rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 .library-head .write-mode-toggle {
   align-self: flex-end;
@@ -1124,7 +1153,14 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   margin: 0;
   flex: 0 0 auto;
 }
-.access-remove .btn { min-height: 44px; }
+.access-remove .btn {
+  box-sizing: border-box;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 0.85rem;
+  font-size: 0.9rem;
+  line-height: 1;
+}
 .viewer-sub {
   display: flex;
   flex-wrap: wrap;
@@ -1133,7 +1169,14 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   margin: 0 0 0.35rem;
   font-family: "Source Sans 3", "Segoe UI", sans-serif;
 }
-.viewer-sub .btn { min-height: 44px; }
+.viewer-sub .btn {
+  box-sizing: border-box;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 0.85rem;
+  font-size: 0.9rem;
+  line-height: 1;
+}
 button.linkish {
   background: none;
   border: 0;
@@ -1181,7 +1224,16 @@ button.linkish {
 .search-meta a { font-weight: 650; }
 .empty-block { margin: 0.35rem 0 1rem; }
 .empty-action { margin: 0.75rem 0 0; }
-.empty-action .btn { min-height: 44px; display: inline-flex; align-items: center; }
+.empty-action .btn {
+  box-sizing: border-box;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 0.85rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
 .library-view .search button {
   border: 0;
   border-radius: 999px;
@@ -1258,7 +1310,27 @@ button.linkish {
 .section-row h2 { margin: 0; font-size: 1rem; }
 .section-actions { display: flex; align-items: center; gap: 0.85rem; }
 .count { margin: 0; color: var(--muted); font-size: 0.9rem; }
-.library-view .btn { min-height: 44px; display: inline-flex; align-items: center; }
+.library-view .btn {
+  box-sizing: border-box;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 0.85rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+.item .btn,
+.gate-actions .btn {
+  box-sizing: border-box;
+  min-height: 36px;
+  height: 36px;
+  padding: 0 0.85rem;
+  font-size: 0.9rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
 .library-danger { margin-top: 2.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
 .item-list {
   list-style: none;
