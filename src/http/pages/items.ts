@@ -195,7 +195,7 @@ export function itemPage(input: {
         <header class="item-head">
           <div class="item-head-bar">
             <div class="item-head-start">
-              <p class="back"><a href="/libraries/${esc(input.library.id)}"><span aria-hidden="true">←</span> Items</a></p>
+              <p class="back"><a class="back-btn" href="/libraries/${esc(input.library.id)}" aria-label="Back to items"><span aria-hidden="true">←</span> Back</a></p>
               <p class="item-status">${statusBadge(status)}</p>
             </div>
             ${actions}
