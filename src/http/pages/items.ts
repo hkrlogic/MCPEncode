@@ -69,7 +69,6 @@ export function addItemPage(input: {
     shell: pageShell(input),
     extraHead: kind === "general" ? spreadsheetHead() : undefined,
     body: `
-      <p class="back"><a href="/libraries/${esc(input.library.id)}">${esc(input.library.name)}</a></p>
       <section class="panel">
         <h1>Add item</h1>
         ${hint ? `<p class="hint">${hint}</p>` : ""}
@@ -167,7 +166,6 @@ export function itemPage(input: {
     library: input.library,
     shell: pageShell(input),
     body: `
-      <p class="back"><a href="/libraries/${esc(input.library.id)}">${esc(input.library.name)}</a></p>
       <article class="item">
         <header class="item-head">
           <div>
