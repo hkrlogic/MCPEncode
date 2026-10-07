@@ -168,20 +168,20 @@ export function itemPage(input: {
     body: `
       <article class="item">
         <header class="item-head">
-          <div>
+          <div class="item-head-bar">
             <p class="item-status">${statusBadge(status)}</p>
-            <h1>${esc(input.item.name)}</h1>
-            <p class="notice" role="status">${esc(noticeMessage(input.notice, status))}</p>
-            ${input.item.summary ? `<p class="lead">${esc(input.item.summary)}</p>` : ""}
-            ${
-              input.item.entity_key
-                ? `<p class="meta">Entity key <code>${esc(input.item.entity_key)}</code></p>`
-                : ""
-            }
-            ${labels ? `<p class="meta">${labels}</p>` : ""}
-            ${publishAction}
+            ${actions}
           </div>
-          ${actions}
+          <h1>${esc(input.item.name)}</h1>
+          <p class="notice" role="status">${esc(noticeMessage(input.notice, status))}</p>
+          ${input.item.summary ? `<p class="lead">${esc(input.item.summary)}</p>` : ""}
+          ${
+            input.item.entity_key
+              ? `<p class="meta">Entity key <code>${esc(input.item.entity_key)}</code></p>`
+              : ""
+          }
+          ${labels ? `<p class="meta">${labels}</p>` : ""}
+          ${publishAction}
         </header>
         ${
           input.control
