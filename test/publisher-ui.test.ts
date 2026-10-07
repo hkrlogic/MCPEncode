@@ -211,6 +211,11 @@ test("Edit and Archive live in Actions; Publish stays primary; only SA hard-dele
     shell: { libraries: [], csrf: "token", canAddLibrary: true },
   });
   assert.match(html, /aria-label="Actions"/);
+  const headBar = html.slice(html.indexOf("item-head-bar"), html.indexOf("</header>"));
+  assert.match(headBar, /class="back"/);
+  assert.match(headBar, new RegExp(`href="/libraries/${lib.id}"`));
+  assert.match(headBar, /> Items</);
+  assert.ok(headBar.indexOf('class="back"') < headBar.indexOf('class="item-status"'));
   assert.match(html, /href="\/items\/item-1\/export\.md"/);
   assert.match(html, /Export Markdown/);
   assert.ok(html.indexOf('href="/items/item-1/edit"') > 0);

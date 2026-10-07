@@ -194,7 +194,10 @@ export function itemPage(input: {
       <article class="item">
         <header class="item-head">
           <div class="item-head-bar">
-            <p class="item-status">${statusBadge(status)}</p>
+            <div class="item-head-start">
+              <p class="back"><a href="/libraries/${esc(input.library.id)}"><span aria-hidden="true">←</span> Items</a></p>
+              <p class="item-status">${statusBadge(status)}</p>
+            </div>
             ${actions}
           </div>
           <h1>${esc(input.item.name)}</h1>
