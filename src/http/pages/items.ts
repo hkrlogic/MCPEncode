@@ -2,7 +2,6 @@
 import { can, type Access } from "../../auth/rbac.ts";
 import type { ItemRow, LibraryRow } from "../../db/models.ts";
 import { parseTableValues } from "../../items/table-proposal.ts";
-import { labeledItemData } from "../../markdown/render.ts";
 import { itemFields, policyItemFields, procedureItemFields, schemaItemFields } from "./forms.ts";
 import { writeModeLabel } from "./schema-choice.ts";
 import {
@@ -11,7 +10,6 @@ import {
   esc,
   layout,
   noticeMessage,
-  publishDiff,
   spreadsheetHead,
   statusBadge,
   type AppShell,
@@ -148,17 +146,6 @@ export function itemPage(input: {
     : "";
   const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
   const flash = noticeMessage(input.notice, status);
-  const agentPreview = canWrite
-    ? `<section class="gate-panel">
-         <h2>Preview as agent</h2>
-         <p class="hint">This is the wire text readers and the kiosk get when the item is published.</p>
-         <pre class="agent-preview">${esc(labeledItemData(input.item))}</pre>
-       </section>
-       <section class="gate-panel">
-         <h2>Changes since last published</h2>
-         ${publishDiff(input.item, input.item.published_snapshot)}
-       </section>`
-    : "";
 
   return layout({
     title: `${input.item.name} · ${input.library.name}`,
@@ -194,7 +181,6 @@ export function itemPage(input: {
                 .join("")}`
             : `<div class="prose">${input.html}</div>`
         }
-        ${agentPreview}
       </article>
     `,
   });
