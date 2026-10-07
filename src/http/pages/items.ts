@@ -10,7 +10,6 @@ import {
   editorScripts,
   esc,
   layout,
-  libraryKind,
   noticeMessage,
   publishDiff,
   spreadsheetHead,
@@ -98,55 +97,56 @@ export function itemPage(input: {
   shell?: AppShell;
 }): string {
   const canWrite = can(input.access, "records.write");
+  const canDelete = can(input.access, "records.delete");
   const status = input.item.status;
-  const kind = libraryKind(input.library.template);
-  const gateForms = canWrite
-    ? `
-        <div class="gate-actions">
-          <a class="btn secondary" href="/items/${esc(input.item.id)}/edit">Edit</a>
-          ${
-            status === "draft"
-              ? `<form method="post" action="/items/${esc(input.item.id)}/publish">
-                   <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-                   <button class="btn" type="submit">Publish</button>
-                 </form>`
-              : ""
-          }
-          ${
-            status === "published"
-              ? `<form method="post" action="/items/${esc(input.item.id)}/unpublish">
-                   <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-                   <button class="btn secondary" type="submit">Unpublish</button>
-                 </form>`
-              : ""
-          }
-          ${
-            status === "archived"
-              ? `<form method="post" action="/items/${esc(input.item.id)}/restore">
-                   <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-                   <button class="btn secondary" type="submit">Restore to Pending</button>
-                 </form>`
-              : `<form method="post" action="/items/${esc(input.item.id)}/archive"
-                     onsubmit="return confirm('Archive this item? It will leave Pending and Published.');">
-                   <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-                   <button class="btn secondary" type="submit">Archive</button>
-                 </form>`
-          }
+  // Publish stays a primary button on Pending. Edit / gate moves / delete live in ⋯.
+  const publishAction =
+    canWrite && status === "draft"
+      ? `<div class="gate-actions">
+          <form method="post" action="/items/${esc(input.item.id)}/publish">
+            <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+            <button class="btn" type="submit">Publish</button>
+          </form>
         </div>`
+      : "";
+  const menuItems = canWrite
+    ? [
+        `<a href="/items/${esc(input.item.id)}/edit">Edit</a>`,
+        status === "published"
+          ? `<form method="post" action="/items/${esc(input.item.id)}/unpublish">
+               <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+               <button type="submit">Unpublish</button>
+             </form>`
+          : "",
+        status === "archived"
+          ? `<form method="post" action="/items/${esc(input.item.id)}/restore">
+               <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+               <button type="submit">Restore to Pending</button>
+             </form>`
+          : `<form method="post" action="/items/${esc(input.item.id)}/archive"
+                 onsubmit="return confirm('Archive this item? It will leave Pending and Published.');">
+               <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+               <button type="submit">Archive</button>
+             </form>`,
+        canDelete
+          ? `<form method="post" action="/items/${esc(input.item.id)}/delete"
+                 onsubmit="return confirm('Delete this item?');">
+               <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+               <button class="menu-danger" type="submit">Delete</button>
+             </form>`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
     : "";
-  const actions =
-    canWrite && can(input.access, "records.delete")
-      ? `<details class="item-menu">
+  const actions = menuItems
+    ? `<details class="item-menu">
          ${actionsMenuSummary()}
          <div class="menu-list">
-           <form method="post" action="/items/${esc(input.item.id)}/delete"
-                onsubmit="return confirm('Delete this item?');">
-             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-             <button class="menu-danger" type="submit">Delete</button>
-           </form>
+           ${menuItems}
          </div>
        </details>`
-      : "";
+    : "";
   const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
   const agentPreview = canWrite
     ? `<section class="gate-panel">
@@ -171,7 +171,6 @@ export function itemPage(input: {
       <article class="item">
         <header class="item-head">
           <div>
-            ${kind ? `<p class="kicker">${esc(kind)}</p>` : ""}
             <p class="item-status">${statusBadge(status)}</p>
             <h1>${esc(input.item.name)}</h1>
             <p class="notice" role="status">${esc(noticeMessage(input.notice, status))}</p>
@@ -182,7 +181,7 @@ export function itemPage(input: {
                 : ""
             }
             ${labels ? `<p class="meta">${labels}</p>` : ""}
-            ${gateForms}
+            ${publishAction}
           </div>
           ${actions}
         </header>
