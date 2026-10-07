@@ -49,8 +49,8 @@ test("agent instructions are scoped to one library and use list_items / open_ite
   assert.match(text, /propose_table/);
   assert.match(text, /Do not invent an approve, reject, or write-mode tool/);
   assert.match(text, /How writes go live/);
-  assert.match(text, /Reviewed/);
-  assert.match(text, /Live Sync/);
+  assert.match(text, /Review Lock/);
+  assert.match(text, /Review Unlock/);
   assert.ok(text.includes(NOT_CONNECTED));
   assert.match(UNAUTHORIZED_MCP, /Not signed in/);
   assert.match(FORBIDDEN_LIBRARY, /cannot open this library/);

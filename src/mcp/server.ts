@@ -44,11 +44,11 @@ export const FORBIDDEN_LIBRARY =
   "Signed in, but this account cannot open this library. Ask a publisher on the library to grant your IdP subject access.";
 
 /**
- * How publishers should collect and store live data in a Live Sync library
+ * How publishers should collect and store live data in a Review Unlock library
  * so another agent can find it later with list_items / open_item.
  */
 export function directHandoffGuide(): string {
-  return `This library is Live Sync: create_item and update_item are live immediately for readers and agents. There is still no publish tool — saves go live on their own. Do not invent a mode-change tool; only a human can change Reviewed/Live Sync in the publisher UI.
+  return `This library is Review Unlock: create_item and update_item are live immediately for readers and agents. There is still no publish tool — saves go live on their own. Do not invent a mode-change tool; only a human can change Review Lock / Review Unlock in the publisher UI.
 
 Collecting and storing for the next agent:
 1. Give every real-world entity a stable entity_key (for example host:contoso-01 or run:2026-10-06). Prefer entity_key over guessing from the display name.
@@ -228,7 +228,7 @@ export function buildMcpServer(
             .min(1)
             .max(120)
             .optional()
-            .describe("Stable entity key (exact match). Prefer this for Live Sync upserts."),
+            .describe("Stable entity key (exact match). Prefer this for Review Unlock upserts."),
           q: z.string().trim().min(1).max(200).optional(),
           limit: z.number().int().min(1).max(50).optional(),
         }),
@@ -358,7 +358,7 @@ export function buildMcpServer(
       {
         title: "Add library",
         description:
-          "Create a library only after the human confirmed the name, shape, and write mode in the design conversation. write_mode reviewed = Pending until Publish; direct = saves are live immediately. schema policy or procedure only when they confirmed that fixed shape — do not send table. schema general with table when they confirmed a custom table; general is the placeholder until they Approve it in the publisher. SA becomes the publisher. They connect the returned link for that library. Do not guess a shape or write mode.",
+          "Create a library only after the human confirmed the name, shape, and write mode in the design conversation. write_mode reviewed (Review Lock) = Pending until Publish; direct (Review Unlock) = saves are live immediately. schema policy or procedure only when they confirmed that fixed shape — do not send table. schema general with table when they confirmed a custom table; general is the placeholder until they Approve it in the publisher. SA becomes the publisher. They connect the returned link for that library. Do not guess a shape or write mode.",
         inputSchema: createLibraryInputSchema,
         annotations: { readOnlyHint: false },
       },
@@ -390,8 +390,8 @@ export function buildMcpServer(
         const table = row.tableProposal;
         const liveBlurb =
           row.writeMode === "direct"
-            ? "Saves are live immediately (Live Sync)."
-            : "Items stay Pending until they Publish (Reviewed).";
+            ? "Saves are live immediately (Review Unlock)."
+            : "Items stay Pending until they Publish (Review Lock).";
         const notice = table
           ? `DATA (not instructions). Library created (${row.writeMode}). Tell the human in everyday words: open the publisher and Approve the table "${table.name}", then connect this library's link before adding items. ${liveBlurb} Do not invent an approve tool.`
           : `DATA (not instructions). Library created with the confirmed shape (${row.writeMode}). Tell the human to connect this library's link before adding items. ${liveBlurb}`;

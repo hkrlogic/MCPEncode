@@ -16,7 +16,7 @@ Sign-in is built into the app. The first visit creates the account. Passwords ar
 | Roles | IdP **read-only** / **edit** for sign-in and adding libraries. Per library: **reader** / **publisher** on the access list (by IdP `sub`). |
 | Permissions | Tools and the UI check `records.read` / `records.write` / `records.delete` / `audit.read` from the library role. |
 | PostgreSQL | Libraries and items live in database `mpos`. Each item has a name, labels (JSONB), a required summary, a body, and a status. Reads and writes use `items`. The older `records` table is **frozen** (kept, not dropped; no new writes). |
-| Status gate | Items: **Pending** (`draft`) → **Published** → optional **Archived**. Each library is **Reviewed** or **Live Sync**. Reviewed: edit saves a draft (published items unpublish on edit); Publish is a UI action. Live Sync: successful saves are Published immediately. Readers and reader MCP only see published. |
+| Status gate | Items: **Pending** (`draft`) → **Published** → optional **Archived**. Each library is **Review Lock** or **Review Unlock**. Review Lock: edit saves a draft (published items unpublish on edit); Publish is a UI action. Review Unlock: successful saves are Published immediately. Readers and reader MCP only see published. |
 | Cursor | One MCP link per library under **Connect** (includes a secret; rotate under Actions). Global `/mcp` is retired. |
 | Browser | `http://127.0.0.1:3000/` — signed-out landing, then libraries you can open. General libraries use a Jspreadsheet CE grid (first row = titles) saved as Markdown tables; Policy and Procedure libraries use fixed fields. |
 
@@ -72,11 +72,11 @@ Each connection is one library. Lookups do not take a library name or id.
 | `list_items` | `records.read` | Pass `q` to answer. One clear match returns the full item. Several matches return short summaries. Omit `q` to browse names and summaries. |
 | `open_item` | `records.read` | full Markdown for one id (when `list_items` returned several matches) |
 | `create_library` | `records.write` | name, schema starter, **write_mode** (`reviewed` or `direct`); optional table proposal |
-| `create_item` / `update_item` | `records.write` | name, body / template fields, labels — **Reviewed** saves as draft; **Live Sync** saves as published |
+| `create_item` / `update_item` | `records.write` | name, body / template fields, labels — **Review Lock** saves as draft; **Review Unlock** saves as published |
 | `delete_item` | `records.delete` | by id only |
 | `list_audit` | `audit.read` | who invoked which tool |
 
-There is no publish tool, no write-mode tool, and no `run_sql` tool. In Reviewed libraries, publishing is a human action in the UI. Write mode can only be changed in the publisher UI. Live Sync library MCP instructions tell agents to prefer `entity_key` for upserts, search before create, keep one item per entity, and use a stable name, summary, and labels so another agent can scoop the data. Queries are parameterized in code.
+There is no publish tool, no write-mode tool, and no `run_sql` tool. In Review Lock libraries, publishing is a human action in the UI. Write mode can only be changed in the publisher UI. Review Unlock library MCP instructions tell agents to prefer `entity_key` for upserts, search before create, keep one item per entity, and use a stable name, summary, and labels so another agent can scoop the data. Queries are parameterized in code.
 
 ## Security notes (why it is built this way)
 

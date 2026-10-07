@@ -313,8 +313,8 @@ export function mcpWriteToolDescription(
   const head =
     writeMode === "direct"
       ? kind === "create"
-        ? "Add a library item only when list_items with entity_key (or q) found no match. This library is Live Sync — the item is live immediately. Set entity_key for the real-world entity, a stable name, a one-line summary, and useful labels. Prefer update_item when the entity already exists."
-        : "Replace one library item by id after list_items found it (prefer entity_key). This library is Live Sync — the saved version is live immediately. Keep entity_key and name stable; refresh the summary and labels so the next agent can scoop it."
+        ? "Add a library item only when list_items with entity_key (or q) found no match. This library is Review Unlock — the item is live immediately. Set entity_key for the real-world entity, a stable name, a one-line summary, and useful labels. Prefer update_item when the entity already exists."
+        : "Replace one library item by id after list_items found it (prefer entity_key). This library is Review Unlock — the saved version is live immediately. Keep entity_key and name stable; refresh the summary and labels so the next agent can scoop it."
       : kind === "create"
         ? "Add a library item as a draft (Pending). Not visible to readers or the kiosk until a human Publishes it in the publisher UI. Optional entity_key is a stable id for later updates."
         : "Replace one library item. Saves as draft: if published, it becomes Pending until a human Publishes again in the publisher UI. Optional entity_key is a stable id for later updates.";

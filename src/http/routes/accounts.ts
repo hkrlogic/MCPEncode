@@ -5,6 +5,7 @@ import { accountStore } from "../../db/accounts.ts";
 import type { AccountRole } from "../../auth/accounts.ts";
 import { accountsPage } from "../pages/accounts.ts";
 import { errorPage } from "../pages/login.ts";
+import { settingsPage } from "../pages/settings.ts";
 import { formString, requireCsrf, sessionAccess } from "../helpers.ts";
 import { loadAppShell } from "../shell.ts";
 import type { AppRouteContext } from "./context.ts";
@@ -12,6 +13,21 @@ import type { AppRouteContext } from "./context.ts";
 export function registerAccountRoutes(app: express.Express, ctx: AppRouteContext): void {
   const { config, db } = ctx;
   const accounts = accountStore(db);
+
+  app.get("/settings", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    // SA lands on Accounts — the main Settings item today.
+    if (can(access, "accounts.manage")) {
+      res.redirect("/accounts");
+      return;
+    }
+    const shell = await loadAppShell(db, access);
+    res.send(settingsPage({ access, csrf: access.csrf, shell }));
+  });
 
   async function renderAccounts(
     access: NonNullable<Awaited<ReturnType<typeof sessionAccess>>>,

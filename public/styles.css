@@ -306,7 +306,7 @@ a { color: var(--accent); }
   flex-shrink: 0;
 }
 .write-mode-choices { margin-top: 1.75rem; }
-/* On/off switch between Publisher Review and Live Sync (in the library action row). */
+/* On/off switch between Review Lock and Review Unlock (in the library action row). */
 .write-mode-toggle {
   display: inline-flex;
   align-items: center;
@@ -381,7 +381,8 @@ a { color: var(--accent); }
   align-items: stretch;
   gap: 0.15rem;
 }
-.sidebar-lib-row.is-active .sidebar-lib {
+.sidebar-lib-row.is-active .sidebar-lib,
+.sidebar-lib.is-active {
   background: rgba(31, 77, 58, 0.12);
   box-shadow: inset 3px 0 0 var(--accent);
 }
@@ -452,6 +453,84 @@ a { color: var(--accent); }
   margin: 0.75rem 0.5rem;
   color: var(--muted);
   font-size: 0.9rem;
+}
+/* Pinned account strip + Settings cog under the library list. */
+.sidebar-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 92%, #fff);
+}
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.sidebar-user-avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(31, 77, 58, 0.12);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.sidebar-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+.sidebar-user-name {
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-user-role {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--muted);
+  line-height: 1.2;
+}
+.sidebar-settings {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  text-decoration: none;
+}
+.sidebar-settings:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(31, 77, 58, 0.06);
+}
+.sidebar-settings.is-active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.sidebar-settings:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 .sidebar-section-label {
   margin: 1rem 0.5rem 0.35rem;
@@ -1134,10 +1213,20 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 /* Accounts — standard users admin surface */
 .users-page {
   font-family: "Source Sans 3", "Segoe UI", sans-serif;
-  max-width: 52rem;
+  width: 100%;
+  max-width: none;
 }
 .users-head {
-  margin: 0.15rem 0 1.15rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem 1.25rem;
+  margin: 0.15rem 0 1.35rem;
+}
+.users-head-copy {
+  min-width: 0;
+  flex: 1 1 18rem;
 }
 .users-head h1 {
   margin: 0;
@@ -1147,30 +1236,42 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 }
 .users-head .hint {
   margin: 0.45rem 0 0;
-  max-width: 38rem;
+  max-width: 40rem;
 }
 .users-add {
-  margin: 0 0 1.25rem;
+  margin: 0;
+  flex: 0 0 auto;
+}
+.users-add[open] {
+  flex: 1 1 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.85rem 1rem;
 }
 .users-add > summary {
   list-style: none;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  justify-self: end;
 }
 .users-add > summary::-webkit-details-marker { display: none; }
+.users-add[open] > summary {
+  grid-column: 2;
+}
 .users-add-form {
-  margin-top: 0.85rem;
-  padding: 1rem 1.1rem 1.1rem;
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 1.15rem 1.25rem 1.25rem;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
 }
 .users-add-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.85rem 1rem;
-  margin-bottom: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.95rem 1.15rem;
+  margin-bottom: 0.95rem;
 }
 .users-add-form .btn { margin-top: 0.25rem; }
 .users-external { max-width: 36rem; }
@@ -1190,13 +1291,13 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 }
 .user-row {
   display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr) auto auto;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto auto;
   grid-template-areas:
     "avatar identity role status"
     "actions actions actions actions";
   align-items: center;
-  gap: 0.45rem 0.75rem;
-  padding: 0.85rem 1rem;
+  gap: 0.65rem 0.85rem;
+  padding: 1rem 1.15rem;
   border-bottom: 1px solid var(--line);
 }
 .user-row:last-child { border-bottom: none; }
@@ -1208,8 +1309,8 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 14%, #fff);
   color: var(--accent);
@@ -1221,12 +1322,12 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.4rem;
+  gap: 0.45rem;
   min-width: 0;
 }
 .user-name {
   font-weight: 650;
-  font-size: 1rem;
+  font-size: 1.05rem;
   color: var(--ink);
   word-break: break-word;
 }
@@ -1240,10 +1341,10 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 .user-badge {
   display: inline-flex;
   align-items: center;
-  min-height: 1.5rem;
-  padding: 0.15rem 0.55rem;
+  min-height: 1.6rem;
+  padding: 0.2rem 0.65rem;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.2;
@@ -1256,8 +1357,8 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   grid-area: actions;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
-  align-items: flex-start;
+  gap: 0.5rem;
+  align-items: center;
   justify-content: flex-end;
 }
 .user-actions .btn,
@@ -1265,11 +1366,12 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   box-sizing: border-box;
   min-height: 36px;
   height: 36px;
-  padding: 0 0.85rem;
+  padding: 0 0.9rem;
   font-size: 0.9rem;
   line-height: 1;
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
 }
 .user-reset { position: relative; }
 .user-reset > summary { list-style: none; cursor: pointer; }
@@ -1293,10 +1395,10 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 @media (min-width: 840px) {
   .users-panel-head {
     display: grid;
-    grid-template-columns: 2.5rem minmax(0, 1.4fr) 6.5rem 6.5rem minmax(12rem, 1fr);
-    gap: 0.75rem;
+    grid-template-columns: 2.75rem minmax(10rem, 2fr) 7.5rem 7.5rem auto;
+    gap: 1rem 1.25rem;
     align-items: center;
-    padding: 0.55rem 1rem;
+    padding: 0.7rem 1.25rem;
     border-bottom: 1px solid var(--line);
     background: color-mix(in srgb, var(--panel) 70%, #ebe4d6);
     color: var(--muted);
@@ -1308,9 +1410,13 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   .users-col-user { grid-column: 1 / 3; }
   .users-col-actions { text-align: right; }
   .user-row {
-    grid-template-columns: 2.5rem minmax(0, 1.4fr) 6.5rem 6.5rem minmax(12rem, 1fr);
+    grid-template-columns: 2.75rem minmax(10rem, 2fr) 7.5rem 7.5rem auto;
     grid-template-areas: "avatar identity role status actions";
-    gap: 0.75rem;
+    gap: 1rem 1.25rem;
+    padding: 1.05rem 1.25rem;
+  }
+  .user-actions {
+    flex-wrap: nowrap;
   }
 }
 .access-list {

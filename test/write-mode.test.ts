@@ -130,7 +130,7 @@ test("library page explains write mode to publishers only", async () => {
     assert.match(publisherHtml, /role="switch"/);
     assert.match(publisherHtml, /aria-checked="true"/);
     assert.match(publisherHtml, /name="write_mode" value="reviewed"/);
-    assert.doesNotMatch(publisherHtml, /Change to Publisher Review/);
+    assert.doesNotMatch(publisherHtml, /Change to Review Lock/);
     assert.doesNotMatch(publisherHtml, /write-mode-current/);
 
     const readerHtml = libraryPage({ ...shared, access: reader });
@@ -145,7 +145,7 @@ test("direct agent instructions say saves are live", () => {
   assert.match(reviewed, /save drafts only/);
   assert.doesNotMatch(reviewed, /Collecting and storing for the next agent/);
   const direct = agentInstructions("Patch scans", { starter: "general", fields: [] }, "direct");
-  assert.match(direct, /Live Sync/);
+  assert.match(direct, /Review Unlock/);
   assert.match(direct, /live immediately/);
   assert.match(direct, /Collecting and storing for the next agent/);
   assert.match(direct, /stable entity_key/);

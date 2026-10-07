@@ -40,8 +40,8 @@ const CUSTOM_SCHEMA_PROMPTS = [
 const WRITE_MODE_CHOICES = ["reviewed", "direct"] as const satisfies readonly LibraryWriteMode[];
 
 const WRITE_MODE_TITLE: Record<LibraryWriteMode, string> = {
-  reviewed: "Publisher Review",
-  direct: "Live Sync",
+  reviewed: "Review Lock",
+  direct: "Review Unlock",
 };
 
 const WRITE_MODE_BLURB: Record<LibraryWriteMode, string> = {

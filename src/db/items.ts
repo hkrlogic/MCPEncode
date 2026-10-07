@@ -184,7 +184,7 @@ export async function countLibraryItems(db: Database, libraryId: string): Promis
 
 /**
  * Validate against the library schema and insert an item.
- * Reviewed libraries save as Pending; Live Sync libraries save as Published.
+ * Review Lock libraries save as Pending; Review Unlock libraries save as Published.
  * Holds the library row lock so this cannot land under a schema that was
  * just replaced by table approval.
  */
@@ -298,7 +298,7 @@ export async function updateItem(
   if (!keyed.ok) throw new Error(keyed.message);
 
   if (writeMode === "direct") {
-    // Live Sync: any successful save is live. Snapshot tracks the live copy.
+    // Review Unlock: any successful save is live. Snapshot tracks the live copy.
     const fromStatus = existing.status;
     const snapshot = snapshotFromItem({
       name: input.name,
@@ -347,7 +347,7 @@ export async function updateItem(
     return getItem(db, id, { publishedOnly: false });
   }
 
-  // Reviewed: editing a published item moves it back to Pending.
+  // Review Lock: editing a published item moves it back to Pending.
   const unpublish = existing.status === "published";
   try {
     await runSql(

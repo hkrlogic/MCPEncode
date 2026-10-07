@@ -20,6 +20,8 @@ export function librariesPage(input: {
   csrf: string;
   libraries: AppShell["libraries"];
   orphans?: AppShell["orphans"];
+  username?: string;
+  roleLabel?: string;
 }): string {
   const canAdd = can(input.access, "libraries.create");
   const shell: AppShell = {
@@ -28,6 +30,8 @@ export function librariesPage(input: {
     csrf: input.csrf,
     canAddLibrary: canAdd,
     showAccounts: can(input.access, "accounts.manage"),
+    username: input.username,
+    roleLabel: input.roleLabel,
   };
   const waiting = input.libraries.filter((row) => (row.pendingCount ?? 0) > 0);
   const waitingList =
@@ -130,6 +134,8 @@ export function addLibraryPage(input: {
   csrf: string;
   libraries: AppShell["libraries"];
   orphans?: AppShell["orphans"];
+  username?: string;
+  roleLabel?: string;
   error?: string;
   name?: string;
 }): string {
@@ -139,6 +145,9 @@ export function addLibraryPage(input: {
     csrf: input.csrf,
     canAddLibrary: can(input.access, "libraries.create"),
     addingLibrary: true,
+    showAccounts: can(input.access, "accounts.manage"),
+    username: input.username,
+    roleLabel: input.roleLabel,
   };
   return layout({
     title: "Add library · MCPEncode",
@@ -446,6 +455,9 @@ export function libraryPage(input: {
   shellOrphans?: AppShell["orphans"];
   /** Session can add libraries (SA). Independent of library publisher powers. */
   canAddLibrary?: boolean;
+  username?: string;
+  roleLabel?: string;
+  showAccounts?: boolean;
 }): string {
   const shell: AppShell = {
     libraries: input.shellLibraries,
@@ -453,7 +465,9 @@ export function libraryPage(input: {
     activeLibraryId: input.library.id,
     csrf: input.csrf,
     canAddLibrary: input.canAddLibrary ?? can(input.access, "libraries.create"),
-    showAccounts: can(input.access, "accounts.manage"),
+    showAccounts: input.showAccounts ?? can(input.access, "accounts.manage"),
+    username: input.username,
+    roleLabel: input.roleLabel,
   };
 
   if (input.orphan) {

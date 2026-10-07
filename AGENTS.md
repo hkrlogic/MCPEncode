@@ -23,12 +23,12 @@ You keep **libraries** of **items**. Auth is to a library. Each item has a **nam
 Items: `draft` → `published` (optional `archived`). Readonly MCP only sees published.
 
 Each library has a **write mode**:
-- **Reviewed** (default) — create/update save as Pending; a human Publishes.
-- **Live Sync** — successful create/update is Published immediately. The stored value stays `direct`.
+- **Review Lock** (default) — create/update save as Pending; a human Publishes. Stored value: `reviewed`.
+- **Review Unlock** — successful create/update is Published immediately. Stored value: `direct`.
 
 Choose the mode when adding a library. Publishers can change it later in the UI only (not over MCP).
 
-Live Sync MCP connections include handoff instructions: prefer `entity_key` for upserts, search before create, one item per entity, stable name, searchable summary, useful labels, then the next agent scoops with `list_items` / `open_item`.
+Review Unlock MCP connections include handoff instructions: prefer `entity_key` for upserts, search before create, one item per entity, stable name, searchable summary, useful labels, then the next agent scoops with `list_items` / `open_item`.
 
 ## Run
 

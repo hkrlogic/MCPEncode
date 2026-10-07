@@ -11,7 +11,10 @@ function initial(username: string): string {
 export function accountsPage(input: {
   access: Access;
   csrf: string;
-  shell: Pick<AppShell, "libraries" | "orphans" | "csrf" | "canAddLibrary">;
+  shell: Pick<
+    AppShell,
+    "libraries" | "orphans" | "csrf" | "canAddLibrary" | "username" | "roleLabel" | "showAccounts"
+  >;
   accounts: Account[];
   /** Built-in sign-in. An external identity provider does not use this list. */
   local: boolean;
@@ -20,7 +23,12 @@ export function accountsPage(input: {
   created?: string;
   notice?: string;
 }): string {
-  const shell: AppShell = { ...input.shell, showAccounts: true };
+  const shell: AppShell = {
+    ...input.shell,
+    showAccounts: true,
+    settingsMode: true,
+    settingsActive: "accounts",
+  };
   const flash =
     input.error
       ? `<p class="error" role="alert">${esc(input.error)}</p>`
@@ -99,7 +107,7 @@ export function accountsPage(input: {
         </div>`;
 
   const addOpen = Boolean(input.error || input.username);
-  const addForm = input.local
+  const addControl = input.local
     ? `
       <details class="users-add"${addOpen ? " open" : ""}>
         <summary class="btn">Add user</summary>
@@ -122,6 +130,9 @@ export function accountsPage(input: {
           <button class="btn" type="submit">Create user</button>
         </form>
       </details>`
+    : "";
+  const externalHint = input.local
+    ? ""
     : `<p class="hint users-external">Sign-in for this deployment is an external identity provider. Create people there, then grant their subject on a library.</p>`;
 
   return layout({
@@ -136,9 +147,10 @@ export function accountsPage(input: {
             <h1>Accounts</h1>
             <p class="hint">Users who can sign in. Grant them on a library as a reader or a publisher. SA can open every library without being listed.</p>
           </div>
+          ${addControl}
         </header>
         ${flash}
-        ${addForm}
+        ${externalHint}
         ${input.local ? list : ""}
       </div>
     `,

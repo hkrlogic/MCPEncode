@@ -6,7 +6,7 @@ import { staticUrl } from "../static-assets.ts";
 
 /** Keep in sync with writeModeLabel in schema-choice (avoid a layout ↔ schema-choice import cycle). */
 function shellWriteModeLabel(mode: LibraryWriteMode): string {
-  return mode === "direct" ? "Live Sync" : "Publisher Review";
+  return mode === "direct" ? "Review Unlock" : "Review Lock";
 }
 
 export function libraryKind(template: LibraryRow["template"]): string {
@@ -212,6 +212,14 @@ export type AppShell = {
   addingLibrary?: boolean;
   /** Home and Accounts: this sign-in can create more accounts. */
   showAccounts?: boolean;
+  /** Sidebar footer — who is signed in. */
+  username?: string;
+  /** App role for the footer (SA / Reader). */
+  roleLabel?: string;
+  /** Left pane lists Settings items instead of libraries. */
+  settingsMode?: boolean;
+  /** Which Settings item is current. */
+  settingsActive?: "accounts";
 };
 
 /** confirm() text safe to place in a double-quoted onsubmit attribute. */
@@ -224,7 +232,75 @@ export function onConfirm(message: string): string {
   return `return confirm('${esc(js)}');`;
 }
 
+function userInitial(username: string): string {
+  const ch = username.trim().charAt(0);
+  return (ch || "?").toUpperCase();
+}
+
+const SETTINGS_COG = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
+
+function sidebarFooter(shell: AppShell): string {
+  const name = shell.username?.trim() || "Signed in";
+  const role = shell.roleLabel?.trim() || "";
+  const settingsOpen = Boolean(shell.settingsMode);
+  // One control: open Settings from libraries, close Settings back to libraries.
+  const href = settingsOpen ? "/" : "/settings";
+  const label = settingsOpen ? "Close settings" : "Settings";
+  return `
+    <div class="sidebar-foot">
+      <div class="sidebar-user">
+        <span class="sidebar-user-avatar" aria-hidden="true">${esc(userInitial(name))}</span>
+        <span class="sidebar-user-meta">
+          <span class="sidebar-user-name">${esc(name)}</span>
+          ${role ? `<span class="sidebar-user-role">${esc(role)}</span>` : ""}
+        </span>
+      </div>
+      <a class="sidebar-settings${settingsOpen ? " is-active" : ""}" href="${href}" aria-label="${esc(label)}"${
+        settingsOpen ? ' aria-expanded="true"' : ' aria-expanded="false"'
+      }>${SETTINGS_COG}</a>
+    </div>`;
+}
+
+function settingsSidebar(shell: AppShell): string {
+  const accountsActive = shell.settingsActive === "accounts";
+  const accounts = shell.showAccounts
+    ? `<li>
+        <a class="sidebar-lib${accountsActive ? " is-active" : ""}" href="/accounts"${
+          accountsActive ? ' aria-current="page"' : ""
+        }>
+          <span class="sidebar-lib-text">
+            <span class="sidebar-lib-name">Accounts</span>
+            <span class="sidebar-lib-meta">Who can sign in</span>
+          </span>
+        </a>
+      </li>`
+    : "";
+  return `
+    <aside class="lib-sidebar" aria-label="Settings">
+      <div class="sidebar-head">
+        <div class="sidebar-head-row">
+          <h2 class="sidebar-title">Settings</h2>
+        </div>
+      </div>
+      <nav class="sidebar-nav" aria-label="Settings">
+        <ul class="sidebar-libs">
+          ${accounts}
+          <li>
+            <a class="sidebar-lib" href="/logout">
+              <span class="sidebar-lib-text">
+                <span class="sidebar-lib-name">Sign out</span>
+              </span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+      ${sidebarFooter(shell)}
+    </aside>`;
+}
+
 function librarySidebar(shell: AppShell): string {
+  if (shell.settingsMode) return settingsSidebar(shell);
+
   const addLink = shell.canAddLibrary
     ? `<a class="sidebar-add-link${shell.addingLibrary ? " is-active" : ""}" href="/libraries/new" aria-label="Add library"${
         shell.addingLibrary ? ' aria-current="page"' : ""
@@ -298,15 +374,24 @@ function librarySidebar(shell: AppShell): string {
         ${rows}
         ${orphans}
       </nav>
+      ${sidebarFooter(shell)}
     </aside>`;
 }
 
 function shellCurrentLabel(shell: AppShell): string {
+  if (shell.settingsMode) {
+    if (shell.settingsActive === "accounts") return "Accounts";
+    return "Settings";
+  }
   if (shell.addingLibrary) return "Add library";
   const active =
     shell.libraries.find((row) => row.id === shell.activeLibraryId) ??
     shell.orphans?.find((row) => row.id === shell.activeLibraryId);
   return active?.name ?? "Choose a library";
+}
+
+function shellDrawerKicker(shell: AppShell): string {
+  return shell.settingsMode ? "Settings" : "Libraries";
 }
 
 export function layout(input: {
@@ -320,6 +405,7 @@ export function layout(input: {
   body: string;
 }): string {
   const shellMode = Boolean(input.access && input.shell);
+  // Shell pages keep the top bar slim — username, Accounts, and Sign out live in the sidebar.
   const nav = input.access
     ? `<nav class="nav" aria-label="Main">
         <a class="brand" href="/">MCPEncode</a>
@@ -327,7 +413,9 @@ export function layout(input: {
           shellMode
             ? input.library
               ? `<p class="nav-context"><span class="nav-current">${esc(input.library.name)}</span></p>`
-              : ""
+              : input.shell?.settingsMode
+                ? `<p class="nav-context"><span class="nav-current">Settings</span></p>`
+                : ""
             : `<div class="nav-trail">
           <a class="nav-link" href="/">Library</a>
           ${
@@ -336,17 +424,12 @@ export function layout(input: {
                  <a class="nav-link nav-current" href="/libraries/${esc(input.library.id)}">${esc(input.library.name)}</a>`
               : ""
           }
-        </div>`
-        }
+        </div>
         <div class="nav-end">
           <span class="nav-role">${esc(roleLabel(input.access))}</span>
-          ${
-            input.shell?.showAccounts
-              ? `<a class="nav-signout" href="/accounts">Accounts</a>`
-              : ""
-          }
           <a class="nav-signout" href="/logout">Sign out</a>
-        </div>
+        </div>`
+        }
       </nav>`
     : `<nav class="nav" aria-label="Main">
         <a class="brand" href="/">MCPEncode</a>
@@ -361,7 +444,7 @@ export function layout(input: {
           <div class="lib-drawer">
             <input type="checkbox" id="lib-nav-toggle" class="lib-nav-toggle">
             <label for="lib-nav-toggle" class="lib-nav-label">
-              <span class="lib-nav-kicker">Libraries</span>
+              <span class="lib-nav-kicker">${esc(shellDrawerKicker(input.shell))}</span>
               <span class="lib-nav-current">${esc(shellCurrentLabel(input.shell))}</span>
               <span class="lib-nav-action lib-nav-show">Show</span>
               <span class="lib-nav-action lib-nav-hide">Hide</span>

@@ -30,7 +30,7 @@ export const entityKeySchema = z
   })
   .optional()
   .describe(
-    "Stable id for this real-world entity inside the library (for example host:contoso-01). Prefer this for Live Sync upserts.",
+    "Stable id for this real-world entity inside the library (for example host:contoso-01). Prefer this for Review Unlock upserts.",
   );
 
 /** Shared item shape for the HTML form and MCP tools. */
@@ -76,8 +76,8 @@ export const LIBRARY_SCHEMA_STARTERS = ["general", "policy", "procedure"] as con
 
 /**
  * How item writes become visible on a library.
- * reviewed = Pending until a human Publishes (default).
- * direct = successful create/update is Published immediately.
+ * reviewed (Review Lock) = Pending until a human Publishes (default).
+ * direct (Review Unlock) = successful create/update is Published immediately.
  */
 export const LIBRARY_WRITE_MODES = ["reviewed", "direct"] as const;
 export type LibraryWriteMode = (typeof LIBRARY_WRITE_MODES)[number];
@@ -102,7 +102,7 @@ export const createLibraryInputSchema = z.object({
   write_mode: z
     .enum(LIBRARY_WRITE_MODES)
     .describe(
-      "reviewed = items stay Pending until a human Publishes. direct = saves are live immediately. Ask the human which one; do not guess.",
+      "reviewed (Review Lock) = items stay Pending until a human Publishes. direct (Review Unlock) = saves are live immediately. Ask the human which one; do not guess.",
     ),
   table: proposeTableInputSchema
     .optional()

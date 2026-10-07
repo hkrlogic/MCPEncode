@@ -35,7 +35,7 @@ test("add library shows each schema and its fields", () => {
   assert.match(html, /<legend>Write settings<\/legend>/);
   assert.match(html, /name="write_mode" id="write-mode-reviewed" value="reviewed"/);
   assert.match(html, /name="write_mode" id="write-mode-direct" value="direct"/);
-  assert.match(html, /<label for="write-mode-direct">Live Sync<\/label>/);
+  assert.match(html, /<label for="write-mode-direct">Review Unlock<\/label>/);
   assert.match(html, /Items stay Pending until you Publish/);
   assert.match(html, /Saves are live immediately for readers and agents/);
 });

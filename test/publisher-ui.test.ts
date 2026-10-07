@@ -59,7 +59,7 @@ test("home lists libraries that have items waiting to publish", () => {
   assert.match(html, /class="sidebar-pending"/);
   assert.match(html, /class="sidebar-lib-count"/);
   assert.match(html, />18</);
-  assert.match(html, /Publisher Review/);
+  assert.match(html, /Review Lock/);
   assert.match(html, /href="\/libraries\/new"/);
   assert.doesNotMatch(html, /Table · Publisher/);
 });

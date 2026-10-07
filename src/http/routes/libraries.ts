@@ -109,6 +109,9 @@ async function publisherShell(db: AppRouteContext["db"], access: SessionUser) {
   return {
     shellLibraries: shell.libraries,
     shellOrphans: shell.orphans,
+    username: shell.username,
+    roleLabel: shell.roleLabel,
+    showAccounts: shell.showAccounts,
   };
 }
 
@@ -178,6 +181,8 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         csrf: access.csrf,
         libraries: shell.libraries,
         orphans: shell.orphans,
+        username: shell.username,
+        roleLabel: shell.roleLabel,
       }),
     );
   });
@@ -202,6 +207,8 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           csrf: access.csrf,
           libraries: shell.libraries,
           orphans: shell.orphans,
+          username: shell.username,
+          roleLabel: shell.roleLabel,
           name: formString(req.body, "name").slice(0, 200),
           error: "Custom schemas are designed in your agent chat, not on this form.",
         }),
@@ -219,6 +226,8 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           csrf: access.csrf,
           libraries: shell.libraries,
           orphans: shell.orphans,
+          username: shell.username,
+          roleLabel: shell.roleLabel,
           name: formString(req.body, "name").slice(0, 200),
           error: !writeMode
             ? `Choose ${writeModeLabel("reviewed")} or ${writeModeLabel("direct")} for how writes go live.`
@@ -319,6 +328,8 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         csrf: access.csrf,
         libraries: shell.libraries,
         orphans: shell.orphans,
+        username: shell.username,
+        roleLabel: shell.roleLabel,
       }),
     );
   });
@@ -648,6 +659,9 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           activeLibraryId: ctxLib.library.id,
           csrf: access.csrf,
           canAddLibrary: can(access, "libraries.create"),
+          username: shell.username,
+          roleLabel: shell.roleLabel,
+          showAccounts: shell.showAccounts,
         },
       }),
     );
@@ -741,6 +755,9 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
             activeLibraryId: ctxLib.library.id,
             csrf: access.csrf,
             canAddLibrary: can(access, "libraries.create"),
+            username: shell.username,
+            roleLabel: shell.roleLabel,
+            showAccounts: shell.showAccounts,
           },
         }),
       );
