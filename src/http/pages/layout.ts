@@ -227,9 +227,19 @@ export function onConfirm(message: string): string {
   const js = message
     .replaceAll("\\", "\\\\")
     .replaceAll("'", "\\'")
-    .replaceAll("\r", " ")
-    .replaceAll("\n", " ");
+    .replaceAll("\r", "")
+    .replaceAll("\n", "\\n");
   return `return confirm('${esc(js)}');`;
+}
+
+/** Warn before granting app SA (destructive admin). */
+export function saGrantConfirm(who: string): string {
+  return (
+    `Make ${who} an SA?\n\n` +
+    "SA can manage every account, open every library, and perform destructive actions " +
+    "(hard-delete items, delete libraries).\n\n" +
+    "Only continue if you trust them with full admin access."
+  );
 }
 
 function userInitial(username: string): string {

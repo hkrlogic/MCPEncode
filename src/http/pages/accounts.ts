@@ -1,7 +1,7 @@
 /** People who can sign in. Subjects from this list are granted on a library. */
 import type { Access } from "../../auth/rbac.ts";
 import type { Account } from "../../auth/accounts.ts";
-import { esc, layout, onConfirm, type AppShell } from "./layout.ts";
+import { esc, layout, onConfirm, saGrantConfirm, type AppShell } from "./layout.ts";
 
 function initial(username: string): string {
   const ch = username.trim().charAt(0);
@@ -49,9 +49,9 @@ export function accountsPage(input: {
       const nextSa = isSa ? "0" : "1";
       const saConfirm = isSa
         ? self
-          ? "Remove your own SA admin? You will keep this account but lose Accounts and global library access."
-          : `Remove SA from ${account.username}? They keep the account; library Access is unchanged.`
-        : `Make ${account.username} an SA? They can manage accounts and open every library.`;
+          ? "Remove your own SA admin?\n\nYou keep this account but lose Accounts management and global library access. Library Access grants stay."
+          : `Remove SA from ${account.username}?\n\nThey keep the account and any library Access grants. They will no longer manage Accounts or open libraries they are not granted on.`
+        : saGrantConfirm(account.username);
       return `
         <li class="user-row${disabled ? " is-disabled" : ""}">
           <span class="user-avatar" aria-hidden="true">${esc(initial(account.username))}</span>
@@ -127,11 +127,14 @@ export function accountsPage(input: {
         </div>`;
 
   const addOpen = Boolean(input.error || input.username);
+  // Confirm only when creating with SA checked — normal accounts need no popup.
+  const createSaWarn = saGrantConfirm("this user");
+  const createOnSubmit = `if (this.sa && this.sa.checked) { ${onConfirm(createSaWarn)} } return true;`;
   const addControl = input.local
     ? `
       <details class="users-add"${addOpen ? " open" : ""}>
         <summary class="btn">Add user</summary>
-        <form class="capture users-add-form" method="post" action="/accounts">
+        <form class="capture users-add-form" method="post" action="/accounts" onsubmit="${createOnSubmit}">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
           <div class="users-add-grid">
             <label>Username
