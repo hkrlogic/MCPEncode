@@ -152,7 +152,7 @@ test("publish diff labels the previous and current text", () => {
   assert.match(html, /Now name/);
 });
 
-test("Edit sits with Publish; publishers archive; only SA hard-deletes", () => {
+test("Edit and Archive live in Actions; Publish stays primary; only SA hard-deletes", () => {
   const lib = library();
   const item = {
     id: "item-1",
@@ -178,10 +178,24 @@ test("Edit sits with Publish; publishers archive; only SA hard-deletes", () => {
     html: "<p>Apply</p>",
     shell: { libraries: [], csrf: "token", canAddLibrary: true },
   });
+  assert.match(html, /aria-label="Actions"/);
   assert.ok(html.indexOf('href="/items/item-1/edit"') > 0);
   assert.match(html, /Archive/);
-  assert.doesNotMatch(html, /aria-label="Actions"/);
+  assert.match(html, /action="\/items\/item-1\/publish"/);
+  assert.doesNotMatch(html, /class="btn secondary"[^>]*>Edit/);
   assert.doesNotMatch(html, /action="\/items\/item-1\/delete"/);
+
+  const publishedHtml = itemPage({
+    access: publisher,
+    csrf: "token",
+    item: { ...item, status: "published" },
+    library: lib,
+    html: "<p>Apply</p>",
+    shell: { libraries: [], csrf: "token", canAddLibrary: true },
+  });
+  assert.match(publishedHtml, /Unpublish/);
+  assert.match(publishedHtml, /Archive/);
+  assert.doesNotMatch(publishedHtml, /action="\/items\/item-1\/publish"/);
 
   const saHtml = itemPage({
     access: {
