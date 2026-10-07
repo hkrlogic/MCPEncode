@@ -38,9 +38,10 @@ import type { AppRouteContext } from "./routes/context.ts";
 import { registerEditorRoutes } from "./routes/editor.ts";
 import { registerItemRoutes } from "./routes/items.ts";
 import { registerLibraryRoutes } from "./routes/libraries.ts";
+import { staticPublicDir } from "./static-assets.ts";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-const publicDir = path.resolve(dirname, "../../public");
+const publicDir = staticPublicDir();
 
 export function createApp(input: {
   config: AppConfig;
@@ -123,7 +124,16 @@ export function createApp(input: {
     },
   );
 
-  app.use("/static", express.static(publicDir));
+  // Fingerprinted query strings bust Cloudflare/browser caches after deploys.
+  // Keep a short max-age so a missed fingerprint still revalidates quickly.
+  app.use(
+    "/static",
+    express.static(publicDir, {
+      maxAge: "5m",
+      etag: true,
+      lastModified: true,
+    }),
+  );
   const projectRoot = path.resolve(dirname, "../..");
   const jsuitesDist = [
     path.join(projectRoot, "node_modules/jspreadsheet-ce/node_modules/jsuites/dist"),

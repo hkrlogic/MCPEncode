@@ -7,6 +7,7 @@ import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import type { AppConfig } from "../config.ts";
 import type { AuthServerEndpoints } from "../http/discovery.ts";
 import { pkceChallenge } from "../http/pkce.ts";
+import { staticUrl } from "../http/static-assets.ts";
 import type { AccountStore } from "./accounts.ts";
 import { hashPassword, normalizeUsername, verifyPassword } from "./passwords.ts";
 import { SIGN_IN_WAIT, SignInLimit } from "./signin-limit.ts";
@@ -100,7 +101,7 @@ function loginPage(input: {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@450;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="${staticUrl("styles.css")}">
 </head>
 <body>
   <main class="sign-in">

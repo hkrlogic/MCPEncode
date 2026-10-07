@@ -2,6 +2,7 @@
 import type { Access } from "../../auth/rbac.ts";
 import type { ItemRow, ItemStatus, ItemSummary, LibraryRow, PublishedSnapshot } from "../../db/models.ts";
 import { isLibraryWriteMode, type LibraryWriteMode } from "../../items/schema.ts";
+import { staticUrl } from "../static-assets.ts";
 
 /** Keep in sync with writeModeLabel in schema-choice (avoid a layout ↔ schema-choice import cycle). */
 function shellWriteModeLabel(mode: LibraryWriteMode): string {
@@ -380,7 +381,7 @@ export function layout(input: {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@450;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="${staticUrl("styles.css")}">
   ${input.extraHead ?? ""}
 </head>
 <body class="${shellMode ? "app-body" : ""}">
@@ -399,6 +400,6 @@ export function editorScripts(): string {
   return `
     <script src="/vendor/jsuites/jsuites.js"></script>
     <script src="/vendor/jspreadsheet/index.js"></script>
-    <script src="/static/editor.js"></script>
+    <script src="${staticUrl("editor.js")}"></script>
   `;
 }
