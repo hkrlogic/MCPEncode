@@ -56,6 +56,19 @@ test("general item export is clean Markdown", () => {
   assert.doesNotMatch(md, /Published|Pending|entity_key|item-1/);
 });
 
+test("export tolerates null-ish summary body and labels", () => {
+  const md = itemToMarkdown(
+    item({
+      summary: null as unknown as string,
+      body: null as unknown as string,
+      labels: null as unknown as string[],
+    }),
+    library(),
+  );
+  assert.match(md, /^# VPN access\n/);
+  assert.doesNotMatch(md, /Labels:/);
+});
+
 test("policy item export uses control and body sections", () => {
   const md = itemToMarkdown(
     item({

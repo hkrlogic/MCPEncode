@@ -81,19 +81,24 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       res.redirect("/login");
       return;
     }
-    const loaded = await loadVisibleItem(req, access);
-    if ("error" in loaded) {
-      res.status(loaded.error.status).send(errorPage(loaded.error.message));
-      return;
+    try {
+      const loaded = await loadVisibleItem(req, access);
+      if ("error" in loaded) {
+        res.status(loaded.error.status).send(errorPage(loaded.error.message));
+        return;
+      }
+      const markdown = itemToMarkdown(loaded.item, loaded.library);
+      const filename = markdownExportFilename(loaded.item.name);
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename.replace(/"/g, "")}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      );
+      res.send(markdown);
+    } catch (error) {
+      console.error("export.md failed", error);
+      res.status(500).send(errorPage("Could not export this item as Markdown."));
     }
-    const markdown = itemToMarkdown(loaded.item, loaded.library);
-    const filename = markdownExportFilename(loaded.item.name);
-    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename.replace(/"/g, "")}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-    );
-    res.send(markdown);
   });
 
   app.get("/items/:id", async (req, res) => {

@@ -13,7 +13,7 @@ import {
 
 /** Safe download basename from the item name (no path segments). */
 export function markdownExportFilename(name: string): string {
-  const base = name
+  const base = (typeof name === "string" ? name : "")
     .trim()
     .replace(/[\\/:*?"<>|]+/g, "-")
     .replace(/\s+/g, " ")
@@ -48,29 +48,34 @@ function detailsBlock(
 
 /** Full Markdown document for one item. */
 export function itemToMarkdown(item: ItemRow, library: LibraryRow): string {
-  const chunks: string[] = [`# ${escapeHeading(item.name)}`, ""];
-  if (item.summary.trim()) {
-    chunks.push(item.summary.trim(), "");
+  const name = typeof item.name === "string" ? item.name : "";
+  const summary = typeof item.summary === "string" ? item.summary.trim() : "";
+  const bodyText = typeof item.body === "string" ? item.body.trim() : "";
+  const labels = Array.isArray(item.labels)
+    ? item.labels.filter((label): label is string => typeof label === "string" && label.trim() !== "")
+    : [];
+
+  const chunks: string[] = [`# ${escapeHeading(name)}`, ""];
+  if (summary) {
+    chunks.push(summary, "");
   }
-  if (item.labels.length > 0) {
-    chunks.push(`Labels: ${item.labels.join(", ")}`, "");
+  if (labels.length > 0) {
+    chunks.push(`Labels: ${labels.join(", ")}`, "");
   }
 
-  const starter = library.schema.starter;
+  const starter = library.schema?.starter ?? "general";
+  const fields = Array.isArray(library.schema?.fields) ? library.schema.fields : [];
   if (starter === "table") {
     const values = parseTableValues(item.details) ?? {};
-    const body = detailsBlock(
-      tableControl(library.schema.fields, values),
-      tableParts(library.schema.fields, values),
-    );
+    const body = detailsBlock(tableControl(fields, values), tableParts(fields, values));
     if (body) chunks.push(body, "");
   } else if (starter === "policy" && item.policy) {
     chunks.push(detailsBlock(policyControl(item.policy), policyBody(item.policy)), "");
   } else if (starter === "procedure" && item.procedure) {
     chunks.push(detailsBlock(procedureControl(item.procedure), procedureBody(item.procedure)), "");
-  } else if (item.body.trim()) {
-    chunks.push(item.body.trim(), "");
+  } else if (bodyText) {
+    chunks.push(bodyText, "");
   }
 
-  return chunks.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  return `${chunks.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
 }
