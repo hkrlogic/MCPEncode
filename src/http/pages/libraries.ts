@@ -129,7 +129,6 @@ export function librariesPage(input: {
   const idleLead = canAdd
     ? "Choose a library on the left to browse items, or add another library."
     : "Choose a library on the left to browse published items.";
-  const idleKicker = canAdd ? "All clear" : "Reader";
   return layout({
     title: "Libraries · MCPEncode",
     csrf: input.csrf,
@@ -137,7 +136,6 @@ export function librariesPage(input: {
     shell,
     body: `
       <div class="empty-pane empty-pane-start home-idle">
-        <p class="home-kicker">${esc(idleKicker)}</p>
         <h1>${esc(idleTitle)}</h1>
         <p class="empty-pane-lead">${esc(idleLead)}</p>
         ${add}

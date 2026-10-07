@@ -860,8 +860,10 @@ body:has(.landing) {
 }
 body:has(.landing) .wrap {
   flex: 1;
+  display: flex;
+  align-items: center;
   max-width: 52rem;
-  padding: 0 1.5rem 4rem;
+  padding: 0 1.5rem 3rem;
 }
 .landing {
   width: 100%;
@@ -869,147 +871,33 @@ body:has(.landing) .wrap {
 }
 .landing-hero {
   text-align: center;
-  padding: clamp(3.5rem, 12vh, 6rem) 0 3rem;
+  width: 100%;
+  padding: clamp(2rem, 8vh, 4rem) 0;
   /* No fill-mode: if the animation never runs, content stays visible. */
   animation: landing-rise 0.7s ease-out;
 }
 .landing-brand {
-  margin: 0 0 0.65rem;
+  margin: 0 0 1rem;
   font-size: clamp(2.75rem, 8vw, 3.75rem);
   font-weight: 700;
   letter-spacing: -0.04em;
   line-height: 1.05;
   color: var(--ink);
 }
-.landing-title {
-  margin: 0 0 1rem;
-  font-size: 0.95rem;
-  font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
 .landing-lead {
-  margin: 0 auto 1.75rem;
+  margin: 0 auto 1.25rem;
   max-width: 30rem;
   color: var(--ink);
   font-family: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
   font-size: clamp(1.15rem, 2.4vw, 1.35rem);
   line-height: 1.5;
 }
-.landing-cta {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.85rem;
-}
 .landing-note {
-  margin: 0;
+  margin: 0 auto;
   max-width: 26rem;
   color: var(--muted);
   font-size: 0.95rem;
   line-height: 1.45;
-}
-.landing .btn {
-  min-height: 44px;
-  padding: 0.7rem 1.45rem;
-  font-size: 1rem;
-}
-.landing-path {
-  margin: 0.5rem 0 2.5rem;
-  padding: 1.5rem 0 0;
-  border-top: 1px solid var(--line);
-  animation: landing-rise 0.7s ease-out 0.12s;
-}
-.landing-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.25rem 1.5rem;
-  counter-reset: landing-step;
-}
-.landing-step {
-  counter-increment: landing-step;
-  position: relative;
-  padding-top: 0.25rem;
-}
-.landing-step::before {
-  content: counter(landing-step);
-  display: block;
-  margin-bottom: 0.65rem;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 0.85rem;
-  font-weight: 700;
-  line-height: 1.75rem;
-  text-align: center;
-}
-.landing-step-label {
-  display: block;
-  margin-bottom: 0.35rem;
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-}
-.landing-step p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.95rem;
-  line-height: 1.45;
-}
-.landing-proof {
-  margin: 0 0 2.75rem;
-  padding: 1.75rem 1.5rem;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--panel) 88%, #fff);
-  animation: landing-rise 0.7s ease-out 0.22s;
-}
-.landing-proof h2 {
-  margin: 0 0 1.25rem;
-  text-align: center;
-  font-size: clamp(1.25rem, 3vw, 1.55rem);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-.landing-points {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 1.1rem;
-}
-.landing-points li {
-  display: grid;
-  gap: 0.2rem;
-  padding-left: 1rem;
-  border-left: 3px solid var(--accent);
-}
-.landing-points strong {
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--ink);
-}
-.landing-points span {
-  color: var(--muted);
-  font-size: 0.95rem;
-  line-height: 1.45;
-}
-.landing-close {
-  text-align: center;
-  padding: 0.5rem 0 1rem;
-  animation: landing-rise 0.7s ease-out 0.3s;
-}
-.landing-close p {
-  margin: 0 0 1rem;
-  color: var(--muted);
-  font-size: 1.05rem;
 }
 @keyframes landing-rise {
   from {
@@ -1022,20 +910,8 @@ body:has(.landing) .wrap {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .landing-hero,
-  .landing-path,
-  .landing-proof,
-  .landing-close {
+  .landing-hero {
     animation: none;
-  }
-}
-@media (max-width: 720px) {
-  .landing-steps {
-    grid-template-columns: 1fr;
-    gap: 1.35rem;
-  }
-  .landing-proof {
-    padding: 1.35rem 1.1rem;
   }
 }
 .sign-in {
