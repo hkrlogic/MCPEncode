@@ -195,7 +195,7 @@ export function itemPage(input: {
         <header class="item-head">
           <div class="item-head-bar">
             <div class="item-head-start">
-              <p class="back"><a class="back-btn" href="/libraries/${esc(input.library.id)}" aria-label="Back to items"><span aria-hidden="true">←</span> Back</a></p>
+              <p class="back"><a class="back-btn" href="/libraries/${esc(input.library.id)}" aria-label="Back to items"><svg class="back-btn-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" d="M14.5 5.5 8 12l6.5 6.5"/></svg></a></p>
               <p class="item-status">${statusBadge(status)}</p>
             </div>
             ${actions}

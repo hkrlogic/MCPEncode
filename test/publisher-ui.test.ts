@@ -214,8 +214,8 @@ test("Edit and Archive live in Actions; Publish stays primary; only SA hard-dele
   const headBar = html.slice(html.indexOf("item-head-bar"), html.indexOf("</header>"));
   assert.match(headBar, /class="back-btn"/);
   assert.match(headBar, /aria-label="Back to items"/);
+  assert.match(headBar, /class="back-btn-icon"/);
   assert.match(headBar, new RegExp(`href="/libraries/${lib.id}"`));
-  assert.match(headBar, /> Back</);
   assert.ok(headBar.indexOf('class="back-btn"') < headBar.indexOf('class="item-status"'));
   assert.match(html, /href="\/items\/item-1\/export\.md"/);
   assert.match(html, /Export Markdown/);

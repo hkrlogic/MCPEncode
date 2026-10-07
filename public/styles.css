@@ -1699,21 +1699,17 @@ button.linkish {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
   box-sizing: border-box;
+  width: 36px;
   height: 36px;
-  min-height: 36px;
-  padding: 0 0.7rem;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   color: var(--accent);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
-  font-size: 0.9rem;
-  font-weight: 650;
-  line-height: 1;
   text-decoration: none;
 }
+.back-btn-icon { display: block; }
 .back-btn:hover { background: rgba(31, 77, 58, 0.06); }
 .back-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .item-head h1 { margin: 0.15rem 0 0; }
