@@ -10,6 +10,7 @@ import {
   esc,
   layout,
   noticeMessage,
+  publishDiff,
   spreadsheetHead,
   statusBadge,
   type AppShell,
@@ -109,6 +110,7 @@ export function itemPage(input: {
   const menuItems = canWrite
     ? [
         `<a href="/items/${esc(input.item.id)}/edit">Edit</a>`,
+        `<button type="button" data-open-sheet="publish-diff">Changes since published</button>`,
         status === "published"
           ? `<form method="post" action="/items/${esc(input.item.id)}/unpublish">
                <input type="hidden" name="csrf" value="${esc(input.csrf)}">
@@ -146,6 +148,38 @@ export function itemPage(input: {
     : "";
   const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
   const flash = noticeMessage(input.notice, status);
+  const diffSheet = canWrite
+    ? `<dialog class="sheet" id="publish-diff" aria-labelledby="publish-diff-title">
+         <div class="sheet-panel">
+           <header class="sheet-head">
+             <h2 id="publish-diff-title">Changes since published</h2>
+             <button type="button" class="sheet-close" data-close-sheet aria-label="Close">
+               <span aria-hidden="true">×</span>
+             </button>
+           </header>
+           <div class="sheet-body">
+             ${publishDiff(input.item, input.item.published_snapshot)}
+           </div>
+         </div>
+       </dialog>
+       <script>
+         (function publishDiffSheet() {
+           const sheet = document.getElementById("publish-diff");
+           if (!(sheet instanceof HTMLDialogElement)) return;
+           document.querySelectorAll('[data-open-sheet="publish-diff"]').forEach((btn) => {
+             btn.addEventListener("click", () => {
+               const menu = btn.closest("details.item-menu");
+               if (menu) menu.open = false;
+               sheet.showModal();
+             });
+           });
+           sheet.querySelector("[data-close-sheet]")?.addEventListener("click", () => sheet.close());
+           sheet.addEventListener("click", (event) => {
+             if (event.target === sheet) sheet.close();
+           });
+         })();
+       </script>`
+    : "";
 
   return layout({
     title: `${input.item.name} · ${input.library.name}`,
@@ -182,6 +216,7 @@ export function itemPage(input: {
             : `<div class="prose">${input.html}</div>`
         }
       </article>
+      ${diffSheet}
     `,
   });
 }

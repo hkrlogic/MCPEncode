@@ -180,6 +180,8 @@ test("Edit and Archive live in Actions; Publish stays primary; only SA hard-dele
   });
   assert.match(html, /aria-label="Actions"/);
   assert.ok(html.indexOf('href="/items/item-1/edit"') > 0);
+  assert.match(html, /Changes since published/);
+  assert.match(html, /id="publish-diff"/);
   assert.match(html, /Archive/);
   assert.match(html, /action="\/items\/item-1\/publish"/);
   assert.doesNotMatch(html, /class="btn secondary"[^>]*>Edit/);
