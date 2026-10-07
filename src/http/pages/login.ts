@@ -8,6 +8,13 @@ export function loginPage(): string {
       <div class="landing">
         <section class="landing-hero">
           <h1 class="landing-brand">MCPEncode</h1>
+          <p class="landing-equation" aria-label="People plus agents equals ready">
+            <span class="landing-equation-part" aria-hidden="true">👤</span>
+            <span class="landing-equation-op" aria-hidden="true">+</span>
+            <span class="landing-equation-part" aria-hidden="true">🤖</span>
+            <span class="landing-equation-op" aria-hidden="true">=</span>
+            <span class="landing-equation-ok" aria-hidden="true">✅</span>
+          </p>
           <p class="landing-lead">Libraries of items you publish for people and agents.</p>
           <p class="landing-note">Add items — Publish — Look up</p>
         </section>
