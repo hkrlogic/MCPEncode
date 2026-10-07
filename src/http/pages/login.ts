@@ -8,8 +8,8 @@ export function loginPage(): string {
       <div class="landing">
         <section class="landing-hero">
           <h1 class="landing-brand">MCPEncode</h1>
-          <p class="landing-lead">Unified context built for humans and agents.</p>
-          <p class="landing-note">Add items — Publish library — Look up</p>
+          <p class="landing-lead">Libraries of items you publish for people and agents.</p>
+          <p class="landing-note">Add items — Publish — Look up</p>
         </section>
       </div>
     `,
