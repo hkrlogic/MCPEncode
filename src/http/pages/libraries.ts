@@ -4,7 +4,6 @@ import { can, type Access } from "../../auth/rbac.ts";
 import type { LibraryAccessRow } from "../../db/access.ts";
 import type { ItemSummary, LibraryRow } from "../../db/models.ts";
 import type { TableProposal } from "../../items/table-proposal.ts";
-import type { SchemaFieldDef } from "../../items/library-schema.ts";
 import {
   actionsMenuSummary,
   esc,
@@ -352,20 +351,6 @@ function accessPanel(input: {
 /** Publisher sections. Opening a library starts on the published item list. */
 type LibraryTab = "items" | "pending" | "archives" | "access";
 
-const GRID_CELL_MAX = 80;
-
-/** Short columns on a table library. Longer sections stay on the open item. */
-function controlColumns(library: LibraryRow): SchemaFieldDef[] {
-  if (library.schema.starter !== "table") return [];
-  return library.schema.fields.filter((field) => field.kind === "control");
-}
-
-function clipCell(value: string): { text: string; full: string } {
-  const clean = value.replace(/\s+/g, " ").trim();
-  if (clean.length <= GRID_CELL_MAX) return { text: clean, full: "" };
-  return { text: `${clean.slice(0, GRID_CELL_MAX - 1)}…`, full: clean };
-}
-
 function emptyItems(message: string, libraryId: string, offerAdd: boolean): string {
   const action = offerAdd
     ? `<p class="empty-action"><a class="btn" href="/libraries/${esc(libraryId)}/items/new">Add item</a></p>`
@@ -373,30 +358,8 @@ function emptyItems(message: string, libraryId: string, offerAdd: boolean): stri
   return `<div class="empty-block"><p class="empty">${esc(message)}</p>${action}</div>`;
 }
 
-function tableGrid(library: LibraryRow, items: ItemSummary[], selectable: boolean): string {
-  const columns = controlColumns(library);
-  const pickHead = selectable ? `<th scope="col"><span class="sr-only">Select</span></th>` : "";
-  const head = columns.map((column) => `<th scope="col">${esc(column.label)}</th>`).join("");
-  const body = items
-    .map((row) => {
-      const pick = selectable
-        ? `<td class="item-grid-pick"><label class="item-grid-check"><input type="checkbox" name="item_id" value="${esc(row.id)}"><span class="sr-only">Select ${esc(row.name)}</span></label></td>`
-        : "";
-      const cells = columns
-        .map((column) => {
-          const shown = clipCell(row.values?.[column.key] ?? "");
-          const title = shown.full ? ` title="${esc(shown.full)}"` : "";
-          return `<td${title}>${esc(shown.text)}</td>`;
-        })
-        .join("");
-      return `<tr>${pick}<td><a href="/items/${esc(row.id)}?library=${esc(library.id)}">${esc(row.name)}</a></td>${cells}</tr>`;
-    })
-    .join("");
-  return `<div class="item-grid-wrap"><table class="item-grid"><thead><tr>${pickHead}<th scope="col">Name</th>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
-}
-
+/** Name + summary list. Open the item for field details — not a spreadsheet here. */
 function libraryItemRows(library: LibraryRow, items: ItemSummary[], selectable: boolean): string {
-  if (library.schema.starter === "table") return tableGrid(library, items, selectable);
   return itemListMarkup(items, library.id, "", false, { selectable });
 }
 

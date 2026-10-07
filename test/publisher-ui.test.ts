@@ -83,7 +83,7 @@ test("an empty library offers Add item, and search offers Clear", () => {
   assert.doesNotMatch(searched, /class="empty-action"/);
 });
 
-test("a table library lists items as a grid of its short columns", () => {
+test("a table library lists items by name and summary like every other library", () => {
   const roster = library({
     template: "table",
     schema: {
@@ -109,11 +109,12 @@ test("a table library lists items as a grid of its short columns", () => {
     },
   ];
   const html = libraryPage({ ...shell, access: publisher, library: roster, items });
-  assert.match(html, /class="item-grid"/);
-  assert.match(html, />Phone</);
-  assert.match(html, /555-0100/);
+  // List first: name + summary. Field values stay on the open item page.
+  assert.match(html, /class="item-list"/);
   assert.match(html, /Alex/);
-  assert.doesNotMatch(html, />Notes</);
+  assert.match(html, /Nights/);
+  assert.doesNotMatch(html, /class="item-grid"/);
+  assert.doesNotMatch(html, /555-0100/);
   assert.doesNotMatch(html, /Bring the laptop/);
 });
 

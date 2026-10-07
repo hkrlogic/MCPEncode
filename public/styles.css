@@ -1271,40 +1271,6 @@ button.linkish {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.item-grid-wrap { overflow-x: auto; margin: 0.25rem 0 1rem; }
-.item-grid {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
-}
-.item-grid th, .item-grid td {
-  text-align: left;
-  padding: 0.55rem 0.7rem;
-  border-bottom: 1px solid var(--line);
-  vertical-align: middle;
-  word-break: break-word;
-}
-.item-grid th {
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.item-grid a { font-weight: 650; text-decoration: none; }
-.item-grid a:hover { text-decoration: underline; }
-.item-grid a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.item-grid-pick { width: 3rem; padding: 0; }
-.item-grid-check {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
-  margin: 0;
-  cursor: pointer;
-}
-.item-grid-check input { width: 1.1rem; height: 1.1rem; }
 .item-name { font-weight: 650; }
 .item-name-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .item-status { margin: 0 0 0.35rem; }
