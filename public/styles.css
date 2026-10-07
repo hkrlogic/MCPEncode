@@ -14,12 +14,25 @@ html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5
 a { color: var(--accent); }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
 
-/* Publisher split shell: libraries left, work surface right */
-.app-body { min-height: 100dvh; }
+/* Publisher split shell: libraries left, work surface right.
+   Lock the shell to the viewport so main scrolls and the sidebar stays put. */
+.app-body {
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.app-body > .nav {
+  flex: 0 0 auto;
+  position: static;
+}
 .app-shell {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(15rem, 17.5rem) minmax(0, 1fr);
-  min-height: calc(100dvh - 3.5rem);
+  overflow: hidden;
 }
 .lib-sidebar {
   display: flex;
@@ -28,8 +41,10 @@ a { color: var(--accent); }
   background: color-mix(in srgb, var(--panel) 88%, #fff);
   font-family: "Source Sans 3", "Segoe UI", sans-serif;
   min-height: 0;
+  overflow: hidden;
 }
 .sidebar-head {
+  flex: 0 0 auto;
   padding: 0.65rem 0.65rem 0.65rem 1rem;
   border-bottom: 1px solid var(--line);
 }
@@ -347,7 +362,8 @@ a { color: var(--accent); }
   .write-mode-toggle-knob { transition: none; }
 }
 .sidebar-nav {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   padding: 0.5rem 0.55rem 1.25rem;
 }
@@ -436,6 +452,7 @@ a { color: var(--accent); }
 .sidebar-orphans { margin-top: 0.35rem; }
 .app-main {
   min-width: 0;
+  min-height: 0;
   padding: 1.35rem 1.5rem 3.5rem;
   overflow: auto;
 }
@@ -564,9 +581,17 @@ a { color: var(--accent); }
 .lib-nav-toggle,
 .lib-nav-label { display: none; }
 @media (max-width: 840px) {
+  /* Phone: one column — page scroll is fine; drawer overlays the list. */
+  .app-body {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  .app-body > .nav { position: sticky; }
   .app-shell {
     grid-template-columns: 1fr;
     min-height: auto;
+    overflow: visible;
   }
   .lib-drawer { display: block; }
   .lib-nav-toggle {
