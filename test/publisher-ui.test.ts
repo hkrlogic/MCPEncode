@@ -60,7 +60,20 @@ test("home lists libraries that have items waiting to publish", () => {
   assert.match(html, /class="sidebar-lib-count"/);
   assert.match(html, />18</);
   assert.match(html, /Publisher Review/);
+  assert.match(html, /href="\/libraries\/new"/);
   assert.doesNotMatch(html, /Table · Publisher/);
+});
+
+test("home idle state offers Add library when nothing is pending", () => {
+  const html = librariesPage({
+    access: { sub: "alice", clientId: "test", role: "sa", permissions: ROLE_PERMISSIONS.sa },
+    csrf: "token",
+    libraries: [{ ...shell.shellLibraries[0], pendingCount: 0 }],
+  });
+  assert.match(html, /Nothing waiting to publish/);
+  assert.match(html, /Choose a library on the left/);
+  assert.match(html, /href="\/libraries\/new"/);
+  assert.match(html, />Add library</);
 });
 
 test("an empty library offers Add item, and search offers Clear", () => {

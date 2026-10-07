@@ -514,6 +514,36 @@ a { color: var(--accent); }
   margin-top: 1.1rem;
   max-width: 20rem;
 }
+.home-pane { max-width: 36rem; }
+.home-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+}
+.home-head h1 { margin: 0; }
+.home-actions { margin: 0; }
+.home-idle { align-items: flex-start; }
+.home-kicker {
+  margin: 0 0 0.45rem;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.home-idle h1 {
+  font-size: clamp(1.65rem, 3vw, 2rem);
+  max-width: 18ch;
+}
+.home-idle .empty-pane-lead {
+  max-width: 28rem;
+  color: var(--muted);
+}
+.home-idle .empty-action { margin-top: 1.5rem; }
+.home-idle .empty-pane-note { margin-top: 1rem; }
 .nav-context {
   display: flex;
   align-items: center;

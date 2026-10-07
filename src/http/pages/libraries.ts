@@ -81,22 +81,43 @@ export function librariesPage(input: {
     });
   }
 
-  const noWaiting =
-    waiting.length > 0
-      ? ""
-      : `<p class="empty-pane-lead">Nothing is waiting to publish.</p>
-         <p class="empty-pane-note">Open a library from the left pane to work with its items.</p>`;
+  // Catch-up home: either a Pending queue, or a calm “pick a library” surface with Add.
+  if (waiting.length > 0) {
+    const add = canAdd
+      ? `<p class="home-actions"><a class="btn secondary" href="/libraries/new">Add library</a></p>`
+      : "";
+    return layout({
+      title: "Libraries · MCPEncode",
+      csrf: input.csrf,
+      access: input.access,
+      shell,
+      body: `
+      <div class="empty-pane home-pane">
+        <header class="home-head">
+          <h1>Libraries</h1>
+          ${add}
+        </header>
+        ${waitingList}
+        ${orphanHint}
+      </div>
+    `,
+    });
+  }
 
+  const add = canAdd
+    ? `<p class="empty-action"><a class="btn" href="/libraries/new">Add library</a></p>`
+    : "";
   return layout({
     title: "Libraries · MCPEncode",
     csrf: input.csrf,
     access: input.access,
     shell,
     body: `
-      <div class="empty-pane">
-        <h1>Libraries</h1>
-        ${waitingList}
-        ${noWaiting}
+      <div class="empty-pane empty-pane-start home-idle">
+        <p class="home-kicker">All clear</p>
+        <h1>Nothing waiting to publish</h1>
+        <p class="empty-pane-lead">Choose a library on the left to browse items, or add another library.</p>
+        ${add}
         ${orphanHint}
       </div>
     `,
