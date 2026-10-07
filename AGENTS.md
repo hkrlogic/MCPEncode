@@ -44,7 +44,14 @@ Open `http://127.0.0.1:3000/`. Each library has its own MCP link under **Connect
 
 ## Access
 
-**SA** (app role) manages accounts, adds libraries, opens every library, and hard-deletes items. **Publisher** / **Reader** are per-library. Publishers archive items and may delete their library; only SA hard-deletes items. With built-in sign-in, grant Access by username. Agents connect with that library’s Connect link only.
+**SA** is the only app-level admin flag (Accounts, add libraries, open every library, hard-delete). Everyone else is the same at the app: they can sign in until granted on a library. **Publisher** / **Reader** are per-library under Access. Publishers archive items and may delete their library; only SA hard-deletes items. With built-in sign-in, grant Access by username. Agents connect with that library’s Connect link only.
+
+## Later (not built)
+
+- **SA breakglass** — no recovery path today if the last SA password is lost (Postgres is the only way). Consider a one-shot env (e.g. `SA_RECOVERY_PASSWORD`) that resets a named SA and must be cleared afterward — not a permanent backdoor.
+- **Auth domain allow/deny** — optional allowlist / denylist of email or IdP domains that may sign in (useful once magic link / Google / SSO land). Decide whether it applies to embedded accounts, OIDC only, or both.
+- **MFA (TOTP)** — protect human sign-in because libraries can hold sensitive business data. Prefer IdP MFA when `AUTH_MODE=oidc`. For embedded accounts, optional QR TOTP after password (enroll in Settings, challenge on authorize) plus recovery codes / SA clear. Does not replace Connect-link secrecy or library Access grants.
+- **Dashboard metrics** — publisher home or Settings surface with usage signals (libraries, items, pending counts, Connect activity / MCP tool calls, sign-ins). Keep it useful, not a cluttered analytics wall.
 
 ## Related
 

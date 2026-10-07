@@ -22,6 +22,8 @@ export function accountsPage(input: {
   username?: string;
   created?: string;
   notice?: string;
+  /** Prefill SA checkbox when re-showing the add form after an error. */
+  saChecked?: boolean;
 }): string {
   const shell: AppShell = {
     ...input.shell,
@@ -40,11 +42,16 @@ export function accountsPage(input: {
 
   const rows = input.accounts
     .map((account) => {
-      const role = account.role === "sa" ? "SA" : "Reader";
-      const roleClass = account.role === "sa" ? "user-badge-sa" : "user-badge-reader";
+      const isSa = account.role === "sa";
       const disabled = account.disabled;
       const self = account.id === input.access.sub;
       const resetId = `reset-${account.id}`;
+      const nextSa = isSa ? "0" : "1";
+      const saConfirm = isSa
+        ? self
+          ? "Remove your own SA admin? You will keep this account but lose Accounts and global library access."
+          : `Remove SA from ${account.username}? They keep the account; library Access is unchanged.`
+        : `Make ${account.username} an SA? They can manage accounts and open every library.`;
       return `
         <li class="user-row${disabled ? " is-disabled" : ""}">
           <span class="user-avatar" aria-hidden="true">${esc(initial(account.username))}</span>
@@ -52,7 +59,20 @@ export function accountsPage(input: {
             <span class="user-name">${esc(account.username)}</span>
             ${self ? `<span class="user-you">You</span>` : ""}
           </div>
-          <span class="user-badge ${roleClass}">${role}</span>
+          <div class="user-sa" data-area="sa">
+            <form method="post" action="/accounts/${esc(account.id)}/sa" class="user-sa-form"
+                  onsubmit="${onConfirm(saConfirm)}">
+              <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+              <input type="hidden" name="sa" value="${nextSa}">
+              <button type="submit" class="write-mode-toggle-btn${isSa ? " is-on" : ""}" role="switch"
+                      aria-checked="${isSa ? "true" : "false"}"
+                      aria-label="SA admin for ${esc(account.username)}. Now ${isSa ? "on" : "off"}."
+                      ${disabled ? " disabled" : ""}>
+                <span class="write-mode-toggle-knob" aria-hidden="true"></span>
+              </button>
+            </form>
+            <span class="user-sa-label${isSa ? " is-on" : ""}">${isSa ? "SA" : "Off"}</span>
+          </div>
           <span class="user-badge ${disabled ? "user-badge-off" : "user-badge-on"}">${
             disabled ? "Disabled" : "Active"
           }</span>
@@ -99,7 +119,7 @@ export function accountsPage(input: {
         <div class="users-panel">
           <div class="users-panel-head" aria-hidden="true">
             <span class="users-col-user">User</span>
-            <span class="users-col-role">Role</span>
+            <span class="users-col-role">SA</span>
             <span class="users-col-status">Status</span>
             <span class="users-col-actions">Actions</span>
           </div>
@@ -120,13 +140,12 @@ export function accountsPage(input: {
             <label>Password
               <input name="password" type="password" autocomplete="new-password" required minlength="12">
             </label>
-            <label>Role
-              <select name="role">
-                <option value="readonly">Reader — only libraries they are granted</option>
-                <option value="sa">SA — manage accounts and every library</option>
-              </select>
-            </label>
           </div>
+          <label class="users-sa-opt">
+            <input type="checkbox" name="sa" value="1"${input.saChecked ? " checked" : ""}>
+            <span>SA — manage accounts and every library</span>
+          </label>
+          <p class="hint users-sa-hint">Leave off for a normal account. Grant them on each library under Access.</p>
           <button class="btn" type="submit">Create user</button>
         </form>
       </details>`
@@ -145,7 +164,7 @@ export function accountsPage(input: {
         <header class="users-head">
           <div class="users-head-copy">
             <h1>Accounts</h1>
-            <p class="hint">Users who can sign in. Grant them on a library as a reader or a publisher. SA can open every library without being listed.</p>
+            <p class="hint">People who can sign in. Library permissions are granted under Access on each library. SA is the only app-level admin.</p>
           </div>
           ${addControl}
         </header>

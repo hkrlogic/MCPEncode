@@ -102,7 +102,7 @@ export function accountStore(db: Database): AccountStore {
       const message = checkNewAccount(input.username, input.password);
       if (message) return { ok: false, message };
       if (input.role !== "sa" && input.role !== "readonly") {
-        return { ok: false, message: "Choose SA or Reader for this account." };
+        return { ok: false, message: "Invalid account admin flag." };
       }
       const account: Account = {
         id: crypto.randomUUID(),
@@ -166,6 +166,28 @@ export function accountStore(db: Database): AccountStore {
       await db.run("UPDATE accounts SET disabled = ? WHERE id = ?", disabled, id);
       const updated = toStored({ ...row, disabled });
       return { ok: true, account: publicAccount(updated) };
+    },
+    async setSa(id, sa) {
+      const row = await getRow<AccountRow>(
+        db,
+        "SELECT id, username, password_hash, role, disabled FROM accounts WHERE id = ?",
+        id,
+      );
+      if (!row) return { ok: false, message: "Account not found." };
+      if (!sa && asRole(row.role) === "sa") {
+        const others = await getRow<{ n: string | number }>(
+          db,
+          `SELECT COUNT(*) AS n FROM accounts
+           WHERE role IN ('sa', 'edit') AND disabled = FALSE AND id <> ?`,
+          id,
+        );
+        if (Number(others?.n ?? 0) <= 0) {
+          return { ok: false, message: "Keep at least one active SA account." };
+        }
+      }
+      const role: AccountRole = sa ? "sa" : "readonly";
+      await db.run("UPDATE accounts SET role = ? WHERE id = ?", role, id);
+      return { ok: true, account: publicAccount(toStored({ ...row, role })) };
     },
   };
 }

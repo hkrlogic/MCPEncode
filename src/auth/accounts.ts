@@ -36,6 +36,11 @@ export type AccountStore = {
     id: string,
     disabled: boolean,
   ): Promise<{ ok: true; account: Account } | { ok: false; message: string }>;
+  /** App admin flag. Everyone else is the same until granted on a library. */
+  setSa(
+    id: string,
+    sa: boolean,
+  ): Promise<{ ok: true; account: Account } | { ok: false; message: string }>;
 };
 
 export function checkNewAccount(username: string, password: string): string | undefined {
@@ -74,7 +79,7 @@ export function memoryAccountStore(): AccountStore {
       const message = checkNewAccount(input.username, input.password);
       if (message) return { ok: false, message };
       if (input.role !== "sa" && input.role !== "readonly") {
-        return { ok: false, message: "Choose SA or Reader for this account." };
+        return { ok: false, message: "Invalid account admin flag." };
       }
       if (rows.some((row) => row.username === normalizeUsername(input.username))) {
         return { ok: false, message: "That username is already in use." };
@@ -101,6 +106,18 @@ export function memoryAccountStore(): AccountStore {
         }
       }
       row.disabled = disabled;
+      return { ok: true, account: publicAccount(row) };
+    },
+    async setSa(id, sa) {
+      const row = rows.find((entry) => entry.id === id);
+      if (!row) return { ok: false, message: "Account not found." };
+      if (!sa && row.role === "sa") {
+        const activeSa = rows.filter((entry) => entry.role === "sa" && !entry.disabled && entry.id !== id);
+        if (activeSa.length === 0) {
+          return { ok: false, message: "Keep at least one active SA account." };
+        }
+      }
+      row.role = sa ? "sa" : "readonly";
       return { ok: true, account: publicAccount(row) };
     },
   };

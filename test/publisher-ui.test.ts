@@ -76,6 +76,25 @@ test("home idle state offers Add library when nothing is pending", () => {
   assert.match(html, />Add library</);
 });
 
+test("reader with no libraries sees Access guidance, not Add library", () => {
+  const html = librariesPage({
+    access: {
+      sub: "bob",
+      clientId: "test",
+      role: "readonly",
+      permissions: ROLE_PERMISSIONS.readonly,
+    },
+    csrf: "token",
+    libraries: [],
+  });
+  assert.match(html, /No libraries assigned/);
+  assert.match(html, /do not have Access/);
+  assert.match(html, /grant you Access/);
+  assert.doesNotMatch(html, /Add a library to get started/);
+  assert.doesNotMatch(html, /href="\/libraries\/new"/);
+  assert.match(html, /No libraries assigned\./);
+});
+
 test("an empty library offers Add item, and search offers Clear", () => {
   const empty = libraryPage({
     ...shell,
@@ -290,7 +309,7 @@ test("Edit and Archive live in Actions; Publish stays primary; only SA hard-dele
   assert.match(libraryHtml, /Rotate connect link/);
   assert.match(libraryHtml, /action="\/libraries\/[^"]+\/connect\/rotate"/);
   assert.match(libraryHtml, /Delete library/);
-  assert.match(libraryHtml, /Rotate under Actions if the link leaks/);
+  assert.match(libraryHtml, /If this link leaks, rotate it under Actions/);
 });
 
 test("table lists can include column values without changing the catalog list", async () => {

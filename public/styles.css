@@ -690,17 +690,94 @@ a { color: var(--accent); }
 .mcp-panel {
   position: absolute;
   right: 0;
-  top: calc(100% + 0.4rem);
+  top: calc(100% + 0.45rem);
   z-index: 4;
-  width: min(28rem, calc(100vw - 2.5rem));
-  padding: 0.9rem 1rem 1rem;
+  width: min(26rem, calc(100vw - 2.5rem));
+  padding: 0;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 10px 28px rgba(28, 25, 22, 0.1);
+  border-radius: 14px;
+  box-shadow:
+    0 1px 0 rgba(255, 252, 247, 0.8) inset,
+    0 14px 36px rgba(28, 25, 22, 0.12);
+  overflow: hidden;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
 }
-.mcp-panel .hint { margin: 0; }
-.mcp-panel .btn { margin-top: 0.15rem; }
+.mcp-panel-head {
+  padding: 1rem 1.15rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, #fff) 0%, var(--panel) 100%);
+}
+.mcp-panel-kicker {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.mcp-panel-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.mcp-panel-lead {
+  margin: 0.35rem 0 0;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.mcp-link-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.95rem 1.15rem;
+}
+.mcp-link {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 55%, #fff);
+  color: var(--ink);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  user-select: all;
+}
+.mcp-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.mcp-copy {
+  flex: 0 0 auto;
+  min-width: 5.25rem;
+  justify-content: center;
+}
+.mcp-copy.is-copied {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.mcp-panel-note {
+  margin: 0;
+  padding: 0.7rem 1.15rem 0.95rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
 /* Desktop: the drawer box disappears and the sidebar is the first column. */
 .lib-drawer { display: contents; }
 .lib-nav-toggle,
@@ -1198,18 +1275,6 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 .tab-count-pending { background: #f3e6c8; color: #6a4f12; }
 .tab-count-archive { background: #e8e4dc; color: #5c564e; }
 .library-tab-hint { margin: 0 0 0.85rem; }
-.mcp-url {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.65rem;
-  margin: 0.5rem 0 0;
-}
-.mcp-url code {
-  flex: 1 1 16rem;
-  word-break: break-all;
-  font-size: 0.9rem;
-}
 /* Accounts — standard users admin surface */
 .users-page {
   font-family: "Source Sans 3", "Segoe UI", sans-serif;
@@ -1349,10 +1414,44 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   letter-spacing: 0.02em;
   line-height: 1.2;
 }
-.user-badge-sa { grid-area: role; background: #d8ebe1; color: #1f4d3a; }
-.user-badge-reader { grid-area: role; background: #ebe4d6; color: #5c564e; }
 .user-badge-on { grid-area: status; background: #e7f0ea; color: #1f4d3a; }
 .user-badge-off { grid-area: status; background: #f3e6c8; color: #6a4f12; }
+.user-sa {
+  grid-area: role;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.user-sa-form { margin: 0; }
+.user-sa-form .write-mode-toggle-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.user-sa-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 1.75rem;
+}
+.user-sa-label.is-on { color: var(--accent); }
+.users-sa-opt {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0.35rem 0 0.25rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.users-sa-opt input {
+  width: auto;
+  margin: 0.2rem 0 0;
+  flex: 0 0 auto;
+}
+.users-sa-hint {
+  margin: 0 0 0.85rem;
+  max-width: 36rem;
+}
 .user-actions {
   grid-area: actions;
   display: flex;

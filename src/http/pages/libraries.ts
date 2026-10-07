@@ -66,9 +66,23 @@ export function librariesPage(input: {
 
   // First visit: one empty-state stack (title → lead → CTA → note). Other home states keep the list layout.
   if (firstLibrary) {
-    const add = canAdd
-      ? `<p class="empty-action"><a class="btn" href="/libraries/new">Add library</a></p>`
-      : "";
+    if (canAdd) {
+      return layout({
+        title: "Libraries · MCPEncode",
+        csrf: input.csrf,
+        access: input.access,
+        shell,
+        body: `
+      <div class="empty-pane empty-pane-start">
+        <h1>No libraries yet</h1>
+        <p class="empty-pane-lead">Add a library to get started.</p>
+        <p class="empty-action"><a class="btn" href="/libraries/new">Add library</a></p>
+        <p class="empty-pane-note">Each library has its own items, access list, and MCP link.</p>
+      </div>
+    `,
+      });
+    }
+    // Reader (or any account that cannot create libraries): they need Access, not a create CTA.
     return layout({
       title: "Libraries · MCPEncode",
       csrf: input.csrf,
@@ -76,10 +90,10 @@ export function librariesPage(input: {
       shell,
       body: `
       <div class="empty-pane empty-pane-start">
-        <h1>No libraries yet</h1>
-        <p class="empty-pane-lead">Add a library to get started.</p>
-        ${add}
-        <p class="empty-pane-note">Each library has its own items, access list, and MCP link.</p>
+        <p class="home-kicker">Reader</p>
+        <h1>No libraries assigned</h1>
+        <p class="empty-pane-lead">You can sign in, but you do not have Access to any library yet.</p>
+        <p class="empty-pane-note">Ask a publisher or SA to grant you Access on a library. Then it will show up on the left.</p>
       </div>
     `,
     });
@@ -111,6 +125,11 @@ export function librariesPage(input: {
   const add = canAdd
     ? `<p class="empty-action"><a class="btn" href="/libraries/new">Add library</a></p>`
     : "";
+  const idleTitle = canAdd ? "Nothing waiting to publish" : "Your libraries";
+  const idleLead = canAdd
+    ? "Choose a library on the left to browse items, or add another library."
+    : "Choose a library on the left to browse published items.";
+  const idleKicker = canAdd ? "All clear" : "Reader";
   return layout({
     title: "Libraries · MCPEncode",
     csrf: input.csrf,
@@ -118,9 +137,9 @@ export function librariesPage(input: {
     shell,
     body: `
       <div class="empty-pane empty-pane-start home-idle">
-        <p class="home-kicker">All clear</p>
-        <h1>Nothing waiting to publish</h1>
-        <p class="empty-pane-lead">Choose a library on the left to browse items, or add another library.</p>
+        <p class="home-kicker">${esc(idleKicker)}</p>
+        <h1>${esc(idleTitle)}</h1>
+        <p class="empty-pane-lead">${esc(idleLead)}</p>
         ${add}
         ${orphanHint}
       </div>
@@ -627,10 +646,17 @@ export function libraryPage(input: {
   const mcpBlock = `
     <details class="mcp-menu">
       ${mcpLinkSummary()}
-      <div class="mcp-panel">
-        <p class="hint">Hand this link to Cursor or the kiosk for this library only. Sign-in is still required. Rotate under Actions if the link leaks — that does not remove people on Access.</p>
-        <p class="mcp-url"><code id="mcp-url">${esc(input.mcpUrl)}</code></p>
-        <button type="button" class="btn secondary" data-copy="#mcp-url">Copy</button>
+      <div class="mcp-panel" role="dialog" aria-label="Connect link for this library">
+        <div class="mcp-panel-head">
+          <p class="mcp-panel-kicker">This library</p>
+          <h2 class="mcp-panel-title">Connect link</h2>
+          <p class="mcp-panel-lead">Paste into Cursor or the kiosk. Sign-in is still required.</p>
+        </div>
+        <div class="mcp-link-box">
+          <code class="mcp-link" id="mcp-url">${esc(input.mcpUrl)}</code>
+          <button type="button" class="btn mcp-copy" data-copy="#mcp-url">Copy</button>
+        </div>
+        <p class="mcp-panel-note">If this link leaks, rotate it under Actions. People on Access stay.</p>
       </div>
     </details>`;
 
@@ -670,7 +696,11 @@ export function libraryPage(input: {
               await navigator.clipboard.writeText(el.textContent || "");
               const previous = btn.textContent;
               btn.textContent = "Copied";
-              setTimeout(() => { btn.textContent = previous || "Copy"; }, 1500);
+              btn.classList.add("is-copied");
+              setTimeout(() => {
+                btn.textContent = previous || "Copy";
+                btn.classList.remove("is-copied");
+              }, 1500);
             } catch { /* clipboard can be denied; the link stays visible */ }
           });
         });

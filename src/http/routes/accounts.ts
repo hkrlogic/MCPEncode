@@ -37,6 +37,7 @@ export function registerAccountRoutes(app: express.Express, ctx: AppRouteContext
       created?: string;
       notice?: string;
       status?: number;
+      saChecked?: boolean;
     } = {},
   ) {
     const shell = await loadAppShell(db, access);
@@ -53,6 +54,7 @@ export function registerAccountRoutes(app: express.Express, ctx: AppRouteContext
         username: extras.username,
         created: extras.created,
         notice: extras.notice,
+        saChecked: extras.saChecked,
       }),
     };
   }
@@ -91,20 +93,14 @@ export function registerAccountRoutes(app: express.Express, ctx: AppRouteContext
     }
     const username = formString(req.body, "username");
     const password = formString(req.body, "password");
-    const role = accountRole(formString(req.body, "role"));
-    if (!role) {
-      const page = await renderAccounts(access, {
-        username,
-        error: "Choose SA or Reader for this account.",
-        status: 400,
-      });
-      res.status(page.status).send(page.html);
-      return;
-    }
+    // App-level is SA on/off only. Unchecked → normal account (stored as readonly).
+    const sa = formString(req.body, "sa") === "1";
+    const role: AccountRole = sa ? "sa" : "readonly";
     const created = await accounts.create({ username, password, role });
     if (!created.ok) {
       const page = await renderAccounts(access, {
         username,
+        saChecked: sa,
         error: created.message,
         status: 400,
       });
@@ -112,6 +108,31 @@ export function registerAccountRoutes(app: express.Express, ctx: AppRouteContext
       return;
     }
     res.redirect(`/accounts?created=${encodeURIComponent(created.account.username)}`);
+  });
+
+  app.post("/accounts/:id/sa", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!can(access, "accounts.manage") || config.authMode !== "embedded") {
+      res.status(403).send(errorPage("You cannot manage accounts with this account."));
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("That form expired. Reload and try again."));
+      return;
+    }
+    const sa = formString(req.body, "sa") === "1";
+    const id = typeof req.params.id === "string" ? req.params.id : "";
+    const result = await accounts.setSa(id, sa);
+    if (!result.ok) {
+      const page = await renderAccounts(access, { error: result.message, status: 400 });
+      res.status(page.status).send(page.html);
+      return;
+    }
+    res.redirect(`/accounts?notice=${sa ? "sa-on" : "sa-off"}`);
   });
 
   app.post("/accounts/:id/password", async (req, res) => {
@@ -181,17 +202,12 @@ export function registerAccountRoutes(app: express.Express, ctx: AppRouteContext
   }
 }
 
-function accountRole(value: string): AccountRole | undefined {
-  if (value === "sa" || value === "readonly") return value;
-  // Legacy form values from before the SA rename.
-  if (value === "edit") return "sa";
-  return undefined;
-}
-
 /** Fixed copy for ?notice=. Query text is never echoed. */
 function accountNotice(flag: string): string | undefined {
   if (flag === "password") return "Password updated. Tell them the new password. It cannot be shown again.";
   if (flag === "disabled") return "Account disabled. They cannot sign in until you enable it.";
   if (flag === "enabled") return "Account enabled. They can sign in again.";
+  if (flag === "sa-on") return "SA turned on. They can manage accounts and open every library.";
+  if (flag === "sa-off") return "SA turned off. Grant them on a library under Access if they still need one.";
   return undefined;
 }

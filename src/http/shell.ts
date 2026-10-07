@@ -54,8 +54,8 @@ export async function loadAppShell(
     canAddLibrary: can(access, "libraries.create"),
     showAccounts: can(access, "accounts.manage"),
     username: displayName(access, account?.username),
-    // App role in the footer — not the per-library publisher/reader label.
-    roleLabel: sa ? "SA" : "Reader",
+    // App admin flag only — library Access carries reader/publisher.
+    roleLabel: sa ? "SA" : "",
     libraries: libraries.map((row) => ({
       id: row.id,
       name: row.name,

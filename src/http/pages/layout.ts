@@ -214,7 +214,7 @@ export type AppShell = {
   showAccounts?: boolean;
   /** Sidebar footer — who is signed in. */
   username?: string;
-  /** App role for the footer (SA / Reader). */
+  /** App admin label for the footer ("SA" or empty). */
   roleLabel?: string;
   /** Left pane lists Settings items instead of libraries. */
   settingsMode?: boolean;
@@ -309,7 +309,9 @@ function librarySidebar(shell: AppShell): string {
 
   const rows =
     shell.libraries.length === 0
-      ? `<p class="sidebar-empty">No libraries yet.</p>`
+      ? `<p class="sidebar-empty">${
+          shell.canAddLibrary ? "No libraries yet." : "No libraries assigned."
+        }</p>`
       : `<ul class="sidebar-libs">
           ${shell.libraries
             .map((row) => {
