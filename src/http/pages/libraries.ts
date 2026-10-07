@@ -622,13 +622,17 @@ export function libraryPage(input: {
   const panel =
     tab === "pending" ? pendingPanel : tab === "archives" ? archivesPanel : tab === "access" ? accessBlock : itemsPanel;
 
+  // Tabs + write-mode switch share one row so the header stays name + actions only.
   const tabs = canWrite
-    ? `<nav class="library-tabs" aria-label="Library">
-        <a href="${libraryTabHref(input.library.id, "items", input.q)}"${tab === "items" ? ' aria-current="page"' : ""}>Items</a>
-        <a href="${libraryTabHref(input.library.id, "pending", input.q)}"${tab === "pending" ? ' aria-current="page"' : ""}>Pending${tabBadge(pending.length, "pending")}</a>
-        <a href="${libraryTabHref(input.library.id, "archives", input.q)}"${tab === "archives" ? ' aria-current="page"' : ""}>Archives${tabBadge(archived.length, "archive")}</a>
-        <a href="${libraryTabHref(input.library.id, "access", input.q)}"${tab === "access" ? ' aria-current="page"' : ""}>Access</a>
-      </nav>`
+    ? `<div class="library-toolbar">
+        <nav class="library-tabs" aria-label="Library">
+          <a href="${libraryTabHref(input.library.id, "items", input.q)}"${tab === "items" ? ' aria-current="page"' : ""}>Items</a>
+          <a href="${libraryTabHref(input.library.id, "pending", input.q)}"${tab === "pending" ? ' aria-current="page"' : ""}>Pending${tabBadge(pending.length, "pending")}</a>
+          <a href="${libraryTabHref(input.library.id, "archives", input.q)}"${tab === "archives" ? ' aria-current="page"' : ""}>Archives${tabBadge(archived.length, "archive")}</a>
+          <a href="${libraryTabHref(input.library.id, "access", input.q)}"${tab === "access" ? ' aria-current="page"' : ""}>Access</a>
+        </nav>
+        ${writeModePanel(input.library, input.csrf)}
+      </div>`
     : "";
 
   const search =
@@ -677,7 +681,6 @@ export function libraryPage(input: {
               ${actionsMenu}
             </div>
           </div>
-          ${canWrite ? writeModePanel(input.library, input.csrf) : ""}
         </header>
         ${input.notice ? `<p class="notice" role="status">${esc(input.notice)}</p>` : ""}
         ${bulkNotice}

@@ -22,6 +22,7 @@ import {
   procedureBody,
   procedureControl,
 } from "../../items/templates.ts";
+import { itemToMarkdown, markdownExportFilename } from "../../items/export-markdown.ts";
 import { parseTableValues, tableControl, tableParts } from "../../items/table-proposal.ts";
 import { renderMarkdown } from "../../markdown/render.ts";
 import { parseLibraryItem, requireCsrf, sessionAccess } from "../helpers.ts";
@@ -58,6 +59,43 @@ async function itemShell(
 export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): void {
   const { config, db } = ctx;
 
+  /** Shared gate for open item and Markdown export. */
+  async function loadVisibleItem(req: Request, access: SessionUser) {
+    const item = await getItem(db, req.params.id, { publishedOnly: false }).catch(() => undefined);
+    if (!item) return { error: { status: 404 as const, message: "Item not found." } };
+    const libraryAccess = await itemLibraryAccess(db, item.library_id, access);
+    if (!libraryAccess) {
+      return { error: { status: 403 as const, message: "You do not have access to this library." } };
+    }
+    if (libraryAccess.libraryRole === "reader" && item.status !== "published") {
+      return { error: { status: 404 as const, message: "Item not found." } };
+    }
+    const library = await getLibrary(db, item.library_id);
+    if (!library) return { error: { status: 404 as const, message: "Library not found." } };
+    return { item, library, libraryAccess };
+  }
+
+  app.get("/items/:id/export.md", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    const loaded = await loadVisibleItem(req, access);
+    if ("error" in loaded) {
+      res.status(loaded.error.status).send(errorPage(loaded.error.message));
+      return;
+    }
+    const markdown = itemToMarkdown(loaded.item, loaded.library);
+    const filename = markdownExportFilename(loaded.item.name);
+    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename.replace(/"/g, "")}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    );
+    res.send(markdown);
+  });
+
   app.get("/items/:id", async (req, res) => {
     const access = await sessionAccess(req, config);
     if (!access) {
@@ -65,26 +103,12 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       return;
     }
     const notice = typeof req.query.notice === "string" ? req.query.notice : undefined;
-    // Load without published filter first so we can apply the library role.
-    const item = await getItem(db, req.params.id, { publishedOnly: false }).catch(() => undefined);
-    if (!item) {
-      res.status(404).send(errorPage("Item not found."));
+    const loaded = await loadVisibleItem(req, access);
+    if ("error" in loaded) {
+      res.status(loaded.error.status).send(errorPage(loaded.error.message));
       return;
     }
-    const libraryAccess = await itemLibraryAccess(db, item.library_id, access);
-    if (!libraryAccess) {
-      res.status(403).send(errorPage("You do not have access to this library."));
-      return;
-    }
-    if (libraryAccess.libraryRole === "reader" && item.status !== "published") {
-      res.status(404).send(errorPage("Item not found."));
-      return;
-    }
-    const library = await getLibrary(db, item.library_id);
-    if (!library) {
-      res.status(404).send(errorPage("Library not found."));
-      return;
-    }
+    const { item, library, libraryAccess } = loaded;
     const tableValues =
       library.schema.starter === "table" ? parseTableValues(item.details) : undefined;
     const structured = tableValues

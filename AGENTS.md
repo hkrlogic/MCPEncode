@@ -52,6 +52,7 @@ Open `http://127.0.0.1:3000/`. Each library has its own MCP link under **Connect
 - **Auth domain allow/deny** — optional allowlist / denylist of email or IdP domains that may sign in (useful once magic link / Google / SSO land). Decide whether it applies to embedded accounts, OIDC only, or both.
 - **MFA (TOTP)** — protect human sign-in because libraries can hold sensitive business data. Prefer IdP MFA when `AUTH_MODE=oidc`. For embedded accounts, optional QR TOTP after password (enroll in Settings, challenge on authorize) plus recovery codes / SA clear. Does not replace Connect-link secrecy or library Access grants.
 - **Dashboard metrics** — publisher home or Settings surface with usage signals (libraries, items, pending counts, Connect activity / MCP tool calls, sign-ins). Keep it useful, not a cluttered analytics wall.
+- **Export library / JSON** — item Markdown export is shipped (`⋯` → Export Markdown). Later: whole-library zip, JSON/JSONL for round-trip import.
 
 ## Related
 

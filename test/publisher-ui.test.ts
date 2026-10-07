@@ -211,6 +211,8 @@ test("Edit and Archive live in Actions; Publish stays primary; only SA hard-dele
     shell: { libraries: [], csrf: "token", canAddLibrary: true },
   });
   assert.match(html, /aria-label="Actions"/);
+  assert.match(html, /href="\/items\/item-1\/export\.md"/);
+  assert.match(html, /Export Markdown/);
   assert.ok(html.indexOf('href="/items/item-1/edit"') > 0);
   assert.match(html, /Changes since published/);
   assert.match(html, /id="publish-diff"/);

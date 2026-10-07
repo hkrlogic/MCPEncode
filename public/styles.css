@@ -306,11 +306,10 @@ a { color: var(--accent); }
   flex-shrink: 0;
 }
 .write-mode-choices { margin-top: 1.75rem; }
-/* On/off switch between Review Lock and Review Unlock (in the library action row). */
+/* On/off switch between Review Lock and Review Unlock (right of library tabs). */
 .write-mode-toggle {
   display: inline-flex;
   align-items: center;
-  align-self: flex-end;
   gap: 0.55rem;
   margin: 0;
   font-family: "Source Sans 3", "Segoe UI", sans-serif;
@@ -1228,22 +1227,35 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   display: inline-flex;
   align-items: center;
 }
-.library-head .write-mode-toggle {
-  align-self: flex-end;
-}
 .library-access { margin: 0; }
 .library-access h2 {
   margin: 0 0 0.35rem;
   font-size: 1.05rem;
   font-weight: 650;
 }
+.library-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  margin: 0 0 1.15rem;
+  border-bottom: 1px solid var(--line);
+}
 .library-tabs {
   display: flex;
   gap: 0.15rem;
-  margin: 0 0 1.15rem;
-  border-bottom: 1px solid var(--line);
+  margin: 0;
+  border-bottom: none;
   overflow-x: auto;
+  min-width: 0;
+  flex: 1 1 auto;
   font-family: "Source Sans 3", "Segoe UI", sans-serif;
+}
+.library-toolbar .write-mode-toggle {
+  flex: 0 0 auto;
+  align-self: center;
+  padding-bottom: 0.35rem;
 }
 .library-tabs a {
   display: inline-flex;
@@ -1610,14 +1622,14 @@ button.linkish {
   margin: 0 0 1.25rem;
   align-items: center;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--panel);
   padding: 0.15rem 0.15rem 0.15rem 0.35rem;
 }
 .library-view .search:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 .library-view .search input {
   border: 0;
-  border-radius: 999px;
+  border-radius: 6px;
   padding: 0.65rem 0.75rem;
   background: transparent;
   min-height: 44px;
@@ -1643,7 +1655,7 @@ button.linkish {
 }
 .library-view .search button {
   border: 0;
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
   color: var(--accent);
   font-family: "Source Sans 3", "Segoe UI", sans-serif;

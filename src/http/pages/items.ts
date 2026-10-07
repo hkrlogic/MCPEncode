@@ -108,45 +108,47 @@ export function itemPage(input: {
           </form>
         </div>`
       : "";
-  const menuItems = canWrite
-    ? [
-        `<a href="/items/${esc(input.item.id)}/edit">Edit</a>`,
-        `<button type="button" data-open-sheet="publish-diff">Changes since published</button>`,
-        status === "published"
-          ? `<form method="post" action="/items/${esc(input.item.id)}/unpublish">
-               <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-               <button type="submit">Unpublish</button>
-             </form>`
-          : "",
-        status === "archived"
-          ? `<form method="post" action="/items/${esc(input.item.id)}/restore">
-               <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-               <button type="submit">Restore to Pending</button>
-             </form>`
-          : `<form method="post" action="/items/${esc(input.item.id)}/archive"
-                 onsubmit="return confirm('Archive this item? It will leave Pending and Published.');">
-               <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-               <button type="submit">Archive</button>
-             </form>`,
-        canDelete
-          ? `<form class="menu-danger-sep" method="post" action="/items/${esc(input.item.id)}/delete"
-                 onsubmit="${onConfirm(`Delete item “${input.item.name}”? This cannot be undone.`)}">
-               <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-               <button class="menu-danger" type="submit">Delete</button>
-             </form>`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n")
-    : "";
-  const actions = menuItems
-    ? `<details class="item-menu">
+  const exportLink = `<a href="/items/${esc(input.item.id)}/export.md">Export Markdown</a>`;
+  const menuItems = [
+    exportLink,
+    ...(canWrite
+      ? [
+          `<a href="/items/${esc(input.item.id)}/edit">Edit</a>`,
+          `<button type="button" data-open-sheet="publish-diff">Changes since published</button>`,
+          status === "published"
+            ? `<form method="post" action="/items/${esc(input.item.id)}/unpublish">
+                 <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+                 <button type="submit">Unpublish</button>
+               </form>`
+            : "",
+          status === "archived"
+            ? `<form method="post" action="/items/${esc(input.item.id)}/restore">
+                 <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+                 <button type="submit">Restore to Pending</button>
+               </form>`
+            : `<form method="post" action="/items/${esc(input.item.id)}/archive"
+                   onsubmit="return confirm('Archive this item? It will leave Pending and Published.');">
+                 <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+                 <button type="submit">Archive</button>
+               </form>`,
+          canDelete
+            ? `<form class="menu-danger-sep" method="post" action="/items/${esc(input.item.id)}/delete"
+                   onsubmit="${onConfirm(`Delete item “${input.item.name}”? This cannot be undone.`)}">
+                 <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+                 <button class="menu-danger" type="submit">Delete</button>
+               </form>`
+            : "",
+        ]
+      : []),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const actions = `<details class="item-menu">
          ${actionsMenuSummary()}
          <div class="menu-list">
            ${menuItems}
          </div>
-       </details>`
-    : "";
+       </details>`;
   const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
   const flash = noticeMessage(input.notice, status);
   const diffSheet = canWrite
