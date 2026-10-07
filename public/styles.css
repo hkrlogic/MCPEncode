@@ -1370,37 +1370,69 @@ button.linkish {
 .item-list .item-link:hover { background: rgba(31, 77, 58, 0.05); }
 .item-list a:focus-visible,
 .item-list .item-link:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.pending-toolbar {
+/* Pending: one list with a header row that shares the checkbox column. */
+.pending-list {
+  margin: 0.35rem 0 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.pending-list .item-list {
+  border-top: none;
+  margin: 0;
+}
+.pending-list-head {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 48px;
+  padding: 0.35rem 0.65rem 0.35rem 0.7rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 70%, #ebe4d6);
+}
+.pending-list-head-main {
+  display: flex;
+  flex: 1;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin: 0.75rem 0 0.5rem;
+  min-width: 0;
 }
-.pending-select-all {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.95rem;
+.pending-selection {
   color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.pending-list .item-pick {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
   cursor: pointer;
 }
-.pending-select-all input { width: 1.1rem; height: 1.1rem; }
 .item-list-selectable .item-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.65rem;
+  padding: 0 0.65rem 0 0.7rem;
   border-bottom: 1px solid var(--line);
 }
+.item-list-selectable .item-row:last-child { border-bottom: none; }
 .item-list-selectable .item-row .item-link {
   border-bottom: none;
+  padding-left: 0;
+  padding-right: 0.15rem;
 }
 .item-list-selectable .item-pick {
-  margin: 1.05rem 0 0 0.2rem;
+  margin: 0;
   width: 1.1rem;
   height: 1.1rem;
   flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 #pending-publish-btn:disabled {
   opacity: 0.45;

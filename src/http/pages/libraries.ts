@@ -518,11 +518,6 @@ export function libraryPage(input: {
     input.library.writeMode === "direct"
       ? `Not live right now. In ${writeModeLabel("direct")}, saving an item makes it live again.`
       : "Drafts waiting to be published. Not visible to the kiosk.";
-  const pendingSelectHint =
-    input.library.writeMode === "direct"
-      ? `${pendingHint} You can still Publish selected items.`
-      : `${pendingHint} Select items and Publish when ready.`;
-
   const pendingPanel =
     pending.length === 0
       ? `
@@ -536,15 +531,17 @@ export function libraryPage(input: {
           <h2 id="pending-heading" class="sr-only">Pending</h2>
           <form method="post" action="/libraries/${esc(input.library.id)}/items/publish" class="pending-publish" id="pending-publish">
             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-            <p class="hint library-tab-hint">${esc(pendingSelectHint)}</p>
-            <div class="pending-toolbar">
-              <label class="pending-select-all">
-                <input type="checkbox" id="pending-select-all">
-                <span>Select all</span>
-              </label>
-              <button class="btn" type="submit" id="pending-publish-btn" disabled>Publish selected</button>
+            <p class="hint library-tab-hint">${esc(pendingHint)}</p>
+            <div class="pending-list">
+              <div class="pending-list-head">
+                <input type="checkbox" id="pending-select-all" class="item-pick" aria-label="Select all pending items">
+                <div class="pending-list-head-main">
+                  <span class="pending-selection" id="pending-selection" aria-live="polite">Select items to publish</span>
+                  <button class="btn" type="submit" id="pending-publish-btn" disabled>Publish</button>
+                </div>
+              </div>
+              ${rowsOrEmpty(input.library, pending, "Nothing pending.", false, true, searching)}
             </div>
-            ${rowsOrEmpty(input.library, pending, "Nothing pending.", false, true, searching)}
           </form>
         </section>`;
 
@@ -661,11 +658,28 @@ export function libraryPage(input: {
           if (!form) return;
           const selectAll = document.getElementById("pending-select-all");
           const publishBtn = document.getElementById("pending-publish-btn");
+          const selection = document.getElementById("pending-selection");
           const boxes = () => Array.from(form.querySelectorAll('input[name="item_id"]'));
           function sync() {
             const all = boxes();
             const checked = all.filter((box) => box.checked);
-            if (publishBtn) publishBtn.disabled = checked.length === 0;
+            if (publishBtn) {
+              publishBtn.disabled = checked.length === 0;
+              publishBtn.textContent =
+                checked.length === 0
+                  ? "Publish"
+                  : checked.length === 1
+                    ? "Publish 1"
+                    : "Publish " + checked.length;
+            }
+            if (selection) {
+              selection.textContent =
+                checked.length === 0
+                  ? "Select items to publish"
+                  : checked.length === all.length
+                    ? "All " + checked.length + " selected"
+                    : checked.length + " selected";
+            }
             if (selectAll) {
               selectAll.checked = all.length > 0 && checked.length === all.length;
               selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
