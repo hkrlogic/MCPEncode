@@ -609,13 +609,13 @@ export function libraryPage(input: {
     body: `
       <div class="library-view">
         <header class="library-head">
-          <div>
-            <h1>${esc(input.library.name)}</h1>
-          </div>
-          <div class="head-actions">
-            ${mcpBlock}
-            ${addLink}
-            ${actionsMenu}
+          <div class="library-head-row">
+            <h1 title="${esc(input.library.name)}">${esc(input.library.name)}</h1>
+            <div class="head-actions">
+              ${mcpBlock}
+              ${addLink}
+              ${actionsMenu}
+            </div>
           </div>
           ${canWrite ? writeModePanel(input.library, input.csrf) : ""}
         </header>
