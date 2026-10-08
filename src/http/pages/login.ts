@@ -17,6 +17,9 @@ export function loginPage(): string {
           </p>
           <p class="landing-lead">Libraries of items you publish for people and agents.</p>
           <p class="landing-note">Add items — Publish — Look up</p>
+          <p class="landing-cta">
+            <a class="btn" href="/login">Sign in</a>
+          </p>
         </section>
       </div>
     `,

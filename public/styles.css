@@ -928,6 +928,14 @@ body:has(.landing) .wrap {
   font-size: 0.95rem;
   line-height: 1.45;
 }
+.landing-cta {
+  margin: 1.75rem 0 0;
+}
+.landing-cta .btn {
+  min-width: 8.5rem;
+  padding: 0.7rem 1.35rem;
+  font-size: 1rem;
+}
 @keyframes landing-rise {
   from {
     opacity: 0;
