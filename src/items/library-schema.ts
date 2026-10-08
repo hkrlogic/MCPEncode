@@ -10,14 +10,7 @@ import {
   type ItemInput,
 } from "./schema.ts";
 import { formatTableItem } from "./table-proposal.ts";
-import {
-  formatPolicy,
-  formatProcedure,
-  type LibraryTemplate,
-  type PolicyDetails,
-  type ProcedureDetails,
-  isLibraryTemplate,
-} from "./templates.ts";
+import { type LibraryTemplate, isLibraryTemplate } from "./templates.ts";
 
 export type SchemaFieldType = "text" | "date" | "version" | "longtext" | "markdown";
 
@@ -211,9 +204,10 @@ export function schemaFieldMessage(schema: LibrarySchema): string {
     schema.starter === "table" && schema.tableName
       ? `table "${schema.tableName}"`
       : `${schema.starter} schema`;
+  const needsSummary = schema.starter !== "general" || generalHasExtraFields(schema);
   const parts = [
     `This library uses the ${kind}.`,
-    `Send name${schema.starter === "general" ? "" : ", summary"}`,
+    `Send name${needsSummary ? ", summary" : ""}`,
     required.length > 0 ? `, ${required.join(", ")}` : "",
     ".",
   ];
@@ -225,17 +219,43 @@ export function schemaFieldMessage(schema: LibrarySchema): string {
 }
 
 /** Short field list for MCP agent instructions on this library. */
+/** True when Documents/General has approved add-on fields beyond the markdown body. */
+export function generalHasExtraFields(schema: LibrarySchema): boolean {
+  return schema.starter === "general" && schema.fields.some((field) => field.key !== "body");
+}
+
+/**
+ * Format control + body fields for Policy / Procedure / extended General.
+ * Uses the library schema so approved add-on fields appear in the item body.
+ */
+export function formatSchemaFields(
+  title: string,
+  fields: SchemaFieldDef[],
+  values: Record<string, string>,
+): string {
+  const control = fields
+    .filter((field) => field.kind === "control")
+    .map((field) => `${field.label}: ${values[field.key] ?? ""}`);
+  const body = fields
+    .filter((field) => field.kind === "body")
+    .map((field) => {
+      const value = (values[field.key] ?? "").trim();
+      return value ? `${field.label}:\n${value}` : `${field.label}:`;
+    });
+  return [title, ...control, "", ...body].join("\n").trim();
+}
+
 export function schemaAgentBlurb(schema: LibrarySchema): string {
-  if (schema.starter === "general") {
-    return "This library is General. Items use name, optional labels, and a markdown body (summary is derived from the body).";
+  if (schema.starter === "general" && !generalHasExtraFields(schema)) {
+    return "This library is General. Items use name, optional labels, and a markdown body (summary is derived from the body). To add a field, propose_field after the human confirms; they Approve in the publisher.";
   }
   if (schema.starter === "table") {
     const labels = schema.fields.map((field) => field.label).join(", ");
     const name = schema.tableName ? ` "${schema.tableName}"` : "";
-    return `This library is the table${name}. Fixed columns: ${labels || "(none)"}. Use those names when adding or editing. Do not invent columns.`;
+    return `This library is the table${name}. Columns: ${labels || "(none)"}. Use those names when adding or editing. Do not invent columns. To add a column after lock, propose_field (one optional field); a human Approves it.`;
   }
   const labels = schema.fields.map((field) => field.label).join(", ");
-  return `This library uses the ${schema.starter} schema. Fixed fields: ${labels}. Use those names when adding or editing. Do not invent fields.`;
+  return `This library uses the ${schema.starter} schema. Fields: ${labels}. Use those names when adding or editing. Do not invent fields. To add a field after lock, propose_field (one optional field); a human Approves it in the publisher.`;
 }
 
 /**
@@ -264,7 +284,7 @@ export function mcpItemWriteShape(schema: LibrarySchema): Record<string, z.ZodTy
       .optional()
       .describe("Labels (optional)"),
   };
-  if (schema.starter !== "general") {
+  if (schema.starter !== "general" || generalHasExtraFields(schema)) {
     shape.summary = z
       .string()
       .trim()
@@ -318,8 +338,9 @@ export function mcpWriteToolDescription(
       : kind === "create"
         ? "Add a library item as a draft (Pending). Not visible to readers or the kiosk until a human Publishes it in the publisher UI. Optional entity_key is a stable id for later updates."
         : "Replace one library item. Saves as draft: if published, it becomes Pending until a human Publishes again in the publisher UI. Optional entity_key is a stable id for later updates.";
-  const summaryBit = schema.starter === "general" ? "" : ", summary";
-  return `${head} This library uses the ${schema.starter} schema. Send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}. Optional: entity_key, labels. Do not invent fields. Use only when the human asked.`;
+  const summaryBit =
+    schema.starter === "general" && !generalHasExtraFields(schema) ? "" : ", summary";
+  return `${head} This library uses the ${schema.starter} schema. Send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}. Optional: entity_key, labels. Do not invent fields. To add a field, propose_field after the human confirms — they Approve in the publisher. Use only when the human asked.`;
 }
 
 function isoDate(label: string) {
@@ -409,7 +430,8 @@ export function itemForLibrarySchema(
   const unexpected = unexpectedFields(schema, input);
   if (unexpected) return { ok: false, message: unexpected };
 
-  if (schema.starter === "general") {
+  // Plain Documents: markdown body only (no approved add-on fields yet).
+  if (schema.starter === "general" && !generalHasExtraFields(schema)) {
     const parsed = itemInputSchema.safeParse({
       name: input.name,
       body: input.body ?? "",
@@ -460,11 +482,11 @@ export function itemForLibrarySchema(
     }
     const details = Object.fromEntries(
       schema.fields.map((field) => [field.key, data[field.key] ?? ""]),
-    ) as PolicyDetails;
+    );
     return attachEntityKey(
       {
         name: data.name,
-        body: formatPolicy(details),
+        body: formatSchemaFields("Template: Policy", schema.fields, details),
         labels: data.labels,
         summary: data.summary,
         details: JSON.stringify(details),
@@ -477,11 +499,11 @@ export function itemForLibrarySchema(
     const data = parsed.data as Record<string, string> & { name: string; summary: string; labels: string[] };
     const details = Object.fromEntries(
       schema.fields.map((field) => [field.key, data[field.key] ?? ""]),
-    ) as ProcedureDetails;
+    );
     return attachEntityKey(
       {
         name: data.name,
-        body: formatProcedure(details),
+        body: formatSchemaFields("Template: Procedure", schema.fields, details),
         labels: data.labels,
         summary: data.summary,
         details: JSON.stringify(details),
@@ -500,6 +522,22 @@ export function itemForLibrarySchema(
         labels: data.labels,
         summary: data.summary,
         details: JSON.stringify({ _kind: "table", values }),
+      },
+      input,
+    );
+  }
+
+  // Documents/General with approved add-on fields — structured like a light form.
+  if (schema.starter === "general" && generalHasExtraFields(schema)) {
+    const data = parsed.data as Record<string, string> & { name: string; summary: string; labels: string[] };
+    const values = Object.fromEntries(schema.fields.map((field) => [field.key, data[field.key] ?? ""]));
+    return attachEntityKey(
+      {
+        name: data.name,
+        body: formatSchemaFields("Template: General", schema.fields, values),
+        labels: data.labels,
+        summary: data.summary,
+        details: JSON.stringify({ _kind: "fields", values }),
       },
       input,
     );

@@ -37,6 +37,8 @@ export { lookupItems, type LookupResult } from "./lookup.ts";
 export { writeAudit, listAudit } from "./audit.ts";
 export { proposeTable, approveTableProposal, rejectTableProposal } from "./table-proposals.ts";
 export type { ProposeTableResult, ApproveTableResult } from "./table-proposals.ts";
+export { proposeField, approveFieldProposal, rejectFieldProposal } from "./field-proposals.ts";
+export type { ProposeFieldResult, ApproveFieldResult } from "./field-proposals.ts";
 export type { LibraryAccessRole, LibraryAccessRow } from "./access.ts";
 export { accountStore } from "./accounts.ts";
 export {

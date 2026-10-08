@@ -1,4 +1,5 @@
 /** Shared row and scope types for library/item DB access. */
+import type { FieldProposal } from "../items/field-proposal.ts";
 import type { LibrarySchema } from "../items/library-schema.ts";
 import type { LibraryWriteMode } from "../items/schema.ts";
 import type { TableProposal } from "../items/table-proposal.ts";
@@ -20,6 +21,10 @@ export type LibraryRow = {
   tableProposal: TableProposal | null;
   /** JSON was present but not a valid proposal. Reject still clears it. */
   tableProposalUnreadable: boolean;
+  /** Optional field waiting for Approve. Null when nothing is waiting. */
+  fieldProposal: FieldProposal | null;
+  /** JSON was present but not a valid field proposal. Reject still clears it. */
+  fieldProposalUnreadable: boolean;
   /**
    * Secret path segment in the library MCP URL.
    * Rotate to kill a leaked Connect link; access grants stay as they are.

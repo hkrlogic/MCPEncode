@@ -147,6 +147,8 @@ test("the library page shows a proposal only to a publisher", () => {
     schema: schemaForStarter("general"),
     tableProposal: { ...proposal.draft, proposedBy: "mpos-editor", proposedAt: Date.UTC(2026, 9, 5, 16, 0) },
     tableProposalUnreadable: false,
+    fieldProposal: null,
+    fieldProposalUnreadable: false,
     connectToken: "test-connect-token-bbbbbbbbbbbbbbbbbb",
     created_by: "mpos-editor",
     updated_by: "mpos-editor",

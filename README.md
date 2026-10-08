@@ -72,11 +72,13 @@ Each connection is one library. Lookups do not take a library name or id.
 | `list_items` | `records.read` | Pass `q` to answer. One clear match returns the full item. Several matches return short summaries. Omit `q` to browse names and summaries. |
 | `open_item` | `records.read` | full Markdown for one id (when `list_items` returned several matches) |
 | `create_library` | `records.write` | name, schema starter, **write_mode** (`reviewed` or `direct`); optional table proposal |
+| `propose_table` | `records.write` | table design for an empty library; human Approves in the publisher |
+| `propose_field` | `records.write` | one optional field to append; human Approves in the publisher (cap 12 fields; no rename/remove) |
 | `create_item` / `update_item` | `records.write` | name, body / template fields, labels — **Review Lock** saves as draft; **Review Unlock** saves as published |
 | `delete_item` | `records.delete` | by id only |
 | `list_audit` | `audit.read` | who invoked which tool |
 
-There is no publish tool, no write-mode tool, and no `run_sql` tool. In Review Lock libraries, publishing is a human action in the UI. Write mode can only be changed in the publisher UI. Review Unlock library MCP instructions tell agents to prefer `entity_key` for upserts, search before create, keep one item per entity, and use a stable name, summary, and labels so another agent can scoop the data. Queries are parameterized in code.
+There is no publish tool, no approve tool, no write-mode tool, and no `run_sql` tool. In Review Lock libraries, publishing is a human action in the UI. Table and field proposals wait for a human Approve or Reject in the publisher. Write mode can only be changed in the publisher UI. Review Unlock library MCP instructions tell agents to prefer `entity_key` for upserts, search before create, keep one item per entity, and use a stable name, summary, and labels so another agent can scoop the data. Queries are parameterized in code.
 
 ## Security notes (why it is built this way)
 

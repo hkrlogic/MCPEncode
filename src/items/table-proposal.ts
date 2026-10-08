@@ -324,6 +324,36 @@ export function parseTableValues(raw: string | null | undefined): Record<string,
   }
 }
 
+/**
+ * Field values for edit forms: table rows, extended General, or flat Policy/Procedure JSON.
+ */
+export function parseItemFieldValues(raw: string | null | undefined): Record<string, string> | undefined {
+  if (!raw) return undefined;
+  const table = parseTableValues(raw);
+  if (table) return table;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const row = parsed as Record<string, unknown>;
+    if (row._kind === "fields" && row.values && typeof row.values === "object" && !Array.isArray(row.values)) {
+      const values: Record<string, string> = {};
+      for (const [key, value] of Object.entries(row.values as Record<string, unknown>)) {
+        if (typeof value === "string") values[key] = value;
+      }
+      return values;
+    }
+    // Flat Policy / Procedure details (no _kind).
+    if (row._kind != null) return undefined;
+    const values: Record<string, string> = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (typeof value === "string") values[key] = value;
+    }
+    return Object.keys(values).length > 0 ? values : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function tableControl(
   fields: SchemaFieldDef[],
   values: Record<string, string>,

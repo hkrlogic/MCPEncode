@@ -4,6 +4,7 @@ import { accessForLibrary, can, isSa, type Access, type LibraryRole } from "../.
 import { accountStore } from "../../db/accounts.ts";
 import {
   addDraftItem,
+  approveFieldProposal,
   approveTableProposal,
   countLibraryAccess,
   countLibraryItems,
@@ -11,6 +12,7 @@ import {
   deleteLibrary,
   getLibrary,
   getLibraryAccess,
+  rejectFieldProposal,
   rejectTableProposal,
   grantLibraryAccess,
   listLibraryAccess,
@@ -81,6 +83,22 @@ function tableDecisionNotice(flag: unknown): string | undefined {
   }
   if (flag === "missing") return "No table is waiting for approval.";
   if (flag === "unreadable") return "That table proposal could not be read, so it was not approved. Reject it and propose again.";
+  return undefined;
+}
+
+/** Fixed copy for ?field=. Query text is never echoed. */
+function fieldDecisionNotice(flag: unknown): string | undefined {
+  if (flag === "approved") {
+    return "Field approved. Reconnect this library’s MCP link so agents see the new field.";
+  }
+  if (flag === "rejected") return "Field proposal rejected. The library is unchanged.";
+  if (flag === "missing") return "No field is waiting for approval.";
+  if (flag === "unreadable") {
+    return "That field proposal could not be read, so it was not approved. Reject it and propose again.";
+  }
+  if (flag === "conflict") {
+    return "That field could not be approved because it clashes with an existing field. Reject it.";
+  }
   return undefined;
 }
 
@@ -366,6 +384,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       typeof req.query.published === "string" ? req.query.published : undefined;
     const notice =
       tableDecisionNotice(req.query.table) ??
+      fieldDecisionNotice(req.query.field) ??
       writeModeNotice(req.query.mode) ??
       connectNotice(req.query.connect);
     const waiting =
@@ -717,6 +736,63 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       detail: ctxLib.library.id,
     });
     res.redirect(`/libraries/${ctxLib.library.id}?table=${removed ? "rejected" : "missing"}`);
+  });
+
+  app.post("/libraries/:id/field/approve", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only a publisher on this library can approve a field."));
+      return;
+    }
+    const result = await approveFieldProposal(db, ctxLib.library.id, access.sub);
+    const flag = result.ok
+      ? "approved"
+      : result.reason === "unreadable"
+        ? "unreadable"
+        : result.reason === "conflict"
+          ? "conflict"
+          : "missing";
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.approve_field",
+      success: result.ok,
+      detail: ctxLib.library.id,
+    });
+    res.redirect(`/libraries/${ctxLib.library.id}?field=${flag}`);
+  });
+
+  app.post("/libraries/:id/field/reject", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only a publisher on this library can reject a field."));
+      return;
+    }
+    const removed = await rejectFieldProposal(db, ctxLib.library.id, access.sub);
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.reject_field",
+      success: removed,
+      detail: ctxLib.library.id,
+    });
+    res.redirect(`/libraries/${ctxLib.library.id}?field=${removed ? "rejected" : "missing"}`);
   });
 
   app.post("/libraries/:id/items", async (req, res) => {

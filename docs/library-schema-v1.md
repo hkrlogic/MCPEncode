@@ -189,4 +189,4 @@ Optional checks that a library still “looks like” its starter guide — e.g.
 
 ## Implementation note
 
-This document is design only. No schema migration or UI work is implied until a follow-up implements slices (e.g. Propose field, Copy library template).
+Slice 1 (propose_field + Approve/Reject + append-only lock) is implemented: migration `009_field_proposal.sql`, MCP `propose_field`, publisher Approve/Reject. Copy library template remains later.

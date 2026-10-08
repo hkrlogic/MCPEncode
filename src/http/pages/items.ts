@@ -1,8 +1,9 @@
 /** Add / view / edit item pages. */
 import { can, type Access } from "../../auth/rbac.ts";
 import type { ItemRow, LibraryRow } from "../../db/models.ts";
-import { parseTableValues } from "../../items/table-proposal.ts";
-import { itemFields, policyItemFields, procedureItemFields, schemaItemFields } from "./forms.ts";
+import { generalHasExtraFields } from "../../items/library-schema.ts";
+import { parseItemFieldValues } from "../../items/table-proposal.ts";
+import { itemFields, schemaItemFields } from "./forms.ts";
 import { writeModeLabel } from "./schema-choice.ts";
 import {
   actionsMenuSummary,
@@ -26,6 +27,11 @@ function pageShell(
   return undefined;
 }
 
+function usesSchemaForm(library: LibraryRow): boolean {
+  const kind = library.schema.starter;
+  return kind === "table" || kind === "policy" || kind === "procedure" || generalHasExtraFields(library.schema);
+}
+
 export function addItemPage(input: {
   access: Access;
   csrf: string;
@@ -35,20 +41,16 @@ export function addItemPage(input: {
 }): string {
   const kind = input.library.schema.starter;
   const tableName = input.library.schema.tableName;
-  const fields =
-    kind === "table"
-      ? schemaItemFields({
-          schema: input.library.schema,
-          name: "",
-          labels: "",
-          summary: "",
-          values: {},
-        })
-      : kind === "policy"
-      ? policyItemFields({ name: "", labels: "", summary: "" })
-      : kind === "procedure"
-        ? procedureItemFields({ name: "", labels: "", summary: "" })
-        : itemFields({ name: "", labels: "", body: "", summaryRequired: true });
+  const schemaForm = usesSchemaForm(input.library);
+  const fields = schemaForm
+    ? schemaItemFields({
+        schema: input.library.schema,
+        name: "",
+        labels: "",
+        summary: "",
+        values: {},
+      })
+    : itemFields({ name: "", labels: "", body: "", summaryRequired: true });
   const liveHint =
     input.library.writeMode === "direct"
       ? `This library is ${writeModeLabel("direct")} — saving makes the item live immediately.`
@@ -57,9 +59,9 @@ export function addItemPage(input: {
     kind === "table"
       ? `Each item is one row${tableName ? ` of ${esc(tableName)}` : ""}. ${liveHint}`
       : kind === "policy"
-      ? `Every policy has the same fields: who owns it, when it is in force, and what it requires. ${liveHint}`
+      ? `Fill the policy fields for this library. ${liveHint}`
       : kind === "procedure"
-        ? `Every procedure has the same fields: which policy it carries out, when to start, the steps, and who does them. ${liveHint}`
+        ? `Fill the procedure fields for this library. ${liveHint}`
         : liveHint;
   return layout({
     title: `Add item · ${input.library.name}`,
@@ -67,7 +69,7 @@ export function addItemPage(input: {
     access: input.access,
     library: input.library,
     shell: pageShell(input),
-    extraHead: kind === "general" ? spreadsheetHead() : undefined,
+    extraHead: !schemaForm ? spreadsheetHead() : undefined,
     body: `
       <section class="panel">
         <h1>Add item</h1>
@@ -79,7 +81,7 @@ export function addItemPage(input: {
           <button class="btn" type="submit">Add item</button>
         </form>
       </section>
-      ${kind === "general" ? editorScripts() : ""}
+      ${!schemaForm ? editorScripts() : ""}
     `,
   });
 }
@@ -243,13 +245,14 @@ export function editPage(input: {
         : input.item.status === "draft"
           ? `<p class="hint">This item is Pending. Publish from the item page when it is ready for the kiosk.</p>`
           : `<p class="hint">This item is Archived. Restore it before publishing.</p>`;
+  const schemaForm = usesSchemaForm(input.library);
   return layout({
     title: `Edit ${input.item.name} · MCPEncode`,
     csrf: input.csrf,
     access: input.access,
     library: input.library,
     shell: pageShell(input),
-    extraHead: input.library.template === "general" ? spreadsheetHead() : undefined,
+    extraHead: !schemaForm ? spreadsheetHead() : undefined,
     body: `
       <p class="back"><a href="/items/${esc(input.item.id)}">Item</a></p>
       <section class="panel">
@@ -259,46 +262,16 @@ export function editPage(input: {
         <form method="post" action="/items/${esc(input.item.id)}" class="capture">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
           ${
-            input.library.schema.starter === "table"
+            schemaForm
               ? schemaItemFields({
                   schema: input.library.schema,
                   name: input.item.name,
                   labels: input.item.labels.join(", "),
                   summary: input.item.summary,
                   entityKey: input.item.entity_key ?? "",
-                  values: parseTableValues(input.item.details) ?? {},
+                  values: parseItemFieldValues(input.item.details) ?? {},
                 })
-              : input.library.template === "policy"
-              ? policyItemFields({
-                  name: input.item.name,
-                  labels: input.item.labels.join(", "),
-                  summary: input.item.summary,
-                  entityKey: input.item.entity_key ?? "",
-                  owner: input.item.policy?.owner,
-                  approvedBy: input.item.policy?.approved_by,
-                  version: input.item.policy?.version,
-                  effectiveDate: input.item.policy?.effective_date,
-                  reviewDate: input.item.policy?.review_date,
-                  purpose: input.item.policy?.purpose,
-                  scope: input.item.policy?.scope,
-                  policy: input.item.policy?.policy,
-                  responsibilities: input.item.policy?.responsibilities,
-                  exceptions: input.item.policy?.exceptions,
-                  references: input.item.policy?.references,
-                })
-              : input.library.template === "procedure"
-                ? procedureItemFields({
-                    name: input.item.name,
-                    labels: input.item.labels.join(", "),
-                    summary: input.item.summary,
-                    entityKey: input.item.entity_key ?? "",
-                    owner: input.item.procedure?.owner,
-                    relatedPolicy: input.item.procedure?.related_policy,
-                    whenToUse: input.item.procedure?.when_to_use,
-                    steps: input.item.procedure?.steps,
-                    who: input.item.procedure?.who,
-                  })
-                : itemFields({
+              : itemFields({
                   name: input.item.name,
                   labels: input.item.labels.join(", "),
                   body: input.item.body,
@@ -309,7 +282,7 @@ export function editPage(input: {
           <button class="btn" type="submit">Save</button>
         </form>
       </section>
-      ${input.library.template === "general" ? editorScripts() : ""}
+      ${!schemaForm ? editorScripts() : ""}
     `,
   });
 }

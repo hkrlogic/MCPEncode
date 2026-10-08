@@ -80,7 +80,9 @@ test("publisher MCP tools include create and update but not publish or hard-dele
     assert.equal(publisherTools.includes("list_records"), false);
     assert.equal(publisherTools.includes("get_record"), false);
     assert.ok(publisherTools.includes("propose_table"));
+    assert.ok(publisherTools.includes("propose_field"));
     assert.equal(publisherTools.includes("approve_table"), false);
+    assert.equal(publisherTools.includes("approve_field"), false);
     assert.equal(publisherTools.includes("publish_item"), false);
 
     const saTools = registeredToolNames(
@@ -94,6 +96,7 @@ test("publisher MCP tools include create and update but not publish or hard-dele
     assert.ok(readerTools.includes("list_items"));
     assert.equal(readerTools.includes("create_item"), false);
     assert.equal(readerTools.includes("propose_table"), false);
+    assert.equal(readerTools.includes("propose_field"), false);
     assert.equal(readerTools.includes("create_library"), false);
   });
 });

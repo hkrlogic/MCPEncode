@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import type { Database } from "./types.ts";
 import { librarySchemaOf, schemaForStarter } from "../items/library-schema.ts";
 import { isLibraryWriteMode, type LibraryWriteMode } from "../items/schema.ts";
+import { parseStoredFieldProposal } from "../items/field-proposal.ts";
 import { parseStoredTableProposal, type TableProposal, type TableProposalDraft } from "../items/table-proposal.ts";
 import { isLibraryTemplate, type LibraryTemplate } from "../items/templates.ts";
 import { grantLibraryAccess } from "./access.ts";
@@ -24,18 +25,27 @@ function freshConnectToken(): string {
 
 type SqlLibrary = Omit<
   LibraryRow,
-  "template" | "schema" | "tableProposal" | "tableProposalUnreadable" | "writeMode" | "connectToken"
+  | "template"
+  | "schema"
+  | "tableProposal"
+  | "tableProposalUnreadable"
+  | "fieldProposal"
+  | "fieldProposalUnreadable"
+  | "writeMode"
+  | "connectToken"
 > & {
   template?: string;
   write_mode?: string;
   connect_token?: string;
   schema?: unknown;
   table_proposal?: unknown;
+  field_proposal?: unknown;
 };
 
 function toLibrary(row: SqlLibrary): LibraryRow {
   const template = libraryTemplate(row.template);
   const stored = parseStoredTableProposal(row.table_proposal);
+  const fieldStored = parseStoredFieldProposal(row.field_proposal);
   return {
     id: row.id,
     name: row.name,
@@ -44,6 +54,8 @@ function toLibrary(row: SqlLibrary): LibraryRow {
     schema: librarySchemaOf(template, row.schema),
     tableProposal: stored.proposal,
     tableProposalUnreadable: stored.unreadable,
+    fieldProposal: fieldStored.proposal,
+    fieldProposalUnreadable: fieldStored.unreadable,
     connectToken: row.connect_token ?? "",
     created_by: row.created_by,
     updated_by: row.updated_by,

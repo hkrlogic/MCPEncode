@@ -9,7 +9,7 @@ import {
   parseLabelField,
   type LibraryWriteMode,
 } from "../items/schema.ts";
-import type { ItemWriteInput, LibrarySchema } from "../items/library-schema.ts";
+import { generalHasExtraFields, type ItemWriteInput, type LibrarySchema } from "../items/library-schema.ts";
 import {
   itemForLibrary,
   type LibraryTemplate,
@@ -71,9 +71,9 @@ export function libraryWriteModeFromForm(value: string): LibraryWriteMode | unde
   return isLibraryWriteMode(trimmed) ? trimmed : undefined;
 }
 
-/** Form fields for one library. General keeps the markdown body; other schemas use their columns. */
+/** Form fields for one library. Plain Documents keep markdown; structured schemas use columns. */
 export function formToItemWrite(body: unknown, schema: LibrarySchema): ItemWriteInput {
-  if (schema.starter === "general") {
+  if (schema.starter === "general" && !generalHasExtraFields(schema)) {
     return {
       name: formString(body, "name"),
       body: combineSummaryAndBody(
@@ -103,7 +103,7 @@ export function parseLibraryItem(
   body: unknown,
   library: { template: LibraryTemplate; schema: LibrarySchema },
 ) {
-  if (library.schema.starter === "general") {
+  if (library.schema.starter === "general" && !generalHasExtraFields(library.schema)) {
     return parseItem(body);
   }
   const saved = itemForLibrary(library.schema, formToItemWrite(body, library.schema));

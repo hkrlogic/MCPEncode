@@ -12,6 +12,8 @@ function library(partial: Partial<LibraryRow> = {}): LibraryRow {
     schema: { starter: "general", fields: [] },
     tableProposal: null,
     tableProposalUnreadable: false,
+    fieldProposal: null,
+    fieldProposalUnreadable: false,
     connectToken: "test-connect-token-aaaaaaaaaaaaaaaaaa",
     created_by: "alice",
     updated_by: "alice",

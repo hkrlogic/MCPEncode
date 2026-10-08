@@ -222,6 +222,43 @@ function columnTypeLabel(type: TableProposal["columns"][number]["type"]): string
   return "Text";
 }
 
+/** Publishers only. One optional field waiting for Approve. */
+function fieldProposalPanel(input: { library: LibraryRow; csrf: string }): string {
+  const proposal = input.library.fieldProposal;
+  if (!proposal && !input.library.fieldProposalUnreadable) return "";
+  if (!proposal) {
+    return `
+      <section class="table-proposal" aria-labelledby="field-proposal-heading">
+        <h2 id="field-proposal-heading">Field waiting for approval</h2>
+        <p class="error" role="alert">A field proposal is stored but could not be read. Reject it, then propose again.</p>
+        <form method="post" action="/libraries/${esc(input.library.id)}/field/reject">
+          <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+          <button class="btn secondary" type="submit">Reject</button>
+        </form>
+      </section>`;
+  }
+  const when = proposal.proposedAt
+    ? new Date(proposal.proposedAt).toISOString().slice(0, 16).replace("T", " ") + " UTC"
+    : "";
+  return `
+    <section class="table-proposal" aria-labelledby="field-proposal-heading">
+      <h2 id="field-proposal-heading">Field waiting for approval</h2>
+      <p class="hint">An agent proposed this optional field. Approving adds it to items in this library. Existing fields stay as they are. Old items simply will not have a value for it.</p>
+      <p class="proposal-name"><strong>${esc(proposal.label)}</strong> · ${esc(columnTypeLabel(proposal.type))} · Optional</p>
+      ${proposal.proposedBy ? `<p class="hint">Proposed by <code>${esc(proposal.proposedBy)}</code>${when ? ` · ${esc(when)}` : ""}</p>` : ""}
+      <div class="proposal-actions">
+        <form method="post" action="/libraries/${esc(input.library.id)}/field/approve">
+          <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+          <button class="btn" type="submit">Approve</button>
+        </form>
+        <form method="post" action="/libraries/${esc(input.library.id)}/field/reject">
+          <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+          <button class="btn secondary" type="submit">Reject</button>
+        </form>
+      </div>
+    </section>`;
+}
+
 /** Publishers only. Readers and the kiosk never receive this block. */
 function tableProposalPanel(input: {
   library: LibraryRow;
@@ -684,6 +721,7 @@ export function libraryPage(input: {
         ${bulkNotice}
         ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
         ${canWrite ? tableProposalPanel({ library: input.library, csrf: input.csrf, itemCount: input.itemCount ?? 0 }) : ""}
+        ${canWrite ? fieldProposalPanel({ library: input.library, csrf: input.csrf }) : ""}
         ${tabs}
         ${search}
         ${panel}

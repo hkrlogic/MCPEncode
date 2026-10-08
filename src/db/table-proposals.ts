@@ -45,12 +45,19 @@ export async function proposeTable(
     proposedAt: Date.now(),
   };
   return db.transaction(async (tx) => {
-    const row = await getRow<{ id: string; table_proposal: unknown }>(
+    const row = await getRow<{ id: string; table_proposal: unknown; field_proposal: unknown }>(
       tx,
-      "SELECT id, table_proposal FROM libraries WHERE id = ? FOR UPDATE",
+      "SELECT id, table_proposal, field_proposal FROM libraries WHERE id = ? FOR UPDATE",
       libraryId,
     );
     if (!row) return { ok: false, message: "Library not found." };
+    if (row.field_proposal != null) {
+      return {
+        ok: false,
+        message:
+          "A field is already waiting for approval in the publisher. Approve or Reject it before proposing a table.",
+      };
+    }
     if (row.table_proposal != null) {
       return {
         ok: false,

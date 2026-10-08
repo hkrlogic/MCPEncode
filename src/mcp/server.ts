@@ -11,6 +11,7 @@ import {
   getItem,
   getItemByEntityKey,
   proposeTable,
+  proposeField,
   getLibraryAccess,
   listAudit,
   listItems,
@@ -28,6 +29,7 @@ import {
   type ItemWriteInput,
   type LibrarySchema,
 } from "../items/library-schema.ts";
+import { proposeFieldInputSchema } from "../items/field-proposal.ts";
 import { normalizeTableProposal, proposeTableInputSchema } from "../items/table-proposal.ts";
 import { itemForLibrary } from "../items/templates.ts";
 import { libraryDesignGuide } from "./library-design.ts";
@@ -425,7 +427,7 @@ export function buildMcpServer(
       {
         title: "Propose table",
         description:
-          "Save a table the human just confirmed, for this library only, when it has no items. For a brand-new library, put the table on create_library instead. Columns are text, date, or longtext. Sample rows are for review and are not items. Does not go live until they Approve in the publisher. There is no approve tool. Fails if a table is already waiting.",
+          "Save a table the human just confirmed, for this library only, when it has no items. For a brand-new library, put the table on create_library instead. Columns are text, date, or longtext. Sample rows are for review and are not items. Does not go live until they Approve in the publisher. There is no approve tool. Fails if a table or field is already waiting. To add one field after the schema is locked, use propose_field instead.",
         inputSchema: proposeTableInputSchema,
         annotations: { readOnlyHint: false },
       },
@@ -442,6 +444,31 @@ export function buildMcpServer(
           `Proposed table "${result.proposal.name}" with columns ${result.proposal.columns
             .map((column) => column.label)
             .join(", ")}. It is waiting in the publisher. A human must Approve or Reject it there. It is not live, and readers cannot see it.`,
+        );
+      },
+    );
+
+    // One optional field. Approval stays in the portal — never rename or remove existing fields.
+    server.registerTool(
+      "propose_field",
+      {
+        title: "Propose field",
+        description:
+          "Propose one new optional field after the human confirmed it. Append-only: existing fields cannot be renamed, removed, or retyped. Types: text, date, or longtext. Cap 12 fields on the library. Does not go live until they Approve in the publisher. There is no approve tool. Fails if a field or table is already waiting.",
+        inputSchema: proposeFieldInputSchema,
+        annotations: { readOnlyHint: false },
+      },
+      async (input) => {
+        const result = await proposeField(db, library.libraryId, input, access.sub);
+        await writeAudit(db, {
+          actorSub: access.sub,
+          tool: "propose_field",
+          success: result.ok,
+          detail: result.ok ? `${library.libraryId}:${result.proposal.key}` : library.libraryId,
+        });
+        if (!result.ok) return deny(result.message);
+        return ok(
+          `Proposed optional field "${result.proposal.label}" (${result.proposal.type}, key ${result.proposal.key}). It is waiting in the publisher. A human must Approve or Reject it there. It is not live until they Approve. Tell them to reconnect this library's MCP link after Approve so create_item sees the new field.`,
         );
       },
     );
