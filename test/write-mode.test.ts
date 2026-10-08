@@ -154,6 +154,7 @@ test("direct agent instructions say saves are live", () => {
   assert.match(direct, /Summary must be a one-line handoff/);
   assert.match(direct, /Add useful labels/);
   assert.match(direct, /scooping agent/);
+  assert.match(direct, /do not invent a revert tool call/i);
   assert.doesNotMatch(direct, /save drafts only/);
 });
 

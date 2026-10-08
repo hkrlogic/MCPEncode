@@ -50,7 +50,7 @@ export const FORBIDDEN_LIBRARY =
  * so another agent can find it later with list_items / open_item.
  */
 export function directHandoffGuide(): string {
-  return `This library is Review Unlock: create_item and update_item are live immediately for readers and agents. There is still no publish tool — saves go live on their own. Do not invent a mode-change tool; only a human can change Review Lock / Review Unlock in the publisher UI.
+  return `This library is Review Unlock: create_item and update_item are live immediately for readers and agents. There is still no publish tool — saves go live on their own. Do not invent a mode-change tool; only a human can change Review Lock / Review Unlock in the publisher UI. Reverting an item to its last published version is a publisher UI action only — do not invent a revert tool call.
 
 Collecting and storing for the next agent:
 1. Give every real-world entity a stable entity_key (for example host:contoso-01 or run:2026-10-06). Prefer entity_key over guessing from the display name.
