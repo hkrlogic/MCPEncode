@@ -99,6 +99,9 @@ function fieldDecisionNotice(flag: unknown): string | undefined {
   if (flag === "conflict") {
     return "That field could not be approved because it clashes with an existing field. Reject it.";
   }
+  if (flag === "at_cap") {
+    return "That field could not be approved because this library already has 12 fields. Reject it.";
+  }
   return undefined;
 }
 
@@ -760,7 +763,9 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         ? "unreadable"
         : result.reason === "conflict"
           ? "conflict"
-          : "missing";
+          : result.reason === "at_cap"
+            ? "at_cap"
+            : "missing";
     await writeAudit(db, {
       actorSub: access.sub,
       tool: "ui.approve_field",

@@ -3,6 +3,7 @@
  * Approval is a portal action. MCP only calls proposeField.
  */
 import {
+  MAX_LIBRARY_FIELDS,
   normalizeFieldProposal,
   parseStoredFieldProposal,
   schemaWithApprovedField,
@@ -21,7 +22,7 @@ export type ProposeFieldResult =
 
 export type ApproveFieldResult =
   | { ok: true; schema: LibrarySchema }
-  | { ok: false; reason: "not_found" | "missing" | "unreadable" | "conflict" };
+  | { ok: false; reason: "not_found" | "missing" | "unreadable" | "conflict" | "at_cap" };
 
 type LockedLibrary = {
   id: string;
@@ -105,8 +106,17 @@ export async function approveFieldProposal(
     if (stored.unreadable) return { ok: false, reason: "unreadable" };
     if (!stored.proposal) return { ok: false, reason: "missing" };
     const schema = schemaOfRow(row);
-    if (schema.fields.some((field) => field.key === stored.proposal!.key)) {
+    // Re-check against the live schema (cap, duplicate key/label, reserved names).
+    const stillValid = normalizeFieldProposal(
+      { label: stored.proposal.label, type: stored.proposal.type },
+      schema,
+    );
+    if (!stillValid.ok) {
+      if (schema.fields.length >= MAX_LIBRARY_FIELDS) return { ok: false, reason: "at_cap" };
       return { ok: false, reason: "conflict" };
+    }
+    if (stillValid.draft.key !== stored.proposal.key) {
+      return { ok: false, reason: "unreadable" };
     }
     const next = schemaWithApprovedField(schema, stored.proposal);
     const now = Date.now();

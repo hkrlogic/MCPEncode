@@ -2,7 +2,7 @@
 import { can, type Access } from "../../auth/rbac.ts";
 import type { ItemRow, LibraryRow } from "../../db/models.ts";
 import { generalHasExtraFields } from "../../items/library-schema.ts";
-import { parseItemFieldValues } from "../../items/table-proposal.ts";
+import { valuesForSchemaEdit } from "../../items/table-proposal.ts";
 import { itemFields, schemaItemFields } from "./forms.ts";
 import { writeModeLabel } from "./schema-choice.ts";
 import {
@@ -269,7 +269,7 @@ export function editPage(input: {
                   labels: input.item.labels.join(", "),
                   summary: input.item.summary,
                   entityKey: input.item.entity_key ?? "",
-                  values: parseItemFieldValues(input.item.details) ?? {},
+                  values: valuesForSchemaEdit(input.item, input.library.schema),
                 })
               : itemFields({
                   name: input.item.name,

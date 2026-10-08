@@ -2,15 +2,22 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { accessFromLibraryRole } from "../src/auth/rbac.ts";
 import {
+  addDraftItem,
   approveFieldProposal,
   createLibrary,
   getLibrary,
   proposeField,
   proposeTable,
   rejectFieldProposal,
+  rejectTableProposal,
 } from "../src/db/queries.ts";
-import { MAX_LIBRARY_FIELDS, normalizeFieldProposal } from "../src/items/field-proposal.ts";
+import {
+  MAX_LIBRARY_FIELDS,
+  normalizeFieldProposal,
+  parseStoredFieldProposal,
+} from "../src/items/field-proposal.ts";
 import { itemForLibrarySchema, schemaForStarter } from "../src/items/library-schema.ts";
+import { valuesForSchemaEdit } from "../src/items/table-proposal.ts";
 import { libraryPage } from "../src/http/pages/libraries.ts";
 import type { LibraryRow } from "../src/db/models.ts";
 import { withTestDatabase } from "./db.ts";
@@ -118,6 +125,99 @@ test("cannot propose a field while a table is waiting, and vice versa", async ()
     assert.equal(table.ok, true);
     const field = await proposeField(db, library.id, { label: "Site", type: "text" }, "alice");
     assert.equal(field.ok, false);
+
+    assert.equal(await rejectTableProposal(db, library.id, "alice"), true);
+    const fieldOk = await proposeField(db, library.id, { label: "Site", type: "text" }, "alice");
+    assert.equal(fieldOk.ok, true);
+    const tableBlocked = await proposeTable(
+      db,
+      library.id,
+      {
+        name: "Roster",
+        columns: [{ label: "Phone", type: "text", required: true }],
+      },
+      "alice",
+    );
+    assert.equal(tableBlocked.ok, false);
+  });
+});
+
+test("propose_field fails at the 12-field cap", async () => {
+  await withTestDatabase(async (db) => {
+    const library = await createLibrary(db, "Full", "alice", "policy");
+    // Policy starter has 11 fields; one add-on fills the cap.
+    const first = await proposeField(db, library.id, { label: "Audience", type: "text" }, "alice");
+    assert.equal(first.ok, true);
+    assert.equal((await approveFieldProposal(db, library.id, "alice")).ok, true);
+    const live = await getLibrary(db, library.id);
+    assert.equal(live?.schema.fields.length, MAX_LIBRARY_FIELDS);
+    const blocked = await proposeField(db, library.id, { label: "Extra", type: "text" }, "alice");
+    assert.equal(blocked.ok, false);
+  });
+});
+
+test("stored proposals stay optional and reject markup in labels", () => {
+  const dirty = parseStoredFieldProposal({
+    key: "priority",
+    label: "Priority",
+    type: "text",
+    required: true,
+    proposedBy: "alice",
+    proposedAt: 1,
+  });
+  assert.equal(dirty.unreadable, false);
+  assert.equal(dirty.proposal?.required, false);
+
+  const markup = parseStoredFieldProposal({
+    key: "priority",
+    label: "<script>",
+    type: "text",
+    proposedBy: "alice",
+    proposedAt: 1,
+  });
+  assert.equal(markup.unreadable, true);
+});
+
+test("legacy Documents items keep body when the library gains fields", () => {
+  const schema = {
+    starter: "general" as const,
+    fields: [
+      { key: "body", label: "Description", type: "markdown" as const, required: false, kind: "body" as const },
+      { key: "priority", label: "Priority", type: "text" as const, required: false, kind: "control" as const },
+    ],
+  };
+  const values = valuesForSchemaEdit(
+    { body: "## Old markdown\n\nKeep me.", details: null },
+    schema,
+  );
+  assert.equal(values.body, "## Old markdown\n\nKeep me.");
+  assert.equal(values.priority, undefined);
+});
+
+test("addDraftItem can save the approved optional field", async () => {
+  await withTestDatabase(async (db) => {
+    const library = await createLibrary(db, "Tickets", "alice", "general");
+    assert.equal(
+      (await proposeField(db, library.id, { label: "Priority", type: "text" }, "alice")).ok,
+      true,
+    );
+    assert.equal((await approveFieldProposal(db, library.id, "alice")).ok, true);
+    const live = await getLibrary(db, library.id);
+    const created = await addDraftItem(
+      db,
+      live!.id,
+      {
+        name: "Ticket 9",
+        summary: "Printer jam",
+        body: "Floor 2",
+        priority: "Low",
+      },
+      "alice",
+    );
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    assert.match(created.item.body, /Priority:\s*Low/);
+    assert.match(created.item.details ?? "", /"priority":"Low"/);
   });
 });
 

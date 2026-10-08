@@ -156,7 +156,9 @@ export function parseStoredFieldProposal(
   if (!STORED_KEY.test(key) || RESERVED_KEYS.has(key)) {
     return { proposal: null, unreadable: true };
   }
-  if (!label || label.length > MAX_FIELD_LABEL) return { proposal: null, unreadable: true };
+  if (!label || label.length > MAX_FIELD_LABEL || /[\u0000-\u001f<>]/.test(label)) {
+    return { proposal: null, unreadable: true };
+  }
   if (type !== "text" && type !== "date" && type !== "longtext") {
     return { proposal: null, unreadable: true };
   }

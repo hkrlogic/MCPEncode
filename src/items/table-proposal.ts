@@ -354,6 +354,27 @@ export function parseItemFieldValues(raw: string | null | undefined): Record<str
   }
 }
 
+/**
+ * Values for the schema edit form. When a Documents library gains add-on fields,
+ * older items still have markdown in body and null details — seed body so edit
+ * does not blank the description.
+ */
+export function valuesForSchemaEdit(
+  item: { body: string; details: string | null },
+  schema: { starter: string; fields: { key: string }[] },
+): Record<string, string> {
+  const parsed = parseItemFieldValues(item.details);
+  if (parsed) return parsed;
+  if (
+    schema.starter === "general" &&
+    schema.fields.some((field) => field.key !== "body") &&
+    schema.fields.some((field) => field.key === "body")
+  ) {
+    return { body: item.body };
+  }
+  return {};
+}
+
 export function tableControl(
   fields: SchemaFieldDef[],
   values: Record<string, string>,
