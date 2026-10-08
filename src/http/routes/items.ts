@@ -10,6 +10,7 @@ import {
   getItem,
   publishItem,
   restoreItem,
+  revertToPublished,
   unpublishItem,
   updateItem,
   writeAudit,
@@ -317,6 +318,59 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
   });
   app.post("/items/:id/restore", (req, res) => {
     void gateAction(req, res, "restore");
+  });
+
+  /** Replace working fields with published_snapshot. Not the same as Restore (un-archive). */
+  app.post("/items/:id/revert-published", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access || !requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("You cannot change publish status with this account."));
+      return;
+    }
+    const id = typeof req.params.id === "string" ? req.params.id : req.params.id?.[0];
+    if (!id) {
+      res.status(404).send(errorPage("Item not found."));
+      return;
+    }
+    const existing = await getItem(db, id, { publishedOnly: false });
+    if (!existing) {
+      res.status(404).send(errorPage("Item not found."));
+      return;
+    }
+    const libraryAccess = await itemLibraryAccess(db, existing.library_id, access);
+    if (!libraryAccess || !can(libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("You cannot change publish status with this account."));
+      return;
+    }
+    const result = await revertToPublished(db, id, access.sub);
+    if (!result.ok) {
+      await writeAudit(db, {
+        actorSub: access.sub,
+        tool: "ui.revert_to_published",
+        success: false,
+        detail: `${id}:${result.reason}`,
+      });
+      const message =
+        result.reason === "not_found"
+          ? "Item not found."
+          : result.reason === "archived"
+            ? "Archived items must be restored to Pending before you can revert to published."
+            : result.reason === "no_snapshot"
+              ? "This item has never been published, so there is nothing to revert to."
+              : result.reason === "unreadable"
+                ? "The last published snapshot could not be read. Revert was not applied."
+                : "No changes since last published — nothing to revert.";
+      res.status(result.reason === "not_found" ? 404 : 400).send(errorPage(message));
+      return;
+    }
+    const publishedAt = result.item.published_snapshot?.published_at ?? 0;
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.revert_to_published",
+      success: true,
+      detail: `${result.item.id} published_at=${publishedAt}`,
+    });
+    res.redirect(`/items/${result.item.id}?notice=reverted`);
   });
 
   app.post("/items/:id/delete", async (req, res) => {

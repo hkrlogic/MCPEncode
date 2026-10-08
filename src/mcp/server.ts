@@ -74,7 +74,7 @@ export function agentInstructions(
   const writeBlurb =
     writeMode === "direct"
       ? directHandoffGuide()
-      : "create_item and update_item save drafts only. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call.";
+      : "create_item and update_item save drafts only. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call. Reverting an item to its last published version is also a publisher UI action only — do not invent a revert tool call.";
 
   return `You look up human-authored items in the library "${libraryName}". Cite an item or say it is not in the library. Do not invent.
 

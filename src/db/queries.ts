@@ -34,8 +34,11 @@ export {
   unpublishItem,
   archiveItem,
   restoreItem,
+  revertToPublished,
   deleteItem,
 } from "./items.ts";
+export type { RevertToPublishedResult } from "./items.ts";
+export { canRevertToPublished, itemDiffersFromSnapshot } from "./query-helpers.ts";
 export { lookupItems, type LookupResult } from "./lookup.ts";
 export { writeAudit, listAudit } from "./audit.ts";
 export { proposeTable, approveTableProposal, rejectTableProposal } from "./table-proposals.ts";

@@ -54,6 +54,52 @@ export function asStatus(value: string): ItemStatus {
   return "draft";
 }
 
+export function labelsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.every((value, index) => value === right[index]);
+}
+
+/** True when working fields differ from the last published snapshot (same rules as Diff). */
+export function itemDiffersFromSnapshot(
+  item: {
+    name: string;
+    labels: string[];
+    summary: string;
+    body: string;
+    details: string | null;
+  },
+  snapshot: PublishedSnapshot,
+): boolean {
+  return (
+    item.name !== snapshot.name ||
+    !labelsEqual(item.labels, snapshot.labels) ||
+    item.summary !== snapshot.summary ||
+    item.body !== snapshot.body ||
+    (item.details ?? "") !== (snapshot.details ?? "")
+  );
+}
+
+/**
+ * Publisher may revert working fields to published_snapshot.
+ * Archived items must use Restore (un-archive) first. No snapshot / no Diff → false.
+ */
+export function canRevertToPublished(item: {
+  status: ItemStatus;
+  published_snapshot: PublishedSnapshot | null;
+  name: string;
+  labels: string[];
+  summary: string;
+  body: string;
+  details: string | null;
+}): boolean {
+  if (item.status === "archived") return false;
+  const snapshot = item.published_snapshot;
+  if (!snapshot) return false;
+  return itemDiffersFromSnapshot(item, snapshot);
+}
+
 export function parsePublishedSnapshot(raw: string | null | undefined): PublishedSnapshot | null {
   if (!raw) return null;
   try {

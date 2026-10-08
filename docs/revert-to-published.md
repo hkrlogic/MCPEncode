@@ -1,6 +1,6 @@
 # Revert to last published — feature plan
 
-Status: plan (not implemented).  
+Status: implemented.  
 Related: item `published_snapshot`, Publish Diff UI, Review Lock / Review Unlock.
 
 **Naming note:** Today **Restore** means “un-archive → Pending” (`restoreItem`). This feature must **not** reuse that word in the UI. Prefer **Revert to published** (code: `revertToPublished`).
@@ -126,19 +126,19 @@ Optional detail: item id + `published_at` from snapshot.
 
 ## Implementation slices
 
-1. **DB:** `revertToPublished(db, id, actorSub)` + export from `queries`.  
-2. **HTTP:** `POST /items/:id/revert-published` + notice + confirm.  
-3. **UI:** action next to Diff; copy/labels.  
-4. **Tests:** DB + HTTP + UI visibility.  
-5. **Docs:** README / AGENTS one-liner under status gate.
+1. **DB:** `revertToPublished(db, id, actorSub)` + export from `queries`. ✓  
+2. **HTTP:** `POST /items/:id/revert-published` + notice + confirm. ✓  
+3. **UI:** action in Diff sheet and ⋯ menu; copy/labels. ✓  
+4. **Tests:** DB + HTTP + UI visibility (`test/revert-to-published.test.ts`). ✓  
+5. **Docs:** AGENTS status-gate one-liner. ✓
 
 No MCP surface in v1.
 
-## Open decisions (confirm before build)
+## Decisions (locked for v1)
 
-1. **After revert, always Pending?** (Recommended: **yes**.)  
-2. **Review Unlock:** hide revert when snapshot matches live, or also keep a previous-snapshot later? (Recommended: hide when no Diff; no ring buffer in v1.)  
-3. Button placement: Diff sheet only vs also ⋯ menu? (Recommended: **both** — Diff primary, ⋯ secondary.)
+1. **After revert, always Pending** — even on Review Unlock libraries. Human Publishes when it should be live again.  
+2. **Review Unlock:** hide Revert when snapshot matches live; no previous-snapshot ring buffer.  
+3. **Button placement:** Diff sheet (primary) and ⋯ menu (secondary).
 
 ## Success criterion
 

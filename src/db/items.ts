@@ -19,6 +19,7 @@ import {
   ITEM_COLUMNS,
   LIST_LIMIT_MAX,
   LIST_OFFSET_MAX,
+  canRevertToPublished,
   libraryWhere,
   parseLabels,
   runSql,
@@ -29,6 +30,13 @@ import {
   getRow,
 } from "./query-helpers.ts";
 import { defaultLibraryId, getLibrary, lockLibrary } from "./libraries.ts";
+
+export type RevertToPublishedResult =
+  | { ok: true; item: ItemRow }
+  | {
+      ok: false;
+      reason: "not_found" | "archived" | "no_snapshot" | "no_changes" | "unreadable";
+    };
 
 type ListHit = {
   id: string;
@@ -522,6 +530,71 @@ export async function restoreItem(
     toStatus: "draft",
   });
   return getItem(db, id, { publishedOnly: false });
+}
+
+/**
+ * Replace working fields with published_snapshot. Leaves snapshot unchanged.
+ * Always ends as Pending (draft). Does not change entity_key.
+ * Not the same as restoreItem (un-archive).
+ */
+export async function revertToPublished(
+  db: Database,
+  id: string,
+  actorSub: string,
+): Promise<RevertToPublishedResult> {
+  return db.transaction(async (tx) => {
+    const locked = await getRow<{ id: string }>(
+      tx,
+      "SELECT id FROM items WHERE id = ? FOR UPDATE",
+      id,
+    );
+    if (!locked) return { ok: false, reason: "not_found" };
+    const existing = await getItem(tx, id, { publishedOnly: false });
+    if (!existing) return { ok: false, reason: "not_found" };
+    if (existing.status === "archived") return { ok: false, reason: "archived" };
+    // Snapshot JSON on the row may be present but unreadable → treat as missing.
+    if (existing.published_snapshot == null) {
+      const raw = await getRow<{ published_snapshot: string | null }>(
+        tx,
+        "SELECT published_snapshot FROM items WHERE id = ?",
+        id,
+      );
+      if (raw?.published_snapshot) return { ok: false, reason: "unreadable" };
+      return { ok: false, reason: "no_snapshot" };
+    }
+    if (!canRevertToPublished(existing)) return { ok: false, reason: "no_changes" };
+
+    const snapshot = existing.published_snapshot;
+    const fromStatus = existing.status;
+    const now = Date.now();
+    await runSql(
+      tx,
+      `UPDATE items
+       SET name = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
+           status = 'draft', updated_by = ?, updated_at = ?
+       WHERE id = ?`,
+      snapshot.name,
+      JSON.stringify(snapshot.labels),
+      snapshot.summary,
+      snapshot.body,
+      snapshot.details,
+      actorSub,
+      now,
+      id,
+    );
+    if (fromStatus === "published") {
+      await writePublishAudit(tx, {
+        libraryId: existing.library_id,
+        itemId: id,
+        actorSub,
+        fromStatus: "published",
+        toStatus: "draft",
+      });
+    }
+    const item = await getItem(tx, id, { publishedOnly: false });
+    if (!item) return { ok: false, reason: "not_found" };
+    return { ok: true, item };
+  });
 }
 
 export async function deleteItem(db: Database, id: string): Promise<boolean> {

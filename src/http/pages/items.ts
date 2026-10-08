@@ -1,6 +1,7 @@
 /** Add / view / edit item pages. */
 import { can, type Access } from "../../auth/rbac.ts";
 import type { ItemRow, LibraryRow } from "../../db/models.ts";
+import { canRevertToPublished } from "../../db/queries.ts";
 import { generalHasExtraFields } from "../../items/library-schema.ts";
 import { valuesForSchemaEdit } from "../../items/table-proposal.ts";
 import { itemFields, schemaItemFields } from "./forms.ts";
@@ -17,6 +18,10 @@ import {
   statusBadge,
   type AppShell,
 } from "./layout.ts";
+
+/** Confirm copy — revert replaces working edits; item stays Pending until Publish. */
+const REVERT_CONFIRM =
+  "Revert this item to the last published version? Your current edits will be replaced. The item will stay Pending until you Publish.";
 
 function pageShell(
   input: { csrf: string; access: Access; library: LibraryRow; shell?: AppShell },
@@ -100,6 +105,16 @@ export function itemPage(input: {
   const canWrite = can(input.access, "records.write");
   const canDelete = can(input.access, "records.delete");
   const status = input.item.status;
+  // Revert only when Diff would show changes (not for archived / never published / no drift).
+  const showRevert = canWrite && canRevertToPublished(input.item);
+  const revertForm = (className?: string) =>
+    showRevert
+      ? `<form${className ? ` class="${className}"` : ""} method="post" action="/items/${esc(input.item.id)}/revert-published"
+           onsubmit="${onConfirm(REVERT_CONFIRM)}">
+           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+           <button type="submit">Revert to published</button>
+         </form>`
+      : "";
   // Publish stays a primary button on Pending. Edit / gate moves / delete live in ⋯.
   const publishAction =
     canWrite && status === "draft"
@@ -117,6 +132,7 @@ export function itemPage(input: {
       ? [
           `<a href="/items/${esc(input.item.id)}/edit">Edit</a>`,
           `<button type="button" data-open-sheet="publish-diff">Changes since published</button>`,
+          revertForm(),
           status === "published"
             ? `<form method="post" action="/items/${esc(input.item.id)}/unpublish">
                  <input type="hidden" name="csrf" value="${esc(input.csrf)}">
@@ -153,6 +169,10 @@ export function itemPage(input: {
        </details>`;
   const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
   const flash = noticeMessage(input.notice, status);
+  const unlockHint =
+    input.library.writeMode === "direct"
+      ? `<p class="hint">Revert uses the last published snapshot. In Review Unlock, each save refreshes that snapshot.</p>`
+      : "";
   const diffSheet = canWrite
     ? `<dialog class="sheet" id="publish-diff" aria-labelledby="publish-diff-title">
          <div class="sheet-panel">
@@ -163,7 +183,15 @@ export function itemPage(input: {
              </button>
            </header>
            <div class="sheet-body">
+             ${unlockHint}
              ${publishDiff(input.item, input.item.published_snapshot)}
+             ${
+               showRevert
+                 ? `<div class="sheet-actions">
+                      ${revertForm("sheet-revert")}
+                    </div>`
+                 : ""
+             }
            </div>
          </div>
        </dialog>

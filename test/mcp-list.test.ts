@@ -39,6 +39,7 @@ test("agent instructions are scoped to one library and use list_items / open_ite
   assert.match(text, /do not ask for a library name or library_id/i);
   assert.match(text, /Do not say MCP unless they do/);
   assert.match(text, /save drafts only/);
+  assert.match(text, /do not invent a revert tool call/i);
   assert.match(text, /policy schema/i);
   assert.match(text, /Owner/);
   assert.match(text, /create_library/);
