@@ -49,6 +49,7 @@ Open `http://127.0.0.1:3000/`. Each library has its own MCP link under **Connect
 ## Later (not built)
 
 - **Library starters / schema integrity (draft)** — see `docs/library-schema-v1.md`. Starters + Custom; add-only fields via agent propose + human Approve; copy library is template-only; rename library is UI-only; fork-with-items + retire source is next.
+- **Revert to last published (plan)** — see `docs/revert-to-published.md`. Restore working item fields from `published_snapshot` (not the same as archive Restore).
 - **SA breakglass** — no recovery path today if the last SA password is lost (Postgres is the only way). Consider a one-shot env (e.g. `SA_RECOVERY_PASSWORD`) that resets a named SA and must be cleared afterward — not a permanent backdoor.
 - **Auth domain allow/deny** — optional allowlist / denylist of email or IdP domains that may sign in (useful once magic link / Google / SSO land). Decide whether it applies to embedded accounts, OIDC only, or both.
 - **MFA (TOTP)** — protect human sign-in because libraries can hold sensitive business data. Prefer IdP MFA when `AUTH_MODE=oidc`. For embedded accounts, optional QR TOTP after password (enroll in Settings, challenge on authorize) plus recovery codes / SA clear. Does not replace Connect-link secrecy or library Access grants.
