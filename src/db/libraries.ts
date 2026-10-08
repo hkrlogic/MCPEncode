@@ -2,7 +2,7 @@
 import { randomBytes } from "node:crypto";
 import type { Database } from "./types.ts";
 import { librarySchemaOf, schemaForStarter } from "../items/library-schema.ts";
-import { isLibraryWriteMode, type LibraryWriteMode } from "../items/schema.ts";
+import { isLibraryWriteMode, libraryInputSchema, type LibraryWriteMode } from "../items/schema.ts";
 import { parseStoredFieldProposal } from "../items/field-proposal.ts";
 import { parseStoredTableProposal, type TableProposal, type TableProposalDraft } from "../items/table-proposal.ts";
 import { isLibraryTemplate, type LibraryTemplate } from "../items/templates.ts";
@@ -161,6 +161,92 @@ export async function rotateLibraryConnectToken(
     id,
   );
   return getLibrary(db, id);
+}
+
+/**
+ * Rename a library. UI only — does not change schema, items, Access, or Connect.
+ */
+export async function renameLibrary(
+  db: Database,
+  id: string,
+  name: string,
+  actorSub: string,
+): Promise<{ ok: true; library: LibraryRow } | { ok: false; message: string }> {
+  const parsed = libraryInputSchema.safeParse({ name });
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Name is required" };
+  }
+  const existing = await getLibrary(db, id);
+  if (!existing) return { ok: false, message: "Library not found." };
+  if (existing.name === parsed.data.name) return { ok: true, library: existing };
+  const now = Date.now();
+  await runSql(
+    db,
+    "UPDATE libraries SET name = ?, updated_by = ?, updated_at = ? WHERE id = ?",
+    parsed.data.name,
+    actorSub,
+    now,
+    id,
+  );
+  const library = await getLibrary(db, id);
+  if (!library) return { ok: false, message: "Library not found." };
+  return { ok: true, library };
+}
+
+/**
+ * Copy one library's template into a new empty library.
+ * Copies live schema, starter, and write mode. Does not copy items, Access,
+ * Connect token, or waiting table/field proposals. Actor becomes publisher.
+ */
+export async function copyLibraryTemplate(
+  db: Database,
+  sourceId: string,
+  name: string,
+  actorSub: string,
+): Promise<{ ok: true; library: LibraryRow } | { ok: false; message: string }> {
+  const parsed = libraryInputSchema.safeParse({ name });
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? "Name is required" };
+  }
+  return db.transaction(async (tx) => {
+    const source = await getLibrary(tx, sourceId);
+    if (!source) return { ok: false, message: "Library not found." };
+    const now = Date.now();
+    const id = crypto.randomUUID();
+    const connectToken = freshConnectToken();
+    await runSql(
+      tx,
+      `INSERT INTO libraries (
+         id, name, template, write_mode, schema, table_proposal, field_proposal,
+         connect_token, created_by, updated_by, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?::jsonb, NULL, NULL, ?, ?, ?, ?, ?)`,
+      id,
+      parsed.data.name,
+      source.template,
+      source.writeMode,
+      JSON.stringify(source.schema),
+      connectToken,
+      actorSub,
+      actorSub,
+      now,
+      now,
+    );
+    await grantLibraryAccess(tx, {
+      libraryId: id,
+      subject: actorSub,
+      role: "publisher",
+      grantedBy: actorSub,
+    });
+    const created = await getLibrary(tx, id);
+    if (!created) return { ok: false, message: "Failed to read library after copy." };
+    return { ok: true, library: created };
+  });
+}
+
+/** Suggested name for a template copy (trimmed to the name max). */
+export function suggestedCopyName(sourceName: string): string {
+  const base = `${sourceName.trim()} copy`.replace(/\s+/g, " ").trim();
+  return base.slice(0, 200) || "Library copy";
 }
 
 /**

@@ -100,17 +100,22 @@ Add-field after lock: **all** starters (Documents, Policy, Procedure, table/Cust
 
 ## Copy library (v1: template only)
 
-**Copy library** creates a **new** library seeded from an existing one’s schema (and starter / write-mode defaults).
+**Copy library** creates a **new** library seeded from an existing one’s **live** schema (and starter / write-mode). Implemented in the publisher Actions menu.
 
-| Copied in v1 | Not copied in v1 |
+| Copied | Not copied |
 | --- | --- |
-| Schema (field set) | Items |
-| Write mode default | Access grants |
-| Starter identity (for UI/copy) | Connect token / URL |
+| Schema (field set, including approved add-ons) | Items |
+| Write mode | Access grants from the source |
+| Starter identity | Connect token / URL |
+| | Waiting table/field proposals |
 
-At **inception** of the copy, the human may still add or adjust fields, then **Approve** locks the new library. The source library is unchanged.
+The copier becomes the sole publisher on the new library. Source is unchanged.
 
-New library always gets its own Access list and Connect link.
+**After copy (including when empty):** you can always **add** optional fields via `propose_field` → human Approve (same as any library). You cannot rename/remove existing fields on the copy. Use another copy if the inherited shape is wrong.
+
+## Rename library
+
+Publishers can rename a library in Actions. Name only — schema, items, Access, and Connect stay the same.
 
 ---
 
@@ -189,4 +194,5 @@ Optional checks that a library still “looks like” its starter guide — e.g.
 
 ## Implementation note
 
-Slice 1 (propose_field + Approve/Reject + append-only lock) is implemented: migration `009_field_proposal.sql`, MCP `propose_field`, publisher Approve/Reject. Copy library template remains later.
+Slice 1 (propose_field + Approve/Reject + append-only lock) is implemented.  
+Copy library template + rename library are implemented in the publisher UI (no MCP tools for those).

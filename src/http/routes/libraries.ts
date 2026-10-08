@@ -6,6 +6,7 @@ import {
   addDraftItem,
   approveFieldProposal,
   approveTableProposal,
+  copyLibraryTemplate,
   countLibraryAccess,
   countLibraryItems,
   createLibrary,
@@ -18,6 +19,7 @@ import {
   listLibraryAccess,
   listItems,
   publishItems,
+  renameLibrary,
   revokeLibraryAccess,
   rotateLibraryConnectToken,
   setLibraryWriteMode,
@@ -122,6 +124,22 @@ function connectNotice(flag: unknown): string | undefined {
   if (flag === "rotated") {
     return "Connect link rotated. Old links stop working. Copy the new link from Connect. People on Access are unchanged.";
   }
+  return undefined;
+}
+
+/** Fixed copy for ?renamed=. Query text is never echoed. */
+function renameNotice(flag: unknown): string | undefined {
+  if (flag === "1") return "Library renamed.";
+  if (flag === "invalid") return "Enter a library name of 1–200 characters.";
+  return undefined;
+}
+
+/** Fixed copy for ?copied= — only fixed flags, never echo names from the query. */
+function copyNotice(flag: unknown): string | undefined {
+  if (flag === "1") {
+    return "Library template copied into a new empty library. You are its publisher. Add fields with propose_field (Approve in the publisher), or add items. Items and Access were not copied.";
+  }
+  if (flag === "invalid") return "Enter a name for the copy (1–200 characters).";
   return undefined;
 }
 
@@ -389,7 +407,9 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       tableDecisionNotice(req.query.table) ??
       fieldDecisionNotice(req.query.field) ??
       writeModeNotice(req.query.mode) ??
-      connectNotice(req.query.connect);
+      connectNotice(req.query.connect) ??
+      renameNotice(req.query.renamed) ??
+      copyNotice(req.query.copied);
     const waiting =
       ctxLib.library.tableProposal != null || ctxLib.library.tableProposalUnreadable;
     const itemCount =
@@ -605,6 +625,70 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         }),
       );
     }
+  });
+
+  app.post("/libraries/:id/rename", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only a publisher on this library can rename it."));
+      return;
+    }
+    const result = await renameLibrary(db, ctxLib.library.id, formString(req.body, "name"), access.sub);
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.rename_library",
+      success: result.ok,
+      detail: ctxLib.library.id,
+    });
+    if (!result.ok) {
+      res.redirect(`/libraries/${ctxLib.library.id}?renamed=invalid`);
+      return;
+    }
+    res.redirect(`/libraries/${result.library.id}?renamed=1`);
+  });
+
+  app.post("/libraries/:id/copy", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only a publisher on this library can copy its template."));
+      return;
+    }
+    const result = await copyLibraryTemplate(
+      db,
+      ctxLib.library.id,
+      formString(req.body, "name"),
+      access.sub,
+    );
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.copy_library_template",
+      success: result.ok,
+      detail: result.ok ? `${ctxLib.library.id}->${result.library.id}` : ctxLib.library.id,
+    });
+    if (!result.ok) {
+      res.redirect(`/libraries/${ctxLib.library.id}?copied=invalid`);
+      return;
+    }
+    // Land on the new empty library so the publisher can add fields or items.
+    res.redirect(`/libraries/${result.library.id}?copied=1`);
   });
 
   app.post("/libraries/:id/delete", async (req, res) => {

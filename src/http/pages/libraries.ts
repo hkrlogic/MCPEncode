@@ -552,7 +552,8 @@ export function libraryPage(input: {
   const addLink = canWrite
     ? `<a class="btn" href="/libraries/${esc(input.library.id)}/items/new">Add item</a>`
     : "";
-  // Rotate Connect lives here; Remove on Access still drops one person's grant.
+  const copyDefaultName = `${input.library.name} copy`.replace(/\s+/g, " ").trim().slice(0, 200);
+  // Rotate Connect, copy template, rename — Remove on Access still drops one person's grant.
   const actionsMenu = canWrite
     ? `<details class="item-menu">
          ${actionsMenuSummary()}
@@ -563,6 +564,25 @@ export function libraryPage(input: {
                 )}">
              <input type="hidden" name="csrf" value="${esc(input.csrf)}">
              <button type="submit">Rotate connect link</button>
+           </form>
+           <form class="menu-form" method="post" action="/libraries/${esc(input.library.id)}/copy"
+                 onsubmit="${onConfirm(
+                   `Copy the template for “${input.library.name}” into a new empty library? Items and Access are not copied.`,
+                 )}">
+             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+             <label class="menu-field">
+               <span class="sr-only">Name for the copy</span>
+               <input name="name" required maxlength="200" value="${esc(copyDefaultName)}" autocomplete="off">
+             </label>
+             <button type="submit">Copy library template</button>
+           </form>
+           <form class="menu-form" method="post" action="/libraries/${esc(input.library.id)}/rename">
+             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+             <label class="menu-field">
+               <span class="sr-only">Library name</span>
+               <input name="name" required maxlength="200" value="${esc(input.library.name)}" autocomplete="off">
+             </label>
+             <button type="submit">Rename library</button>
            </form>
            ${
              can(input.access, "libraries.delete")
