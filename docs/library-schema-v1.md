@@ -35,11 +35,13 @@ A **starter** is a suggested field set plus design/write instructions for chat. 
 
 | Starter | Kind | At design time |
 | --- | --- | --- |
-| Documents (today’s General) | Thin | Name, labels, summary, description — little or no field workshop |
-| Policy | Sealed | Fixed fields; confirm name + write mode; no redesign |
-| Procedure | Sealed | Fixed fields; confirm name + write mode; no redesign |
+| Documents (today’s General) | Thin / guided | Name, labels, summary, description — little workshop; may grow later |
+| Policy | Guided | Suggested typical fields (not hardcoded forever); human may edit before lock |
+| Procedure | Guided | Suggested typical fields; human may edit before lock |
 | 1–2 guided starters (e.g. service tickets) | Guided | Suggest fields; human may edit before lock |
 | Custom | Open | Empty/minimal suggestions; same design conversation as today |
+
+Starters are **guides**, not sealed product law. What locks is **this library’s approved schema**, not the starter definition in the codebase.
 
 ### Instructions vs schema
 
@@ -82,7 +84,17 @@ Same product beat as table Approve today:
 - Propose does **not** apply over MCP.
 - Human Approves in the publisher; only then do UI and MCP write schemas include the field.
 
-Sealed starters (Policy / Procedure): no add-field in v1 (or explicitly off).
+Add-field after lock: **all** starters (Documents, Policy, Procedure, table/Custom, guided packs), subject to the cap and Approve gate.
+
+### Slice 1 decisions (agreed)
+
+| Decision | Choice |
+| --- | --- |
+| Who can add fields after lock | All starters (guided Policy/Procedure included) |
+| Documents after items exist | Allow add-field |
+| Proposal shape | **One field** per proposal |
+| Field cap | **12** total fields on a library |
+| This coding pass | Propose field + Approve/Reject + enforce lock — **not** copy library yet |
 
 ---
 
@@ -164,13 +176,16 @@ Until then: template copy only; source stays active unless a human archives/dele
 
 ---
 
+## Later (not this pass): integrity checks
+
+Optional checks that a library still “looks like” its starter guide — e.g. warn if a Policy library dropped Effective date, or if required guide fields are empty on published items. Advisory or gate TBD. **Not** in slice 1; must not turn starters back into hardcode.
+
 ## Open points (small)
 
 - Exact starter names and which guided packs ship in v1.
-- Field cap (tables already lean ≤ 12).
-- One field proposal vs batch per Approve.
-- Whether Documents starter allows add-field or stays thin-and-frozen.
 - Retire semantics for the next fork-with-items feature.
+- When initial schema “locks” for guided Policy/Procedure (explicit Approve vs first item vs create-as-today).
+- How design chat edits starter fields before first lock (MCP-only vs publisher UI).
 
 ## Implementation note
 
