@@ -48,6 +48,8 @@ Open `http://127.0.0.1:3000/`. Each library has its own MCP link under **Connect
 
 **SA** is the only app-level admin flag (Accounts, add libraries, open every library, hard-delete). Everyone else is the same at the app: they can sign in until granted on a library. **Publisher** / **Reader** are per-library under Access. Publishers archive items and may delete their library; only SA hard-deletes items. With built-in sign-in, grant Access by username. Agents connect with that library’s Connect link only.
 
+A library can also have one **Reader key** (publisher UI). It is a static Reader sign-in for a shared agent: published items only, no writes, no audit log, no publisher session. People on Access still sign in with their own accounts when they use Connect.
+
 ## Later (not built)
 
 - **Library starters / schema integrity (draft)** — see `docs/library-schema-v1.md`. Starters + Custom; add-only fields via agent propose + human Approve; copy library is template-only; rename library is UI-only; fork-with-items + retire source is next.

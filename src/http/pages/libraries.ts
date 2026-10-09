@@ -483,6 +483,86 @@ function tabBadge(count: number, tone: "pending" | "archive"): string {
   return `<span class="tab-count tab-count-${tone}">${count}</span>`;
 }
 
+function readerKeyWhen(ms: number | null | undefined): string {
+  if (!ms) return "";
+  const date = new Date(ms);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+/** Publisher control for the one Reader key on this library. Readers do not see it. */
+function readerKeyPanel(input: {
+  library: LibraryRow;
+  csrf: string;
+  mcpUrl: string;
+  readerKey?: string;
+}): string {
+  const prefix = input.library.readerKeyPrefix;
+  const when = readerKeyWhen(input.library.readerKeyCreatedAt);
+  const reveal = input.readerKey;
+  const active = Boolean(prefix) && !reveal;
+  const lead = reveal
+    ? "Copy this Reader key now. It will not be shown again."
+    : active
+      ? `A Reader key is active (${prefix}…). Shared agents read published items in this library without a sign-in screen.${when ? ` Created ${when}.` : ""}`
+      : "For a shared agent such as LibreChat. One key signs in as Reader on this library. People using the agent are not asked to sign in.";
+  const secret = reveal
+    ? `<div class="mcp-link-box">
+        <code class="mcp-link" id="reader-key">${esc(reveal)}</code>
+        <button type="button" class="btn mcp-copy" data-copy="#reader-key">Copy</button>
+      </div>
+      <p class="mcp-panel-note">In LibreChat, use the Connect link as the server URL, send the header below, and set requiresOAuth to false.</p>
+      <pre class="reader-key-config" id="reader-key-config">${esc(`type: streamable-http
+url: ${input.mcpUrl}
+requiresOAuth: false
+headers:
+  Authorization: Bearer ${reveal}`)}</pre>`
+    : "";
+  const copyConfig = reveal
+    ? `<button type="button" class="btn secondary mcp-copy" data-copy="#reader-key-config">Copy LibreChat config</button>`
+    : "";
+  const actions = reveal
+    ? `${copyConfig}
+       <form method="post" action="/libraries/${esc(input.library.id)}/reader-key/remove"
+           onsubmit="${onConfirm(`Remove the Reader key for ${input.library.name}? Shared agents using it will stop.`)}">
+         <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+         <button class="btn secondary" type="submit">Remove</button>
+       </form>`
+    : active
+      ? `<form method="post" action="/libraries/${esc(input.library.id)}/reader-key"
+             onsubmit="${onConfirm(`Rotate the Reader key for ${input.library.name}? The current key stops immediately.`)}">
+           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+           <button class="btn" type="submit">Rotate</button>
+         </form>
+         <form method="post" action="/libraries/${esc(input.library.id)}/reader-key/remove"
+             onsubmit="${onConfirm(`Remove the Reader key for ${input.library.name}? Shared agents using it will stop.`)}">
+           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+           <button class="btn secondary" type="submit">Remove</button>
+         </form>`
+      : `<form method="post" action="/libraries/${esc(input.library.id)}/reader-key">
+           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+           <button class="btn" type="submit">Create Reader key</button>
+         </form>`;
+  const note = reveal
+    ? "Anyone with this key can read published items in this library. If it leaks, rotate it. It cannot change items."
+    : active
+      ? "The key itself is not shown again. Rotate it if you did not copy it, or if it leaks. It cannot change items or read the audit log."
+      : "The key is shown once. It can list and open published items only.";
+  return `<details class="mcp-menu"${reveal ? " open" : ""}>
+    <summary class="text-summary">Reader key</summary>
+    <div class="mcp-panel mcp-panel-wide" role="dialog" aria-label="Reader key for this library">
+      <div class="mcp-panel-head">
+        <p class="mcp-panel-kicker">This library</p>
+        <h2 class="mcp-panel-title">Reader key</h2>
+        <p class="mcp-panel-lead">${esc(lead)}</p>
+      </div>
+      ${secret}
+      <div class="reader-key-actions">${actions}</div>
+      <p class="mcp-panel-note">${esc(note)}</p>
+    </div>
+  </details>`;
+}
+
 export function libraryPage(input: {
   access: Access;
   csrf: string;
@@ -500,6 +580,11 @@ export function libraryPage(input: {
   orphan?: boolean;
   /** Flash after bulk Publish, e.g. "3". */
   publishedCount?: string;
+  /**
+   * Plaintext Reader key. Set only on the one response after Create or Rotate.
+   * Later loads show the prefix, not the secret.
+   */
+  readerKey?: string;
   /** Fixed notice after Approve or Reject. Not raw query text. */
   notice?: string;
   /** Item count used to explain why Approve is unavailable. */
@@ -709,15 +794,17 @@ export function libraryPage(input: {
         <div class="mcp-panel-head">
           <p class="mcp-panel-kicker">This library</p>
           <h2 class="mcp-panel-title">Connect link</h2>
-          <p class="mcp-panel-lead">Paste into Cursor or the kiosk. Sign-in is still required.</p>
+          <p class="mcp-panel-lead">Paste into Cursor or the kiosk. Each person still signs in. For a shared agent, use a Reader key.</p>
         </div>
         <div class="mcp-link-box">
           <code class="mcp-link" id="mcp-url">${esc(input.mcpUrl)}</code>
           <button type="button" class="btn mcp-copy" data-copy="#mcp-url">Copy</button>
         </div>
-        <p class="mcp-panel-note">If this link leaks, rotate it under Actions. People on Access stay.</p>
+        <p class="mcp-panel-note">If this link leaks, rotate it under Actions. People on Access stay. Rotating Connect does not change the Reader key.</p>
       </div>
     </details>`;
+
+  const readerKeyBlock = canWrite ? readerKeyPanel(input) : "";
 
   return layout({
     title: `${input.library.name} · MCPEncode`,
@@ -732,6 +819,7 @@ export function libraryPage(input: {
             <h1 title="${esc(input.library.name)}">${esc(input.library.name)}</h1>
             <div class="head-actions">
               ${mcpBlock}
+              ${readerKeyBlock}
               ${addLink}
               ${actionsMenu}
             </div>
@@ -764,15 +852,19 @@ export function libraryPage(input: {
           });
         });
         (function mcpMenu() {
-          const menu = document.querySelector(".mcp-menu");
-          if (!menu) return;
+          const menus = Array.from(document.querySelectorAll(".mcp-menu"));
+          if (menus.length === 0) return;
           document.addEventListener("click", (event) => {
-            if (!menu.open) return;
-            if (event.target instanceof Node && menu.contains(event.target)) return;
-            menu.open = false;
+            for (const menu of menus) {
+              if (!menu.open) continue;
+              if (event.target instanceof Node && menu.contains(event.target)) continue;
+              menu.open = false;
+            }
           });
           document.addEventListener("keydown", (event) => {
-            if (event.key === "Escape" && menu.open) {
+            if (event.key !== "Escape") return;
+            for (const menu of menus) {
+              if (!menu.open) continue;
               menu.open = false;
               const summary = menu.querySelector("summary");
               if (summary instanceof HTMLElement) summary.focus();

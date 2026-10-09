@@ -22,12 +22,15 @@ import {
   renameLibrary,
   revokeLibraryAccess,
   rotateLibraryConnectToken,
+  issueLibraryReaderKey,
+  clearLibraryReaderKey,
   setLibraryWriteMode,
   writeAudit,
   type LibraryAccessRow,
   type LibraryRow,
 } from "../../db/queries.ts";
 import { normalizeUsername } from "../../auth/passwords.ts";
+import { READER_REVEAL_COOKIE, stashReaderKeyReveal, takeReaderKeyReveal } from "../../auth/reader-key.ts";
 import { libraryInputSchema } from "../../items/schema.ts";
 import { writeModeLabel } from "../pages/schema-choice.ts";
 import {
@@ -38,6 +41,7 @@ import {
   requireCsrf,
   sessionAccess,
 } from "../helpers.ts";
+import { cookieHeader, readCookie } from "../cookies.ts";
 import { libraryMcpUrl } from "../library-url.ts";
 import { addItemPage, addLibraryPage, errorPage, librariesPage, libraryPage, loginPage } from "../pages.ts";
 import { loadAppShell } from "../shell.ts";
@@ -47,6 +51,11 @@ type SessionUser = Access & { csrf: string };
 
 function libraryConnectUrl(config: AppRouteContext["config"], library: LibraryRow): string {
   return libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken);
+}
+
+/** Cookie path for the one-time Reader key reveal. Matches the library page only. */
+function readerKeyCookiePath(libraryId: string): string {
+  return `/libraries/${libraryId}`;
 }
 
 /** Built-in sign-in grants by username; external IdP still uses the subject field. */
@@ -116,6 +125,14 @@ function writeModeNotice(flag: unknown): string | undefined {
     return `This library is ${writeModeLabel("direct")}. Saves are live immediately for readers and agents.`;
   }
   if (flag === "invalid") return `Choose ${writeModeLabel("reviewed")} or ${writeModeLabel("direct")}.`;
+  return undefined;
+}
+
+/** Fixed copy for ?reader-key=. Query text is never echoed. The secret is never put in the query. */
+function readerKeyNotice(flag: unknown): string | undefined {
+  if (flag === "removed") {
+    return "Reader key removed. Shared agents using it can no longer read this library until you create a new one.";
+  }
   return undefined;
 }
 
@@ -412,6 +429,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       fieldDecisionNotice(req.query.field) ??
       writeModeNotice(req.query.mode) ??
       connectNotice(req.query.connect) ??
+      readerKeyNotice(req.query["reader-key"]) ??
       renameNotice(req.query.renamed) ??
       copyNotice(req.query.copied);
     const waiting =
@@ -433,6 +451,20 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       can(ctxLib.libraryAccess, "records.write") && config.authMode === "embedded"
         ? await accountStore(db).list()
         : [];
+    const revealId = readCookie(req.headers, READER_REVEAL_COOKIE);
+    let readerKey: string | undefined;
+    if (revealId && can(ctxLib.libraryAccess, "records.write")) {
+      readerKey = takeReaderKeyReveal(revealId, ctxLib.library.id, access.sub);
+      res.append(
+        "Set-Cookie",
+        cookieHeader(READER_REVEAL_COOKIE, "", {
+          clear: true,
+          path: readerKeyCookiePath(ctxLib.library.id),
+          secure: config.publicBaseUrl.startsWith("https://"),
+        }),
+      );
+      if (readerKey) res.setHeader("Cache-Control", "no-store");
+    }
     res.send(
       libraryPage({
         access: ctxLib.libraryAccess,
@@ -441,6 +473,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         items,
         q,
         tab,
+        readerKey,
         mcpUrl: libraryConnectUrl(config, ctxLib.library),
         accessList,
         accounts,
@@ -629,6 +662,74 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         }),
       );
     }
+  });
+
+  // Issue or rotate the Reader key. The plaintext is shown once on the next page load.
+  app.post("/libraries/:id/reader-key", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only publishers on this library can create a Reader key."));
+      return;
+    }
+    const issued = await issueLibraryReaderKey(db, ctxLib.library.id, access.sub);
+    if (!issued) {
+      res.status(404).send(errorPage("Library not found."));
+      return;
+    }
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.reader_key_issue",
+      success: true,
+      detail: ctxLib.library.id,
+    });
+    const revealId = stashReaderKeyReveal({
+      libraryId: ctxLib.library.id,
+      sub: access.sub,
+      key: issued.key,
+    });
+    res.setHeader(
+      "Set-Cookie",
+      cookieHeader(READER_REVEAL_COOKIE, revealId, {
+        maxAge: 120,
+        path: readerKeyCookiePath(ctxLib.library.id),
+        secure: config.publicBaseUrl.startsWith("https://"),
+      }),
+    );
+    res.redirect(`/libraries/${ctxLib.library.id}`);
+  });
+
+  app.post("/libraries/:id/reader-key/remove", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only publishers on this library can remove a Reader key."));
+      return;
+    }
+    await clearLibraryReaderKey(db, ctxLib.library.id, access.sub);
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.reader_key_remove",
+      success: true,
+      detail: ctxLib.library.id,
+    });
+    res.redirect(`/libraries/${ctxLib.library.id}?reader-key=removed`);
   });
 
   app.post("/libraries/:id/rename", async (req, res) => {

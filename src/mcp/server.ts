@@ -2,6 +2,7 @@ import type { AuthInfo } from "@modelcontextprotocol/server";
 import { McpServer } from "@modelcontextprotocol/server";
 import type { Database } from "../db/types.ts";
 import { z } from "zod/v4";
+import { readerKeySubject } from "../auth/reader-key.ts";
 import { accessForLibrary, can, type LibraryRole, type Role } from "../auth/rbac.ts";
 import {
   addDraftItem,
@@ -45,6 +46,9 @@ export const UNAUTHORIZED_MCP =
 
 export const FORBIDDEN_LIBRARY =
   "Signed in, but this account cannot open this library. Ask a publisher on the library to grant your IdP subject access.";
+
+export const READER_KEY_REJECTED =
+  "Reader key was not accepted. A publisher can rotate it on this library. A Reader key only reads published items.";
 
 /**
  * How publishers should collect and store live data in a Review Unlock library
@@ -97,6 +101,29 @@ ${NOT_CONNECTED}
 Speak to the human in everyday words (library, item). Do not say MCP unless they do.`;
 }
 
+/**
+ * Lookup instructions for a Reader key connection.
+ * No write tools are registered, and the prompt does not invite writes.
+ */
+export function readerKeyInstructions(libraryName: string, schema: LibrarySchema): string {
+  return `You look up human-authored items in the library "${libraryName}". Cite an item or say it is not in the library. Do not invent.
+
+How to look up — one call:
+list_items with q (the question or the item name). A clear match returns the full item. Cite it. Do not call open_item after that.
+
+Call open_item only when list_items returns several matches. You are already connected to this library; do not ask for a library name or library_id.
+
+Omit q only to list names and summaries in this library. That list is for choosing. To answer, pass q and cite the item.
+
+${schemaAgentBlurb(schema)}
+
+This connection is a Reader key for this library. You can list and open published items only. You cannot add, edit, publish, delete, or read the audit log.
+
+${NOT_CONNECTED}
+
+Speak to the human in everyday words (library, item). Do not say MCP unless they do.`;
+}
+
 function deny(message: string) {
   return { content: [{ type: "text" as const, text: message }], isError: true as const };
 }
@@ -123,6 +150,12 @@ export type LibraryMcpContext = {
   idpRole: Role;
   schema: LibrarySchema;
   writeMode: "reviewed" | "direct";
+  /**
+   * Set only for the library Reader key.
+   * Forces Reader, published items, and hides the audit log even if the
+   * bearer was somehow marked SA.
+   */
+  readerKey?: boolean;
 };
 
 export type BuildMcpServerOptions = {
@@ -140,6 +173,9 @@ export function buildMcpServer(
   library: LibraryMcpContext,
   options: BuildMcpServerOptions = {},
 ): McpServer {
+  // A Reader key is not an account. Ignore any role on the auth object.
+  const readerKey = library.readerKey === true;
+  const libraryRole: LibraryRole = readerKey ? "reader" : library.libraryRole;
   const idpAccess = (() => {
     const extra = (authInfo.extra ?? {}) as { sub?: string; role?: Role };
     return {
@@ -148,21 +184,32 @@ export function buildMcpServer(
       idpRole: extra.role ?? library.idpRole,
     };
   })();
-  const access =
-    accessForLibrary({
-      sub: idpAccess.sub,
-      clientId: idpAccess.clientId,
-      idpRole: idpAccess.idpRole,
-      libraryRole: library.libraryRole,
-    }) ?? accessForLibrary({
-      sub: idpAccess.sub,
-      clientId: idpAccess.clientId,
-      idpRole: "readonly",
-      libraryRole: "reader",
-    })!;
+  const access = readerKey
+    ? {
+        sub: readerKeySubject(library.libraryId),
+        clientId: "library-reader-key",
+        role: "readonly" as const,
+        libraryRole: "reader" as const,
+        permissions: ["records.read"] as const,
+      }
+    : (accessForLibrary({
+        sub: idpAccess.sub,
+        clientId: idpAccess.clientId,
+        idpRole: idpAccess.idpRole,
+        libraryRole,
+      }) ?? accessForLibrary({
+        sub: idpAccess.sub,
+        clientId: idpAccess.clientId,
+        idpRole: "readonly",
+        libraryRole: "reader",
+      })!);
   const server = new McpServer(
     { name: "mcpencode", version: "0.3.0" },
-    { instructions: agentInstructions(library.libraryName, library.schema, library.writeMode) },
+    {
+      instructions: readerKey
+        ? readerKeyInstructions(library.libraryName, library.schema)
+        : agentInstructions(library.libraryName, library.schema, library.writeMode),
+    },
   );
 
   /** Item text plus file names. Bytes stay in Postgres and are not sent to the agent. */
@@ -221,7 +268,8 @@ export function buildMcpServer(
             clientId: access.clientId,
             library_id: library.libraryId,
             library_name: library.libraryName,
-            library_role: library.libraryRole,
+            library_role: libraryRole,
+            sign_in: readerKey ? "reader-key" : "account",
             write_mode: library.writeMode,
             permissions: access.permissions,
           },
@@ -252,7 +300,7 @@ export function buildMcpServer(
         annotations: { readOnlyHint: true },
       },
       async (query) => {
-        const publishedOnly = library.libraryRole === "reader";
+        const publishedOnly = libraryRole === "reader";
         if (query.entity_key) {
           const row = await getItemByEntityKey(db, library.libraryId, query.entity_key, {
             publishedOnly,
@@ -351,7 +399,7 @@ export function buildMcpServer(
       },
       async ({ id }) => {
         const row = await getItem(db, id, {
-          publishedOnly: library.libraryRole === "reader",
+          publishedOnly: libraryRole === "reader",
           libraryId: library.libraryId,
         });
         if (!row) {
@@ -652,5 +700,23 @@ export async function resolveLibraryMcpAccess(
     idpRole,
     schema: library.schema,
     writeMode: library.writeMode,
+  };
+}
+
+/** MCP scope for a Reader key. Always Reader, never the caller's account role. */
+export function readerKeyLibraryContext(library: {
+  id: string;
+  name: string;
+  schema: LibrarySchema;
+  writeMode: "reviewed" | "direct";
+}): LibraryMcpContext {
+  return {
+    libraryId: library.id,
+    libraryName: library.name,
+    libraryRole: "reader",
+    idpRole: "readonly",
+    schema: library.schema,
+    writeMode: library.writeMode,
+    readerKey: true,
   };
 }

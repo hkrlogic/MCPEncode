@@ -16,7 +16,7 @@ export function parseCookies(header: string | undefined): Record<string, string>
 export function cookieHeader(
   name: string,
   value: string,
-  options: { maxAge?: number; httpOnly?: boolean; path?: string; clear?: boolean } = {},
+  options: { maxAge?: number; httpOnly?: boolean; path?: string; clear?: boolean; secure?: boolean } = {},
 ): string {
   const parts = [
     `${name}=${options.clear ? "" : encodeURIComponent(value)}`,
@@ -24,6 +24,7 @@ export function cookieHeader(
     "SameSite=Lax",
   ];
   if (options.httpOnly !== false) parts.push("HttpOnly");
+  if (options.secure) parts.push("Secure");
   if (options.clear) {
     parts.push("Max-Age=0");
   } else if (options.maxAge !== undefined) {

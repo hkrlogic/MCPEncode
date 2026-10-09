@@ -6,6 +6,7 @@ import { isLibraryWriteMode, libraryInputSchema, type LibraryWriteMode } from ".
 import { parseStoredFieldProposal } from "../items/field-proposal.ts";
 import { parseStoredTableProposal, type TableProposal, type TableProposalDraft } from "../items/table-proposal.ts";
 import { isLibraryTemplate, type LibraryTemplate } from "../items/templates.ts";
+import { generateReaderKey, hashReaderKey, readerKeyPrefix } from "../auth/reader-key.ts";
 import { grantLibraryAccess } from "./access.ts";
 import type { LibraryRow } from "./models.ts";
 import { allRows, escapeLike, getRow, runSql } from "./query-helpers.ts";
@@ -33,14 +34,24 @@ type SqlLibrary = Omit<
   | "fieldProposalUnreadable"
   | "writeMode"
   | "connectToken"
+  | "readerKeyPrefix"
+  | "readerKeyCreatedAt"
 > & {
   template?: string;
   write_mode?: string;
   connect_token?: string;
+  reader_key_prefix?: string | null;
+  reader_key_created_at?: number | string | null;
   schema?: unknown;
   table_proposal?: unknown;
   field_proposal?: unknown;
 };
+
+function asMillis(value: number | string | null | undefined): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
 function toLibrary(row: SqlLibrary): LibraryRow {
   const template = libraryTemplate(row.template);
@@ -57,6 +68,8 @@ function toLibrary(row: SqlLibrary): LibraryRow {
     fieldProposal: fieldStored.proposal,
     fieldProposalUnreadable: fieldStored.unreadable,
     connectToken: row.connect_token ?? "",
+    readerKeyPrefix: row.reader_key_prefix || null,
+    readerKeyCreatedAt: asMillis(row.reader_key_created_at),
     created_by: row.created_by,
     updated_by: row.updated_by,
     created_at: row.created_at,
@@ -156,6 +169,68 @@ export async function rotateLibraryConnectToken(
     db,
     "UPDATE libraries SET connect_token = ?, updated_by = ?, updated_at = ? WHERE id = ?",
     freshConnectToken(),
+    actorSub,
+    now,
+    id,
+  );
+  return getLibrary(db, id);
+}
+
+/** Stored hash only. Callers compare it with readerKeyMatches and never send it to the browser. */
+export async function getLibraryReaderKeyHash(db: Database, id: string): Promise<string | null> {
+  const row = await getRow<{ reader_key_hash: string | null }>(
+    db,
+    "SELECT reader_key_hash FROM libraries WHERE id = ?",
+    id,
+  );
+  return row?.reader_key_hash ?? null;
+}
+
+/**
+ * Replace this library's Reader key. The plaintext is returned once.
+ * The previous key stops working immediately. UI only — no MCP tool issues a key.
+ */
+export async function issueLibraryReaderKey(
+  db: Database,
+  id: string,
+  actorSub: string,
+): Promise<{ library: LibraryRow; key: string } | undefined> {
+  const existing = await getLibrary(db, id);
+  if (!existing) return undefined;
+  const key = generateReaderKey();
+  const now = Date.now();
+  await runSql(
+    db,
+    `UPDATE libraries
+     SET reader_key_hash = ?, reader_key_prefix = ?, reader_key_created_at = ?, updated_by = ?, updated_at = ?
+     WHERE id = ?`,
+    hashReaderKey(key),
+    readerKeyPrefix(key),
+    now,
+    actorSub,
+    now,
+    id,
+  );
+  const library = await getLibrary(db, id);
+  if (!library) return undefined;
+  return { library, key };
+}
+
+/** Drop the Reader key. Connect and Access are unchanged. */
+export async function clearLibraryReaderKey(
+  db: Database,
+  id: string,
+  actorSub: string,
+): Promise<LibraryRow | undefined> {
+  const existing = await getLibrary(db, id);
+  if (!existing) return undefined;
+  const now = Date.now();
+  await runSql(
+    db,
+    `UPDATE libraries
+     SET reader_key_hash = NULL, reader_key_prefix = NULL, reader_key_created_at = NULL,
+         updated_by = ?, updated_at = ?
+     WHERE id = ?`,
     actorSub,
     now,
     id,

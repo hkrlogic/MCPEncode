@@ -60,6 +60,7 @@ No publish, approve, write-mode, or revert tools. Those stay in the publisher UI
 - Embedded mode is a development IdP in-process (OAuth 2.1 + PKCE). Do not expose it on a public network without understanding the tradeoffs.
 - Access tokens must pass signature, issuer, expiry, and audience.
 - Library access is an allow-list of subjects with reader or publisher role.
+- A **Reader key** is optional, one per library, and Reader only. Publishers create it under Reader key; the plaintext is shown once and Postgres stores a SHA-256 hash. It lists and opens published items. It cannot write, publish, or read the audit log, and it cannot sign in to the publisher. Rotating Connect does not change it. In LibreChat, put the Connect link on the server, send `Authorization: Bearer <key>`, and set `requiresOAuth: false`.
 - The access token is never written to Postgres — only `sub` as actor fields.
 - Tool results label store content as **data**, not instructions.
 - Markdown preview does not execute raw HTML in item bodies.

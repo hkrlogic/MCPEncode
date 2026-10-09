@@ -31,6 +31,13 @@ export type LibraryRow = {
    * Rotate to kill a leaked Connect link; access grants stay as they are.
    */
   connectToken: string;
+  /**
+   * First characters of the Reader key, safe to show.
+   * Null when this library has no Reader key. The secret is never stored.
+   */
+  readerKeyPrefix?: string | null;
+  /** When the current Reader key was created. Null when there is no key. */
+  readerKeyCreatedAt?: number | null;
   created_by: string;
   updated_by: string;
   created_at: number;

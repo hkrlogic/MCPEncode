@@ -777,6 +777,28 @@ a { color: var(--accent); }
   line-height: 1.4;
   color: var(--muted);
 }
+.mcp-panel-wide { width: min(34rem, calc(100vw - 2.5rem)); }
+.reader-key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.85rem 1.15rem 0.15rem;
+}
+.reader-key-actions form { margin: 0; }
+.reader-key-config {
+  margin: 0 1.15rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 55%, #fff);
+  color: var(--ink);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: all;
+}
 /* Desktop: the drawer box disappears and the sidebar is the first column. */
 .lib-drawer { display: contents; }
 .lib-nav-toggle,

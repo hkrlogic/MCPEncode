@@ -14,15 +14,23 @@ import {
   createMcpHandler,
 } from "@modelcontextprotocol/server";
 import type { Database } from "../db/types.ts";
-import { getLibrary } from "../db/queries.ts";
+import { getLibrary, getLibraryReaderKeyHash } from "../db/queries.ts";
+import {
+  bearerFromAuthorization,
+  isReaderKeyToken,
+  readerKeyAuthInfo,
+  readerKeyMatches,
+} from "../auth/reader-key.ts";
 import type { AppConfig } from "../config.ts";
 import { libraryTokenAudience } from "../auth/audience.ts";
 import { loginScopes } from "../auth/scopes.ts";
 import { createTokenVerifier } from "../auth/verifier.ts";
 import {
   FORBIDDEN_LIBRARY,
+  READER_KEY_REJECTED,
   UNAUTHORIZED_MCP,
   buildMcpServer,
+  readerKeyLibraryContext,
   resolveLibraryMcpAccess,
 } from "../mcp/server.ts";
 import type { AuthServerEndpoints } from "./discovery.ts";
@@ -201,6 +209,32 @@ export function createApp(input: {
     const resourceUrl = new URL(
       libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken),
     );
+
+    // Reader key: one library, published items only. Handled before OAuth so a
+    // shared agent is not sent through the sign-in screen. A bad key does not
+    // advertise the OAuth challenge.
+    const authorization = req.headers.authorization;
+    const bearer = bearerFromAuthorization(typeof authorization === "string" ? authorization : undefined);
+    if (bearer && isReaderKeyToken(bearer)) {
+      const stored = await getLibraryReaderKeyHash(db, library.id);
+      if (!readerKeyMatches(bearer, stored)) {
+        res.status(401).json({
+          error: "invalid_token",
+          error_description: READER_KEY_REJECTED,
+        });
+        return;
+      }
+      const authInfo = readerKeyAuthInfo(library.id);
+      (req as express.Request & { auth?: typeof authInfo }).auth = authInfo;
+      const scoped = readerKeyLibraryContext(library);
+      const mcpHandler = createMcpHandler(({ authInfo: info }) => {
+        if (!info) throw new Error("MCP handler invoked without authInfo");
+        return buildMcpServer(db, info, scoped, { publicBaseUrl: config.publicBaseUrl });
+      });
+      void toNodeHandler(mcpHandler)(req, res, req.body);
+      return;
+    }
+
     const verifier = createTokenVerifier({
       issuer: config.authIssuer,
       audience: libraryTokenAudience(config, resourceUrl.toString()),
