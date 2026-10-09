@@ -45,6 +45,29 @@ function isUniqueViolation(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "23505");
 }
 
+/**
+ * One lock for SA on/off and disable.
+ * The check and the update must not interleave, or two requests can each
+ * see "someone else is still SA" and then turn both off.
+ */
+function withSaGuard<T>(db: Database, fn: (tx: Database) => Promise<T>): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.get("SELECT pg_advisory_xact_lock(hashtext('mcpencode-sa-guard'))");
+    return fn(tx);
+  });
+}
+
+/** Other accounts that can still sign in as SA. Legacy `edit` rows count as SA. */
+async function otherActiveSaCount(db: Database, exceptId: string): Promise<number> {
+  const row = await getRow<{ n: string | number }>(
+    db,
+    `SELECT COUNT(*) AS n FROM accounts
+     WHERE role IN ('sa', 'edit') AND disabled = FALSE AND id <> ?`,
+    exceptId,
+  );
+  return Number(row?.n ?? 0);
+}
+
 export function accountStore(db: Database): AccountStore {
   return {
     async count() {
@@ -146,48 +169,37 @@ export function accountStore(db: Database): AccountStore {
       return { ok: true };
     },
     async setDisabled(id, disabled) {
-      const row = await getRow<AccountRow>(
-        db,
-        "SELECT id, username, password_hash, role, disabled FROM accounts WHERE id = ?",
-        id,
-      );
-      if (!row) return { ok: false, message: "Account not found." };
-      if (disabled && asRole(row.role) === "sa") {
-        const others = await getRow<{ n: string | number }>(
-          db,
-          `SELECT COUNT(*) AS n FROM accounts
-           WHERE role IN ('sa', 'edit') AND disabled = FALSE AND id <> ?`,
+      return withSaGuard(db, async (tx) => {
+        const row = await getRow<AccountRow>(
+          tx,
+          "SELECT id, username, password_hash, role, disabled FROM accounts WHERE id = ?",
           id,
         );
-        if (Number(others?.n ?? 0) <= 0) {
-          return { ok: false, message: "Keep at least one active SA account." };
+        if (!row) return { ok: false as const, message: "Account not found." };
+        if (disabled && asRole(row.role) === "sa" && (await otherActiveSaCount(tx, id)) <= 0) {
+          return { ok: false as const, message: "Keep at least one active SA account." };
         }
-      }
-      await db.run("UPDATE accounts SET disabled = ? WHERE id = ?", disabled, id);
-      const updated = toStored({ ...row, disabled });
-      return { ok: true, account: publicAccount(updated) };
+        await tx.run("UPDATE accounts SET disabled = ? WHERE id = ?", disabled, id);
+        const updated = toStored({ ...row, disabled });
+        return { ok: true as const, account: publicAccount(updated) };
+      });
     },
     async setSa(id, sa) {
-      const row = await getRow<AccountRow>(
-        db,
-        "SELECT id, username, password_hash, role, disabled FROM accounts WHERE id = ?",
-        id,
-      );
-      if (!row) return { ok: false, message: "Account not found." };
-      if (!sa && asRole(row.role) === "sa") {
-        const others = await getRow<{ n: string | number }>(
-          db,
-          `SELECT COUNT(*) AS n FROM accounts
-           WHERE role IN ('sa', 'edit') AND disabled = FALSE AND id <> ?`,
+      return withSaGuard(db, async (tx) => {
+        const row = await getRow<AccountRow>(
+          tx,
+          "SELECT id, username, password_hash, role, disabled FROM accounts WHERE id = ?",
           id,
         );
-        if (Number(others?.n ?? 0) <= 0) {
-          return { ok: false, message: "Keep at least one active SA account." };
+        if (!row) return { ok: false as const, message: "Account not found." };
+        // Turning SA off must leave another account that can still sign in as SA.
+        if (!sa && asRole(row.role) === "sa" && (await otherActiveSaCount(tx, id)) <= 0) {
+          return { ok: false as const, message: "Keep at least one active SA account." };
         }
-      }
-      const role: AccountRole = sa ? "sa" : "readonly";
-      await db.run("UPDATE accounts SET role = ? WHERE id = ?", role, id);
-      return { ok: true, account: publicAccount(toStored({ ...row, role })) };
+        const role: AccountRole = sa ? "sa" : "readonly";
+        await tx.run("UPDATE accounts SET role = ? WHERE id = ?", role, id);
+        return { ok: true as const, account: publicAccount(toStored({ ...row, role })) };
+      });
     },
   };
 }

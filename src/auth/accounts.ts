@@ -51,9 +51,23 @@ function publicAccount(row: StoredAccount): Account {
   return { id: row.id, username: row.username, role: row.role, disabled: row.disabled };
 }
 
+function hasOtherActiveSa(rows: StoredAccount[], exceptId: string): boolean {
+  return rows.some((entry) => entry.id !== exceptId && entry.role === "sa" && !entry.disabled);
+}
+
 /** Empty store for tests and for mounting the identity provider without Postgres. */
 export function memoryAccountStore(): AccountStore {
   const rows: StoredAccount[] = [];
+  // Same rule as Postgres: SA changes run one at a time so the last SA cannot be removed twice.
+  let saGuard: Promise<unknown> = Promise.resolve();
+  function withSaGuard<T>(fn: () => Promise<T>): Promise<T> {
+    const run = saGuard.then(fn, fn);
+    saGuard = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
   return {
     async count() {
       return rows.length;
@@ -97,28 +111,26 @@ export function memoryAccountStore(): AccountStore {
       return { ok: true };
     },
     async setDisabled(id, disabled) {
-      const row = rows.find((entry) => entry.id === id);
-      if (!row) return { ok: false, message: "Account not found." };
-      if (disabled && row.role === "sa") {
-        const activeSa = rows.filter((entry) => entry.role === "sa" && !entry.disabled && entry.id !== id);
-        if (activeSa.length === 0) {
-          return { ok: false, message: "Keep at least one active SA account." };
+      return withSaGuard(async () => {
+        const row = rows.find((entry) => entry.id === id);
+        if (!row) return { ok: false as const, message: "Account not found." };
+        if (disabled && row.role === "sa" && !hasOtherActiveSa(rows, id)) {
+          return { ok: false as const, message: "Keep at least one active SA account." };
         }
-      }
-      row.disabled = disabled;
-      return { ok: true, account: publicAccount(row) };
+        row.disabled = disabled;
+        return { ok: true as const, account: publicAccount(row) };
+      });
     },
     async setSa(id, sa) {
-      const row = rows.find((entry) => entry.id === id);
-      if (!row) return { ok: false, message: "Account not found." };
-      if (!sa && row.role === "sa") {
-        const activeSa = rows.filter((entry) => entry.role === "sa" && !entry.disabled && entry.id !== id);
-        if (activeSa.length === 0) {
-          return { ok: false, message: "Keep at least one active SA account." };
+      return withSaGuard(async () => {
+        const row = rows.find((entry) => entry.id === id);
+        if (!row) return { ok: false as const, message: "Account not found." };
+        if (!sa && row.role === "sa" && !hasOtherActiveSa(rows, id)) {
+          return { ok: false as const, message: "Keep at least one active SA account." };
         }
-      }
-      row.role = sa ? "sa" : "readonly";
-      return { ok: true, account: publicAccount(row) };
+        row.role = sa ? "sa" : "readonly";
+        return { ok: true as const, account: publicAccount(row) };
+      });
     },
   };
 }

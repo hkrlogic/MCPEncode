@@ -40,6 +40,8 @@ export function accountsPage(input: {
           ? `<p class="notice" role="status">${esc(input.notice)}</p>`
           : "";
 
+  // Active SA accounts that can still sign in. The last one cannot be turned off.
+  const activeSaCount = input.accounts.filter((account) => account.role === "sa" && !account.disabled).length;
   const rows = input.accounts
     .map((account) => {
       const isSa = account.role === "sa";
@@ -47,20 +49,21 @@ export function accountsPage(input: {
       const self = account.id === input.access.sub;
       const resetId = `reset-${account.id}`;
       const nextSa = isSa ? "0" : "1";
+      const lastActiveSa = isSa && !disabled && activeSaCount <= 1;
       const saConfirm = isSa
         ? self
           ? "Remove your own SA admin?\n\nYou keep this account but lose Accounts management and global library access. Library Access grants stay."
           : `Remove SA from ${account.username}?\n\nThey keep the account and any library Access grants. They will no longer manage Accounts or open libraries they are not granted on.`
         : saGrantConfirm(account.username);
-      return `
-        <li class="user-row${disabled ? " is-disabled" : ""}">
-          <span class="user-avatar" aria-hidden="true">${esc(initial(account.username))}</span>
-          <div class="user-identity">
-            <span class="user-name">${esc(account.username)}</span>
-            ${self ? `<span class="user-you">You</span>` : ""}
-          </div>
-          <div class="user-sa" data-area="sa">
-            <form method="post" action="/accounts/${esc(account.id)}/sa" class="user-sa-form"
+      // No form for the last SA: a disabled submit button can still be posted by changing the page.
+      const saControl = lastActiveSa
+        ? `<button type="button" class="write-mode-toggle-btn is-on" role="switch" disabled
+                   aria-checked="true"
+                   aria-label="SA for ${esc(account.username)} stays on. At least one SA must remain."
+                   title="Assign SA to another account before turning this off.">
+             <span class="write-mode-toggle-knob" aria-hidden="true"></span>
+           </button>`
+        : `<form method="post" action="/accounts/${esc(account.id)}/sa" class="user-sa-form"
                   onsubmit="${onConfirm(saConfirm)}">
               <input type="hidden" name="csrf" value="${esc(input.csrf)}">
               <input type="hidden" name="sa" value="${nextSa}">
@@ -70,7 +73,16 @@ export function accountsPage(input: {
                       ${disabled ? " disabled" : ""}>
                 <span class="write-mode-toggle-knob" aria-hidden="true"></span>
               </button>
-            </form>
+            </form>`;
+      return `
+        <li class="user-row${disabled ? " is-disabled" : ""}">
+          <span class="user-avatar" aria-hidden="true">${esc(initial(account.username))}</span>
+          <div class="user-identity">
+            <span class="user-name">${esc(account.username)}</span>
+            ${self ? `<span class="user-you">You</span>` : ""}
+          </div>
+          <div class="user-sa" data-area="sa">
+            ${saControl}
             <span class="user-sa-label${isSa ? " is-on" : ""}">${isSa ? "SA" : "Off"}</span>
           </div>
           <span class="user-badge ${disabled ? "user-badge-off" : "user-badge-on"}">${
@@ -167,7 +179,11 @@ export function accountsPage(input: {
         <header class="users-head">
           <div class="users-head-copy">
             <h1>Accounts</h1>
-            <p class="hint">People who can sign in. Library permissions are granted under Access on each library. SA is the only app-level admin.</p>
+            <p class="hint">People who can sign in. Library permissions are granted under Access on each library. SA is the only app-level admin.${
+              activeSaCount === 1
+                ? " At least one SA must stay on. Assign SA to another account before turning it off."
+                : ""
+            }</p>
           </div>
           ${addControl}
         </header>
