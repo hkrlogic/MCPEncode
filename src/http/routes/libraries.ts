@@ -164,7 +164,11 @@ function listLibraryItems(
     db,
     { library_id: library.id, q: query.q, limit: query.limit ?? 200 },
     { publishedOnly },
-    { includeDetails: library.schema.starter === "table" },
+    {
+      includeDetails: library.schema.starter === "table",
+      // Readers never receive drafts. Publishers get a change summary on Pending rows.
+      review: publishedOnly ? undefined : library.schema,
+    },
   );
 }
 

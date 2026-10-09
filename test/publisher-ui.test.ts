@@ -155,6 +155,55 @@ test("a table library lists items by name and summary like every other library",
   assert.doesNotMatch(html, /Bring the laptop/);
 });
 
+test("pending rows show whether an item is new or which short fields changed", () => {
+  const lib = library();
+  const items: ItemSummary[] = [
+    {
+      id: "new-1",
+      library_id: lib.id,
+      name: "Lobby",
+      entity_key: null,
+      labels: [],
+      summary: "Front desk",
+      status: "draft",
+      updated_at: 2,
+      review: { kind: "new" },
+    },
+    {
+      id: "edit-1",
+      library_id: lib.id,
+      name: "VPN",
+      entity_key: null,
+      labels: [],
+      summary: "Travel laptops",
+      status: "draft",
+      updated_at: 1,
+      review: {
+        kind: "changed",
+        fields: [
+          { label: "Summary", before: "Company VPN", after: "Travel laptops <script>", long: false },
+          { label: "Description", before: "old body", after: "new body", long: true },
+        ],
+      },
+    },
+  ];
+  const html = libraryPage({ ...shell, access: publisher, library: lib, items, tab: "pending" });
+  assert.match(html, /Each row shows what changed/);
+  assert.match(html, /class="review-badge">New</);
+  assert.match(html, /Front desk/);
+  assert.match(html, />Summary</);
+  assert.match(html, /Company VPN/);
+  assert.match(html, /Travel laptops &lt;script&gt;/);
+  assert.match(html, />Description</);
+  assert.match(html, /Open the item to read the full text/);
+  assert.doesNotMatch(html, /old body/);
+  assert.doesNotMatch(html, /Travel laptops <script>/);
+
+  const itemsTab = libraryPage({ ...shell, access: publisher, library: lib, items });
+  assert.doesNotMatch(itemsTab, /class="review-badge"/);
+  assert.doesNotMatch(itemsTab, /Company VPN/);
+});
+
 test("publish diff labels the previous and current text", () => {
   const item: ItemRow = {
     id: "item-1",
@@ -222,6 +271,8 @@ test("Edit and Archive live in Actions; Publish stays primary; only SA hard-dele
   assert.match(html, /href="\/items\/item-1\/export\.md"/);
   assert.match(html, /Export Markdown/);
   assert.ok(html.indexOf('href="/items/item-1/edit"') > 0);
+  assert.match(html, /id="what-changed"/);
+  assert.match(html, /New item\. Nothing has been published yet\./);
   assert.match(html, /Changes since published/);
   assert.match(html, /id="publish-diff"/);
   assert.match(html, /Archive/);
@@ -242,6 +293,7 @@ test("Edit and Archive live in Actions; Publish stays primary; only SA hard-dele
   });
   assert.match(publishedHtml, /Unpublish/);
   assert.match(publishedHtml, /Archive/);
+  assert.doesNotMatch(publishedHtml, /What changed/);
   assert.doesNotMatch(publishedHtml, /action="\/items\/item-1\/publish"/);
 
   const saHtml = itemPage({

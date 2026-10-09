@@ -1369,7 +1369,7 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   gap: 0.45rem;
 }
 .user-sa-form { margin: 0; }
-.user-sa-form .write-mode-toggle-btn:disabled {
+.user-sa .write-mode-toggle-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -1876,7 +1876,7 @@ button.linkish {
 }
 .item-list-selectable .item-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.65rem;
   padding: 0 0.65rem 0 0.7rem;
   border-bottom: 1px solid var(--line);
@@ -1895,6 +1895,9 @@ button.linkish {
   accent-color: var(--accent);
   cursor: pointer;
 }
+.pending-list .item-row > .item-pick {
+  margin-top: 1.15rem;
+}
 #pending-publish-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -1903,6 +1906,66 @@ button.linkish {
 .item-name-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .item-status { margin: 0; }
 .item-list .excerpt { margin: 0; }
+.review-badge {
+  display: inline-block;
+  margin-top: 0.3rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: #f3e6c8;
+  color: #6a4f12;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+.review-note,
+.review-hint {
+  display: block;
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.review-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.review-change { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; }
+.review-field {
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+.review-side {
+  font-size: 0.9rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.review-k {
+  display: inline-block;
+  min-width: 5.6rem;
+  margin-right: 0.35rem;
+  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.item-review {
+  margin: 0.85rem 0 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.item-review h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1.05rem;
+}
 .item-labels { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.2rem; }
 .status {
   display: inline-block;
@@ -1954,7 +2017,7 @@ fieldset.field-group legend { font-family: "Source Sans 3", "Segoe UI", sans-ser
 }
 .gate-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0 0.25rem; }
 
-/* Slide-up sheet (Changes since published). */
+/* Slide-up sheet. */
 .sheet {
   position: fixed;
   inset: 0;

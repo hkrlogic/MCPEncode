@@ -628,7 +628,7 @@ export function libraryPage(input: {
   const pendingHint =
     input.library.writeMode === "direct"
       ? `Not live right now. In ${writeModeLabel("direct")}, saving an item makes it live again.`
-      : "Drafts waiting to be published. Not visible to the kiosk.";
+      : "Drafts waiting to be published. Each row shows what changed. Not visible to the kiosk.";
   const pendingPanel =
     pending.length === 0
       ? `

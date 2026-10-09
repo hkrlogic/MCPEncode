@@ -1,6 +1,7 @@
 /** Shared row and scope types for library/item DB access. */
 import type { FieldProposal } from "../items/field-proposal.ts";
 import type { LibrarySchema } from "../items/library-schema.ts";
+import type { ItemReview } from "../items/review.ts";
 import type { LibraryWriteMode } from "../items/schema.ts";
 import type { TableProposal } from "../items/table-proposal.ts";
 import type { LibraryTemplate, PolicyDetails, ProcedureDetails } from "../items/templates.ts";
@@ -83,6 +84,11 @@ export type ItemSummary = {
    * Absent on the normal catalog list so MCP stays a summary.
    */
   values?: Record<string, string>;
+  /**
+   * What changed since the last publish. Set only for Pending rows on the
+   * publisher list. MCP summaries omit it.
+   */
+  review?: ItemReview;
 };
 
 export type AuditRow = {

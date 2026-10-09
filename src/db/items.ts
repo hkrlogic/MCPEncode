@@ -1,6 +1,7 @@
 /** Item CRUD and status gate (draft / published / archived). */
 import type { Database } from "./types.ts";
-import type { ItemWriteInput } from "../items/library-schema.ts";
+import type { ItemWriteInput, LibrarySchema } from "../items/library-schema.ts";
+import { itemReview } from "../items/review.ts";
 import {
   excerptOf,
   isValidEntityKey,
@@ -22,6 +23,7 @@ import {
   canRevertToPublished,
   libraryWhere,
   parseLabels,
+  parsePublishedSnapshot,
   runSql,
   snapshotFromItem,
   summaryFor,
@@ -47,24 +49,41 @@ type ListHit = {
   summary: string;
   status: string;
   updated_at: number;
-  /** Present only when the list asked for table column values. */
+  /** Present only when the list asked for table column values or a Pending review. */
   details?: string | null;
+  body?: string;
+  published_snapshot?: string | null;
 };
 
-function toSummary(row: ListHit, includeValues: boolean): ItemSummary {
+function toSummary(row: ListHit, options: { includeValues: boolean; review?: LibrarySchema }): ItemSummary {
+  const labels = parseLabels(row.labels);
   const summary: ItemSummary = {
     id: row.id,
     library_id: row.library_id,
     name: row.name,
     entity_key: typeof row.entity_key === "string" && row.entity_key ? row.entity_key : null,
-    labels: parseLabels(row.labels),
+    labels,
     summary: excerptOf(row.summary),
     status: asStatus(row.status),
     updated_at: row.updated_at,
   };
-  if (includeValues) {
+  if (options.includeValues) {
     const values = parseTableValues(typeof row.details === "string" ? row.details : null);
     if (values) summary.values = values;
+  }
+  // Pending rows on the publisher list say what changed. MCP lists do not ask for this.
+  if (options.review && summary.status === "draft") {
+    summary.review = itemReview(
+      {
+        name: row.name,
+        labels,
+        summary: row.summary,
+        body: row.body ?? "",
+        details: typeof row.details === "string" ? row.details : null,
+      },
+      parsePublishedSnapshot(row.published_snapshot),
+      options.review,
+    );
   }
   return summary;
 }
@@ -94,7 +113,7 @@ export async function listItems(
   db: Database,
   query: ListQuery = {},
   scope: ReadScope = { publishedOnly: true },
-  options: { includeDetails?: boolean } = {},
+  options: { includeDetails?: boolean; review?: LibrarySchema } = {},
 ): Promise<ItemSummary[]> {
   if (!query.library_id) {
     throw new Error("library_id is required");
@@ -122,9 +141,13 @@ export async function listItems(
   }
   params.push(limit, offset);
   // details is the table-row JSON. The catalog list omits it; the library grid asks for it.
-  const columns = options.includeDetails
-    ? "id, library_id, name, entity_key, labels, summary, status, updated_at, details"
-    : "id, library_id, name, entity_key, labels, summary, status, updated_at";
+  // A Pending review also needs body and the last published copy, then drops them
+  // after the comparison so the page does not receive the full text.
+  const columns = options.review
+    ? "id, library_id, name, entity_key, labels, summary, status, updated_at, body, details, published_snapshot"
+    : options.includeDetails
+      ? "id, library_id, name, entity_key, labels, summary, status, updated_at, details"
+      : "id, library_id, name, entity_key, labels, summary, status, updated_at";
   const rows = await allRows<ListHit>(
     db,
     `SELECT ${columns}
@@ -134,7 +157,9 @@ export async function listItems(
      LIMIT ? OFFSET ?`,
     ...params,
   );
-  return rows.map((row) => toSummary(row, options.includeDetails === true));
+  return rows.map((row) =>
+    toSummary(row, { includeValues: options.includeDetails === true, review: options.review }),
+  );
 }
 
 /** Exact entity_key lookup inside one library. */

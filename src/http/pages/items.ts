@@ -13,6 +13,7 @@ import {
   editorScripts,
   esc,
   layout,
+  itemReviewBlock,
   noticeMessage,
   onConfirm,
   publishDiff,
@@ -230,6 +231,7 @@ export function itemPage(input: {
        </details>`;
   const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
   const flash = noticeMessage(input.notice, status);
+  const review = itemReviewBlock(input.item, input.library.schema);
   const unlockHint =
     input.library.writeMode === "direct"
       ? `<p class="hint">Revert uses the last published snapshot. In Review Unlock, each save refreshes that snapshot.</p>`
@@ -300,8 +302,9 @@ export function itemPage(input: {
               : ""
           }
           ${labels ? `<p class="meta">${labels}</p>` : ""}
-          ${publishAction}
         </header>
+        ${review}
+        ${publishAction}
         ${
           input.control
             ? `<dl class="details">

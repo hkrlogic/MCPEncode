@@ -1,6 +1,8 @@
 /** Shared HTML layout, status labels, and list markup for publisher pages. */
 import type { Access } from "../../auth/rbac.ts";
 import type { ItemRow, ItemStatus, ItemSummary, LibraryRow, PublishedSnapshot } from "../../db/models.ts";
+import type { LibrarySchema } from "../../items/library-schema.ts";
+import { focusChange, itemReview, type ItemReview } from "../../items/review.ts";
 import { isLibraryWriteMode, type LibraryWriteMode } from "../../items/schema.ts";
 import { staticUrl } from "../static-assets.ts";
 
@@ -101,58 +103,76 @@ export function noticeMessage(notice: string | undefined, _status?: ItemStatus):
   return "";
 }
 
-export function labelsEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const left = [...a].sort();
-  const right = [...b].sort();
-  return left.every((value, index) => value === right[index]);
+function shown(value: string): string {
+  return value.trim() ? value : "(none)";
+}
+
+/** Pending list: short fields in place, long fields named. */
+function reviewList(review: ItemReview): string {
+  if (review.kind === "new") return `<span class="review-badge">New</span>`;
+  if (review.kind === "unchanged") {
+    return `<span class="review-note">No changes since last published</span>`;
+  }
+  const long = review.fields.some((field) => field.long);
+  const rows = review.fields
+    .map((field) => {
+      if (field.long) {
+        return `<li class="review-change"><span class="review-field">${esc(field.label)}</span></li>`;
+      }
+      return `<li class="review-change">
+        <span class="review-field">${esc(field.label)}</span>
+        <span class="review-side"><span class="review-k">Published</span> ${esc(shown(field.before))}</span>
+        <span class="review-side"><span class="review-k">Now</span> ${esc(shown(field.after))}</span>
+      </li>`;
+    })
+    .join("");
+  const hint = long ? `<span class="review-hint">Open the item to read the full text.</span>` : "";
+  return `<ul class="review-list">${rows}</ul>${hint}`;
+}
+
+/** Item page: every changed field, with long text narrowed to the edit. */
+function reviewFull(review: ItemReview): string {
+  if (review.kind === "new") return `<p class="hint">New item. Nothing has been published yet.</p>`;
+  if (review.kind === "unchanged") return `<p class="hint">No changes since last published.</p>`;
+  return `<ul class="diff-list">
+    ${review.fields
+      .map((field) => {
+        const text = field.long ? focusChange(field.before, field.after) : { ...field, trimmed: false };
+        const note = text.trimmed ? `<p class="hint">Showing the part that changed.</p>` : "";
+        return `<li>
+          <p class="diff-field">${esc(field.label)}</p>
+          ${note}
+          <p class="diff-label">Published</p>
+          <pre class="diff-before">${esc(shown(text.before))}</pre>
+          <p class="diff-label">Now</p>
+          <pre class="diff-after">${esc(shown(text.after))}</pre>
+        </li>`;
+      })
+      .join("")}
+  </ul>`;
+}
+
+export function reviewMarkup(review: ItemReview, mode: "list" | "full"): string {
+  return mode === "list" ? reviewList(review) : reviewFull(review);
+}
+
+const generalReviewSchema: LibrarySchema = {
+  starter: "general",
+  fields: [{ key: "body", label: "Description", type: "markdown", required: false, kind: "body" }],
+};
+
+/** Pending item: the comparison sits above the content, before Publish. */
+export function itemReviewBlock(item: ItemRow, schema: LibrarySchema): string {
+  if (item.status !== "draft") return "";
+  const review = itemReview(item, item.published_snapshot, schema);
+  return `<section class="item-review" aria-labelledby="what-changed">
+    <h2 id="what-changed">What changed</h2>
+    ${reviewMarkup(review, "full")}
+  </section>`;
 }
 
 export function publishDiff(item: ItemRow, snapshot: PublishedSnapshot | null): string {
-  if (!snapshot) {
-    return `<p class="hint">Never published.</p>`;
-  }
-  const changes: { field: string; before: string; after: string }[] = [];
-  if (item.name !== snapshot.name) {
-    changes.push({ field: "Name", before: snapshot.name, after: item.name });
-  }
-  if (!labelsEqual(item.labels, snapshot.labels)) {
-    changes.push({
-      field: "Labels",
-      before: snapshot.labels.join(", ") || "(none)",
-      after: item.labels.join(", ") || "(none)",
-    });
-  }
-  if (item.summary !== snapshot.summary) {
-    changes.push({ field: "Summary", before: snapshot.summary, after: item.summary });
-  }
-  if (item.body !== snapshot.body) {
-    changes.push({ field: "Body", before: snapshot.body, after: item.body });
-  }
-  if ((item.details ?? "") !== (snapshot.details ?? "")) {
-    changes.push({
-      field: "Details",
-      before: snapshot.details ?? "(none)",
-      after: item.details ?? "(none)",
-    });
-  }
-  if (changes.length === 0) {
-    return `<p class="hint">No changes since last published.</p>`;
-  }
-  return `<ul class="diff-list">
-    ${changes
-      .map(
-        (change) => `
-      <li>
-        <p class="diff-field">${esc(change.field)}</p>
-        <p class="diff-label">Published</p>
-        <pre class="diff-before">${esc(change.before)}</pre>
-        <p class="diff-label">Now</p>
-        <pre class="diff-after">${esc(change.after)}</pre>
-      </li>`,
-      )
-      .join("")}
-  </ul>`;
+  return reviewMarkup(itemReview(item, snapshot, generalReviewSchema), "full");
 }
 
 export function itemListMarkup(
@@ -170,12 +190,16 @@ export function itemListMarkup(
     ${items
       .map((row) => {
         const labels = row.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
+        const summaryInReview =
+          row.review?.kind === "changed" &&
+          row.review.fields.some((field) => field.label === "Summary" && !field.long);
         const body = `
           <span class="item-name-row">
             <span class="item-name">${esc(row.name)}</span>
             ${showStatus ? statusBadge(row.status) : ""}
           </span>
-          ${row.summary ? `<span class="excerpt">${esc(row.summary)}</span>` : ""}
+          ${summaryInReview || !row.summary ? "" : `<span class="excerpt">${esc(row.summary)}</span>`}
+          ${row.review ? reviewMarkup(row.review, "list") : ""}
           ${labels ? `<span class="item-labels">${labels}</span>` : ""}`;
         if (selectable) {
           return `
