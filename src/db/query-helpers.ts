@@ -16,6 +16,7 @@ export type SqlItem = {
   details: string | null;
   status: string;
   published_snapshot: string | null;
+  previous_published_snapshot: string | null;
   created_by: string;
   updated_by: string;
   created_at: number;
@@ -27,7 +28,7 @@ export type SqlItem = {
  * pull the full-text document blob over the wire.
  */
 export const ITEM_COLUMNS =
-  "id, library_id, name, entity_key, labels, summary, body, details, status, published_snapshot, created_by, updated_by, created_at, updated_at";
+  "id, library_id, name, entity_key, labels, summary, body, details, status, published_snapshot, previous_published_snapshot, created_by, updated_by, created_at, updated_at";
 
 /** Hard caps so callers cannot ask Postgres for unbounded pages. */
 export const LIST_LIMIT_MAX = 200;
@@ -81,23 +82,75 @@ export function itemDiffersFromSnapshot(
   );
 }
 
+/** Which snapshot Revert will restore into working fields. */
+export type RevertKind = "published" | "previous";
+
+export type RevertPlan = {
+  kind: RevertKind;
+  snapshot: PublishedSnapshot;
+};
+
 /**
- * Publisher may revert working fields to published_snapshot.
- * Archived items must use Restore (un-archive) first. No snapshot / no Diff → false.
+ * Prefer the current published snapshot when working fields drifted (Pending edit).
+ * If those match (e.g. right after Publish), fall back to the previous published copy.
+ */
+export function revertPlan(item: {
+  status: ItemStatus;
+  published_snapshot: PublishedSnapshot | null;
+  previous_published_snapshot: PublishedSnapshot | null;
+  name: string;
+  labels: string[];
+  summary: string;
+  body: string;
+  details: string | null;
+}): RevertPlan | null {
+  if (item.status === "archived") return null;
+  if (item.published_snapshot && itemDiffersFromSnapshot(item, item.published_snapshot)) {
+    return { kind: "published", snapshot: item.published_snapshot };
+  }
+  if (
+    item.previous_published_snapshot &&
+    itemDiffersFromSnapshot(item, item.previous_published_snapshot)
+  ) {
+    return { kind: "previous", snapshot: item.previous_published_snapshot };
+  }
+  return null;
+}
+
+/**
+ * Publisher may revert working fields to a published snapshot.
+ * Archived items must use Restore (un-archive) first.
  */
 export function canRevertToPublished(item: {
   status: ItemStatus;
   published_snapshot: PublishedSnapshot | null;
+  previous_published_snapshot: PublishedSnapshot | null;
   name: string;
   labels: string[];
   summary: string;
   body: string;
   details: string | null;
 }): boolean {
-  if (item.status === "archived") return false;
-  const snapshot = item.published_snapshot;
-  if (!snapshot) return false;
-  return itemDiffersFromSnapshot(item, snapshot);
+  return revertPlan(item) !== null;
+}
+
+/**
+ * When Publish or Unlock save replaces published_snapshot with different content,
+ * keep the old copy as previous. Same content → leave previous as-is.
+ */
+export function previousSnapshotAfterPublish(
+  prior: PublishedSnapshot | null,
+  next: {
+    name: string;
+    labels: string[];
+    summary: string;
+    body: string;
+    details: string | null;
+  },
+  existingPrevious: PublishedSnapshot | null,
+): PublishedSnapshot | null {
+  if (prior && itemDiffersFromSnapshot(next, prior)) return prior;
+  return existingPrevious;
 }
 
 export function parsePublishedSnapshot(raw: string | null | undefined): PublishedSnapshot | null {
@@ -155,6 +208,7 @@ export function toItem(row: SqlItem): ItemRow {
     status: asStatus(row.status),
     details: row.details,
     published_snapshot: parsePublishedSnapshot(row.published_snapshot),
+    previous_published_snapshot: parsePublishedSnapshot(row.previous_published_snapshot),
     policy: parsePolicyDetails(row.details),
     procedure: parseProcedureDetails(row.details),
     created_by: row.created_by,

@@ -38,7 +38,13 @@ export {
   deleteItem,
 } from "./items.ts";
 export type { RevertToPublishedResult } from "./items.ts";
-export { canRevertToPublished, itemDiffersFromSnapshot } from "./query-helpers.ts";
+export {
+  canRevertToPublished,
+  itemDiffersFromSnapshot,
+  previousSnapshotAfterPublish,
+  revertPlan,
+} from "./query-helpers.ts";
+export type { RevertKind, RevertPlan } from "./query-helpers.ts";
 export { lookupItems, type LookupResult } from "./lookup.ts";
 export {
   addItemFile,

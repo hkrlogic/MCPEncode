@@ -87,6 +87,9 @@ export function noticeMessage(notice: string | undefined, _status?: ItemStatus):
   if (notice === "reverted") {
     return "Reverted to the last published version. Item is Pending — Publish when it should be live again.";
   }
+  if (notice === "reverted_previous") {
+    return "Reverted to the previous published version. Item is Pending — Publish when it should be live again. Readers still see the current published copy until you Publish.";
+  }
   if (notice === "file_added") return "File added.";
   if (notice === "file_pending") {
     return "File added. This item is Pending until you Publish.";

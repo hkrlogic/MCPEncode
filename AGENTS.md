@@ -28,7 +28,7 @@ Each library has a **write mode**:
 
 Choose the mode when adding a library. Publishers can change it later in the UI only (not over MCP).
 
-Publishers can **Revert to published** from the item Diff / ⋯ menu when working fields differ from `published_snapshot` (not the same as archive Restore). Revert always leaves the item Pending until Publish. No MCP revert tool.
+Publishers can **Revert to published** from the item Diff / ⋯ menu when working fields differ from `published_snapshot`, or **Revert to previous published** after a Publish/Unlock save replaced that snapshot (one prior copy kept). Not the same as archive Restore. Revert always leaves the item Pending until Publish. No MCP revert tool.
 
 Review Unlock MCP connections include handoff instructions: prefer `entity_key` for upserts, search before create, one item per entity, stable name, searchable summary, useful labels, then the next agent scoops with `list_items` / `open_item`.
 

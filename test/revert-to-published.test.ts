@@ -102,6 +102,8 @@ function library(partial: Partial<LibraryRow> = {}): LibraryRow {
 test("noticeMessage explains reverted Pending state", () => {
   assert.match(noticeMessage("reverted"), /Reverted to the last published version/);
   assert.match(noticeMessage("reverted"), /Pending/);
+  assert.match(noticeMessage("reverted_previous"), /previous published version/);
+  assert.match(noticeMessage("reverted_previous"), /Readers still see the current published copy/);
 });
 
 test("canRevertToPublished follows Diff rules", () => {
@@ -113,10 +115,19 @@ test("canRevertToPublished follows Diff rules", () => {
     details: null,
     published_at: 1,
   };
+  const previous = {
+    name: "VPN",
+    labels: ["remote"],
+    summary: "Older VPN",
+    body: "Use company VPN",
+    details: null,
+    published_at: 1,
+  };
   assert.equal(
     canRevertToPublished({
       status: "draft",
       published_snapshot: snapshot,
+      previous_published_snapshot: null,
       name: "VPN",
       labels: ["remote"],
       summary: "Use company VPN",
@@ -129,9 +140,24 @@ test("canRevertToPublished follows Diff rules", () => {
     canRevertToPublished({
       status: "draft",
       published_snapshot: snapshot,
+      previous_published_snapshot: null,
       name: "VPN",
       labels: ["remote"],
       summary: "Changed summary",
+      body: "Use company VPN",
+      details: null,
+    }),
+    true,
+  );
+  // After Publish, working matches current snapshot — previous still unlocks Revert.
+  assert.equal(
+    canRevertToPublished({
+      status: "published",
+      published_snapshot: snapshot,
+      previous_published_snapshot: previous,
+      name: "VPN",
+      labels: ["remote"],
+      summary: "Use company VPN",
       body: "Use company VPN",
       details: null,
     }),
@@ -141,6 +167,7 @@ test("canRevertToPublished follows Diff rules", () => {
     canRevertToPublished({
       status: "archived",
       published_snapshot: snapshot,
+      previous_published_snapshot: previous,
       name: "VPN",
       labels: ["remote"],
       summary: "Changed",
@@ -153,6 +180,7 @@ test("canRevertToPublished follows Diff rules", () => {
     canRevertToPublished({
       status: "draft",
       published_snapshot: null,
+      previous_published_snapshot: null,
       name: "VPN",
       labels: [],
       summary: "x",
@@ -183,6 +211,7 @@ test("item page shows Revert to published only when Diff has changes", () => {
       details: null,
       published_at: 10,
     },
+    previous_published_snapshot: null,
     created_by: "alice",
     updated_by: "alice",
     created_at: 0,
@@ -208,12 +237,38 @@ test("item page shows Revert to published only when Diff has changes", () => {
       ...base,
       body: "Apply old",
       published_snapshot: { ...base.published_snapshot, body: "Apply old" },
+      previous_published_snapshot: null,
     },
     library: lib,
     html: "<p>Apply old</p>",
     shell: { libraries: [], csrf: "token", canAddLibrary: true },
   });
   assert.doesNotMatch(matching, /Revert to published/);
+  assert.doesNotMatch(matching, /Revert to previous published/);
+
+  const afterPublish = itemPage({
+    access: publisher,
+    csrf: "token",
+    item: {
+      ...base,
+      status: "published",
+      body: "Apply old",
+      published_snapshot: { ...base.published_snapshot!, body: "Apply old", published_at: 20 },
+      previous_published_snapshot: {
+        name: "Patch Tuesday",
+        labels: ["ops"],
+        summary: "Monthly",
+        body: "Apply first",
+        details: null,
+        published_at: 10,
+      },
+    },
+    library: lib,
+    html: "<p>Apply old</p>",
+    shell: { libraries: [], csrf: "token", canAddLibrary: true },
+  });
+  assert.match(afterPublish, /Revert to previous published/);
+  assert.match(afterPublish, /Previous published/);
 
   const unlock = itemPage({
     access: publisher,
@@ -223,7 +278,58 @@ test("item page shows Revert to published only when Diff has changes", () => {
     html: "<p>Apply</p>",
     shell: { libraries: [], csrf: "token", canAddLibrary: true },
   });
-  assert.match(unlock, /In Review Unlock, each save refreshes that snapshot/);
+  assert.match(unlock, /keeps the previous one for Revert/);
+});
+
+test("publish → edit → publish keeps previous; revert restores prior published copy", async () => {
+  await withTestDatabase(async (db) => {
+    const libraryRow = await createLibrary(db, "Prior seal", "alice");
+    const created = await createItem(
+      db,
+      {
+        name: "VPN",
+        body: "Use company VPN",
+        labels: ["remote"],
+        summary: "Company VPN",
+        entity_key: "vpn-prior",
+      },
+      "alice",
+      libraryRow.id,
+    );
+    const first = await publishItem(db, created.id, "alice");
+    assert.equal(first?.status, "published");
+    assert.equal(first?.previous_published_snapshot, null);
+    const firstBody = first!.published_snapshot!.body;
+
+    await updateItem(
+      db,
+      created.id,
+      {
+        name: "VPN",
+        body: "Use personal VPN",
+        labels: ["remote"],
+        summary: "Wrong VPN",
+        entity_key: "vpn-prior",
+      },
+      "alice",
+    );
+    const second = await publishItem(db, created.id, "alice");
+    assert.equal(second?.status, "published");
+    assert.equal(second?.body, "Use personal VPN");
+    assert.equal(second?.published_snapshot?.body, "Use personal VPN");
+    assert.equal(second?.previous_published_snapshot?.body, firstBody);
+
+    const result = await revertToPublished(db, created.id, "alice");
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.kind, "previous");
+    assert.equal(result.item.status, "draft");
+    assert.equal(result.item.body, firstBody);
+    assert.equal(result.item.summary, "Company VPN");
+    // Live published snapshot stays until Publish — readers still see the bad copy.
+    assert.equal(result.item.published_snapshot?.body, "Use personal VPN");
+    assert.equal(result.item.previous_published_snapshot?.body, firstBody);
+  });
 });
 
 test("publish → edit → revert restores snapshot fields; entity_key and snapshot stay", async () => {

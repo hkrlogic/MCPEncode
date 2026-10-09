@@ -490,9 +490,10 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       actorSub: access.sub,
       tool: "ui.revert_to_published",
       success: true,
-      detail: `${result.item.id} published_at=${publishedAt}`,
+      detail: `${result.item.id} kind=${result.kind} published_at=${publishedAt}`,
     });
-    res.redirect(`/items/${result.item.id}?notice=reverted`);
+    const notice = result.kind === "previous" ? "reverted_previous" : "reverted";
+    res.redirect(`/items/${result.item.id}?notice=${notice}`);
   });
 
   app.post("/items/:id/delete", async (req, res) => {

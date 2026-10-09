@@ -20,10 +20,11 @@ import {
   ITEM_COLUMNS,
   LIST_LIMIT_MAX,
   LIST_OFFSET_MAX,
-  canRevertToPublished,
   libraryWhere,
   parseLabels,
   parsePublishedSnapshot,
+  previousSnapshotAfterPublish,
+  revertPlan,
   runSql,
   snapshotFromItem,
   summaryFor,
@@ -34,7 +35,7 @@ import {
 import { defaultLibraryId, getLibrary, lockLibrary } from "./libraries.ts";
 
 export type RevertToPublishedResult =
-  | { ok: true; item: ItemRow }
+  | { ok: true; item: ItemRow; kind: "published" | "previous" }
   | {
       ok: false;
       reason: "not_found" | "archived" | "no_snapshot" | "no_changes" | "unreadable";
@@ -332,21 +333,27 @@ export async function updateItem(
 
   if (writeMode === "direct") {
     // Review Unlock: any successful save is live. Snapshot tracks the live copy.
+    // Keep the prior published copy so Revert can undo an accidental save.
     const fromStatus = existing.status;
-    const snapshot = snapshotFromItem({
+    const nextFields = {
       name: input.name,
       labels: input.labels,
       summary,
       body: input.body,
       details: input.details ?? null,
-      published_at: now,
-    });
+    };
+    const snapshot = snapshotFromItem({ ...nextFields, published_at: now });
+    const previous = previousSnapshotAfterPublish(
+      existing.published_snapshot,
+      nextFields,
+      existing.previous_published_snapshot,
+    );
     try {
       await runSql(
         db,
         `UPDATE items
          SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
-             status = 'published', published_snapshot = ?,
+             status = 'published', published_snapshot = ?, previous_published_snapshot = ?,
              updated_by = ?, updated_at = ?
          WHERE id = ?`,
         input.name,
@@ -356,6 +363,7 @@ export async function updateItem(
         input.body,
         input.details ?? null,
         snapshot,
+        previous ? JSON.stringify(previous) : null,
         actorSub,
         now,
         id,
@@ -441,7 +449,10 @@ export async function publishItems(
   return published;
 }
 
-/** Make a draft visible to readers and the kiosk. Copies working fields into published_snapshot. */
+/**
+ * Make a draft visible to readers and the kiosk.
+ * Copies working fields into published_snapshot; keeps the prior snapshot for Revert.
+ */
 export async function publishItem(
   db: Database,
   id: string,
@@ -450,20 +461,27 @@ export async function publishItem(
   const existing = await getItem(db, id, { publishedOnly: false });
   if (!existing || existing.status !== "draft") return undefined;
   const now = Date.now();
-  const snapshot = snapshotFromItem({
+  const nextFields = {
     name: existing.name,
     labels: existing.labels,
     summary: existing.summary,
     body: existing.body,
     details: existing.details,
-    published_at: now,
-  });
+  };
+  const snapshot = snapshotFromItem({ ...nextFields, published_at: now });
+  const previous = previousSnapshotAfterPublish(
+    existing.published_snapshot,
+    nextFields,
+    existing.previous_published_snapshot,
+  );
   await runSql(
     db,
     `UPDATE items
-     SET status = 'published', published_snapshot = ?, updated_by = ?, updated_at = ?
+     SET status = 'published', published_snapshot = ?, previous_published_snapshot = ?,
+         updated_by = ?, updated_at = ?
      WHERE id = ? AND status = 'draft'`,
     snapshot,
+    previous ? JSON.stringify(previous) : null,
     actorSub,
     now,
     id,
@@ -558,7 +576,9 @@ export async function restoreItem(
 }
 
 /**
- * Replace working fields with published_snapshot. Leaves snapshot unchanged.
+ * Replace working fields with the revert plan snapshot (current or previous).
+ * Leaves published_snapshot and previous_published_snapshot unchanged so readers
+ * keep seeing the current published copy until Publish.
  * Always ends as Pending (draft). Does not change entity_key.
  * Not the same as restoreItem (un-archive).
  */
@@ -577,19 +597,28 @@ export async function revertToPublished(
     const existing = await getItem(tx, id, { publishedOnly: false });
     if (!existing) return { ok: false, reason: "not_found" };
     if (existing.status === "archived") return { ok: false, reason: "archived" };
-    // Snapshot JSON on the row may be present but unreadable → treat as missing.
-    if (existing.published_snapshot == null) {
-      const raw = await getRow<{ published_snapshot: string | null }>(
-        tx,
-        "SELECT published_snapshot FROM items WHERE id = ?",
-        id,
-      );
-      if (raw?.published_snapshot) return { ok: false, reason: "unreadable" };
-      return { ok: false, reason: "no_snapshot" };
-    }
-    if (!canRevertToPublished(existing)) return { ok: false, reason: "no_changes" };
 
-    const snapshot = existing.published_snapshot;
+    const plan = revertPlan(existing);
+    if (!plan) {
+      // Distinguish never-published from “nothing to undo” for the UI message.
+      if (existing.published_snapshot == null && existing.previous_published_snapshot == null) {
+        const raw = await getRow<{
+          published_snapshot: string | null;
+          previous_published_snapshot: string | null;
+        }>(
+          tx,
+          "SELECT published_snapshot, previous_published_snapshot FROM items WHERE id = ?",
+          id,
+        );
+        if (raw?.published_snapshot || raw?.previous_published_snapshot) {
+          return { ok: false, reason: "unreadable" };
+        }
+        return { ok: false, reason: "no_snapshot" };
+      }
+      return { ok: false, reason: "no_changes" };
+    }
+
+    const snapshot = plan.snapshot;
     const fromStatus = existing.status;
     const now = Date.now();
     await runSql(
@@ -618,7 +647,7 @@ export async function revertToPublished(
     }
     const item = await getItem(tx, id, { publishedOnly: false });
     if (!item) return { ok: false, reason: "not_found" };
-    return { ok: true, item };
+    return { ok: true, item, kind: plan.kind };
   });
 }
 

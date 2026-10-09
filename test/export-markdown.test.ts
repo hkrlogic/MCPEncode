@@ -35,6 +35,7 @@ function item(partial: Partial<ItemRow> = {}): ItemRow {
     status: "published",
     details: null,
     published_snapshot: null,
+    previous_published_snapshot: null,
     created_by: "alice",
     updated_by: "alice",
     created_at: 0,

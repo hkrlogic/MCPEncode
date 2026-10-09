@@ -62,6 +62,11 @@ export type ItemRow = {
   status: ItemStatus;
   details: string | null;
   published_snapshot: PublishedSnapshot | null;
+  /**
+   * Published copy from before the last Publish / Unlock save that changed content.
+   * Lets Revert undo an accidental publish. One deep — not full history.
+   */
+  previous_published_snapshot: PublishedSnapshot | null;
   policy?: PolicyDetails;
   procedure?: ProcedureDetails;
   created_by: string;

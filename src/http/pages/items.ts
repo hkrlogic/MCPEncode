@@ -2,7 +2,7 @@
 import { can, type Access } from "../../auth/rbac.ts";
 import type { ItemFileMeta } from "../../db/files.ts";
 import type { ItemRow, LibraryRow } from "../../db/models.ts";
-import { canRevertToPublished } from "../../db/queries.ts";
+import { canRevertToPublished, revertPlan } from "../../db/queries.ts";
 import { fileKindLabel, formatFileSize, MAX_FILES_PER_ITEM } from "../../items/files.ts";
 import { generalHasExtraFields } from "../../items/library-schema.ts";
 import { valuesForSchemaEdit } from "../../items/table-proposal.ts";
@@ -25,6 +25,10 @@ import {
 /** Confirm copy — revert replaces working edits; item stays Pending until Publish. */
 const REVERT_CONFIRM =
   "Revert this item to the last published version? Your current edits will be replaced. The item will stay Pending until you Publish.";
+
+/** After an accidental Publish, restore the prior seal; readers keep the current until Publish. */
+const REVERT_PREVIOUS_CONFIRM =
+  "Revert this item to the previous published version? The current published copy stays live for readers until you Publish again. The item will stay Pending until you Publish.";
 
 /** Files sit under the sections. Publishers can add one; readers only see what is already there. */
 function itemFilesSection(input: {
@@ -167,14 +171,18 @@ export function itemPage(input: {
   const canWrite = can(input.access, "records.write");
   const canDelete = can(input.access, "records.delete");
   const status = input.item.status;
-  // Revert only when Diff would show changes (not for archived / never published / no drift).
-  const showRevert = canWrite && canRevertToPublished(input.item);
+  // Revert: Pending edits vs current snapshot, or previous snapshot after an accidental Publish.
+  const plan = revertPlan(input.item);
+  const showRevert = canWrite && canRevertToPublished(input.item) && plan !== null;
+  const revertLabel =
+    plan?.kind === "previous" ? "Revert to previous published" : "Revert to published";
+  const revertConfirm = plan?.kind === "previous" ? REVERT_PREVIOUS_CONFIRM : REVERT_CONFIRM;
   const revertForm = (className?: string) =>
     showRevert
       ? `<form${className ? ` class="${className}"` : ""} method="post" action="/items/${esc(input.item.id)}/revert-published"
-           onsubmit="${onConfirm(REVERT_CONFIRM)}">
+           onsubmit="${onConfirm(revertConfirm)}">
            <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-           <button type="submit">Revert to published</button>
+           <button type="submit">${esc(revertLabel)}</button>
          </form>`
       : "";
   // Publish stays a primary button on Pending. Edit / gate moves / delete live in ⋯.
@@ -234,20 +242,32 @@ export function itemPage(input: {
   const review = itemReviewBlock(input.item, input.library.schema);
   const unlockHint =
     input.library.writeMode === "direct"
-      ? `<p class="hint">Revert uses the last published snapshot. In Review Unlock, each save refreshes that snapshot.</p>`
+      ? `<p class="hint">In Review Unlock, each save refreshes the live snapshot and keeps the previous one for Revert.</p>`
       : "";
+  const previousHint =
+    plan?.kind === "previous"
+      ? `<p class="hint">Working fields match what is published now. Revert restores the previous published copy into this item; readers keep the current published copy until you Publish.</p>`
+      : "";
+  // After accidental Publish, Diff vs current is empty — compare previous vs live instead.
+  const diffBody =
+    plan?.kind === "previous"
+      ? publishDiff(input.item, input.item.previous_published_snapshot)
+      : publishDiff(input.item, input.item.published_snapshot);
   const diffSheet = canWrite
     ? `<dialog class="sheet" id="publish-diff" aria-labelledby="publish-diff-title">
          <div class="sheet-panel">
            <header class="sheet-head">
-             <h2 id="publish-diff-title">Changes since published</h2>
+             <h2 id="publish-diff-title">${
+               plan?.kind === "previous" ? "Previous published" : "Changes since published"
+             }</h2>
              <button type="button" class="sheet-close" data-close-sheet aria-label="Close">
                <span aria-hidden="true">×</span>
              </button>
            </header>
            <div class="sheet-body">
              ${unlockHint}
-             ${publishDiff(input.item, input.item.published_snapshot)}
+             ${previousHint}
+             ${diffBody}
              ${
                showRevert
                  ? `<div class="sheet-actions">
