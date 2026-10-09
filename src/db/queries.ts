@@ -40,6 +40,15 @@ export {
 export type { RevertToPublishedResult } from "./items.ts";
 export { canRevertToPublished, itemDiffersFromSnapshot } from "./query-helpers.ts";
 export { lookupItems, type LookupResult } from "./lookup.ts";
+export {
+  addItemFile,
+  listItemFiles,
+  getItemFile,
+  removeItemFile,
+  type ItemFileMeta,
+  type AddFileResult,
+  type RemoveFileResult,
+} from "./files.ts";
 export { writeAudit, listAudit } from "./audit.ts";
 export { proposeTable, approveTableProposal, rejectTableProposal } from "./table-proposals.ts";
 export type { ProposeTableResult, ApproveTableResult } from "./table-proposals.ts";

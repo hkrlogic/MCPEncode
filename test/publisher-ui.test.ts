@@ -226,6 +226,9 @@ test("Edit and Archive live in Actions; Publish stays primary; only SA hard-dele
   assert.match(html, /id="publish-diff"/);
   assert.match(html, /Archive/);
   assert.match(html, /action="\/items\/item-1\/publish"/);
+  assert.match(html, /id="item-files-heading"/);
+  assert.match(html, /Add file/);
+  assert.match(html, /Five files on an item/);
   assert.doesNotMatch(html, /class="btn secondary"[^>]*>Edit/);
   assert.doesNotMatch(html, /action="\/items\/item-1\/delete"/);
 

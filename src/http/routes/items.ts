@@ -1,4 +1,5 @@
-/** Item view/edit/update, publish gate, delete, and /notes redirects. */
+/** Item view/edit/update, publish gate, delete, files, and /notes redirects. */
+import { timingSafeEqual } from "node:crypto";
 import type express from "express";
 import type { Request, Response } from "express";
 import { accessForLibrary, can, type Access } from "../../auth/rbac.ts";
@@ -7,6 +8,10 @@ import {
   deleteItem,
   getLibrary,
   getLibraryAccess,
+  addItemFile,
+  getItemFile,
+  listItemFiles,
+  removeItemFile,
   getItem,
   publishItem,
   restoreItem,
@@ -28,7 +33,21 @@ import { parseTableValues, tableControl, tableParts } from "../../items/table-pr
 import { renderMarkdown } from "../../markdown/render.ts";
 import { parseLibraryItem, requireCsrf, sessionAccess } from "../helpers.ts";
 import { editPage, errorPage, itemPage } from "../pages.ts";
+import { readItemUpload } from "../upload.ts";
 import type { AppRouteContext } from "./context.ts";
+
+/** Form CSRF for multipart uploads, where the body is not urlencoded. */
+function sameToken(left: string, right: string): boolean {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  if (a.length === 0 || a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+function downloadName(name: string): string {
+  const ascii = name.replace(/[^\w.\- ()[\]]+/g, "_").replace(/"/g, "") || "file";
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
 
 type SessionUser = Access & { csrf: string };
 
@@ -134,6 +153,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
           })),
         )
       : undefined;
+    const files = await listItemFiles(db, item.id);
     const shell = await itemShell(db, access, library.id);
     res.send(
       itemPage({
@@ -144,10 +164,112 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
         html,
         control,
         sections,
+        files,
         shell,
         notice,
       }),
     );
+  });
+
+  app.get("/items/:id/files/:fileId", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    const loaded = await loadVisibleItem(req, access);
+    if ("error" in loaded) {
+      res.status(loaded.error.status).send(errorPage(loaded.error.message));
+      return;
+    }
+    const file = await getItemFile(db, loaded.item.id, req.params.fileId);
+    if (!file) {
+      res.status(404).send(errorPage("File not found."));
+      return;
+    }
+    // Serve the sniffed type only, as a download, so a file cannot run as a page.
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Type", file.content_type);
+    res.setHeader("Content-Disposition", downloadName(file.name));
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Content-Length", String(file.bytes.length));
+    res.send(file.bytes);
+  });
+
+  app.post("/items/:id/files", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    const item = await getItem(db, req.params.id, { publishedOnly: false });
+    if (!item) {
+      res.status(404).send(errorPage("Item not found."));
+      return;
+    }
+    const libraryAccess = await itemLibraryAccess(db, item.library_id, access);
+    if (!libraryAccess || !can(libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("You cannot add files with this account."));
+      return;
+    }
+    let upload;
+    try {
+      upload = await readItemUpload(req);
+    } catch (error) {
+      console.error("item file upload failed", error);
+      res.redirect(`/items/${encodeURIComponent(item.id)}?notice=file_type`);
+      return;
+    }
+    if (!sameToken(upload.csrf, access.csrf)) {
+      res.status(403).send(errorPage("You cannot add files with this account."));
+      return;
+    }
+    if (!upload.ok) {
+      const notice = upload.code === "too_big" ? "file_too_big" : upload.code === "missing" ? "file_missing" : "file_type";
+      res.redirect(`/items/${encodeURIComponent(item.id)}?notice=${notice}`);
+      return;
+    }
+    const saved = await addItemFile(
+      db,
+      item.id,
+      { filename: upload.filename, bytes: upload.bytes },
+      access.sub,
+    );
+    const notice = !saved.ok
+      ? saved.code === "too_many"
+        ? "file_too_many"
+        : saved.code === "too_big"
+          ? "file_too_big"
+          : saved.code === "empty"
+            ? "file_empty"
+            : saved.code === "not_found"
+              ? "file_missing"
+              : "file_type"
+      : saved.pending
+        ? "file_pending"
+        : "file_added";
+    res.redirect(`/items/${encodeURIComponent(item.id)}?notice=${notice}`);
+  });
+
+  app.post("/items/:id/files/:fileId/delete", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access || !requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("You cannot remove files with this account."));
+      return;
+    }
+    const item = await getItem(db, req.params.id, { publishedOnly: false });
+    if (!item) {
+      res.status(404).send(errorPage("Item not found."));
+      return;
+    }
+    const libraryAccess = await itemLibraryAccess(db, item.library_id, access);
+    if (!libraryAccess || !can(libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("You cannot remove files with this account."));
+      return;
+    }
+    const removed = await removeItemFile(db, item.id, req.params.fileId, access.sub);
+    const notice = !removed.ok ? "file_missing" : removed.pending ? "file_removed_pending" : "file_removed";
+    res.redirect(`/items/${encodeURIComponent(item.id)}?notice=${notice}`);
   });
 
   app.get("/items/:id/edit", async (req, res) => {

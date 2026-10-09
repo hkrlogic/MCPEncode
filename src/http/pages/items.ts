@@ -1,7 +1,9 @@
 /** Add / view / edit item pages. */
 import { can, type Access } from "../../auth/rbac.ts";
+import type { ItemFileMeta } from "../../db/files.ts";
 import type { ItemRow, LibraryRow } from "../../db/models.ts";
 import { canRevertToPublished } from "../../db/queries.ts";
+import { fileKindLabel, formatFileSize, MAX_FILES_PER_ITEM } from "../../items/files.ts";
 import { generalHasExtraFields } from "../../items/library-schema.ts";
 import { valuesForSchemaEdit } from "../../items/table-proposal.ts";
 import { itemFields, schemaItemFields } from "./forms.ts";
@@ -22,6 +24,64 @@ import {
 /** Confirm copy — revert replaces working edits; item stays Pending until Publish. */
 const REVERT_CONFIRM =
   "Revert this item to the last published version? Your current edits will be replaced. The item will stay Pending until you Publish.";
+
+/** Files sit under the sections. Publishers can add one; readers only see what is already there. */
+function itemFilesSection(input: {
+  access: Access;
+  csrf: string;
+  item: ItemRow;
+  library: LibraryRow;
+  files?: ItemFileMeta[];
+}): string {
+  const canWrite = can(input.access, "records.write");
+  const files = input.files ?? [];
+  if (!canWrite && files.length === 0) return "";
+  const rows = files
+    .map((file) => {
+      const remove = canWrite
+        ? `<form method="post" action="/items/${esc(input.item.id)}/files/${esc(file.id)}/delete"
+               onsubmit="${onConfirm("Remove this file from the item?")}">
+             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+             <button class="btn secondary" type="submit">Remove</button>
+           </form>`
+        : "";
+      return `<li class="item-file">
+        <p class="item-file-name">
+          <a href="/items/${esc(input.item.id)}/files/${esc(file.id)}">${esc(file.name)}</a>
+          <span class="item-file-meta">${esc(fileKindLabel(file.content_type))} · ${esc(formatFileSize(file.byte_size))}</span>
+        </p>
+        ${remove}
+      </li>`;
+    })
+    .join("");
+  const atCap = files.length >= MAX_FILES_PER_ITEM;
+  const gateHint =
+    canWrite &&
+    input.library.writeMode === "reviewed" &&
+    input.item.status === "published"
+      ? `<p class="hint">Adding or removing a file moves this item to Pending until you Publish.</p>`
+      : "";
+  const form =
+    canWrite && !atCap
+      ? `<form class="file-add" method="post" action="/items/${esc(input.item.id)}/files" enctype="multipart/form-data">
+           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+           <label class="file-pick">Add a file
+             <input type="file" name="file" accept="application/pdf,image/png,image/jpeg,image/webp" required>
+           </label>
+           <button class="btn" type="submit">Add file</button>
+         </form>
+         <p class="hint">PDF or image. Up to 10 MB. Five files on an item.</p>
+         ${gateHint}`
+      : canWrite && atCap
+        ? `<p class="hint">This item has 5 files. Remove one to add another.</p>${gateHint}`
+        : "";
+  const list = rows ? `<ul class="item-file-list">${rows}</ul>` : "";
+  return `<section class="item-files" aria-labelledby="item-files-heading">
+    <h2 id="item-files-heading">Files</h2>
+    ${list}
+    ${form}
+  </section>`;
+}
 
 function pageShell(
   input: { csrf: string; access: Access; library: LibraryRow; shell?: AppShell },
@@ -99,6 +159,7 @@ export function itemPage(input: {
   html: string;
   control?: { label: string; value: string }[];
   sections?: { heading: string; html: string }[];
+  files?: ItemFileMeta[];
   notice?: string;
   shell?: AppShell;
 }): string {
@@ -251,6 +312,7 @@ export function itemPage(input: {
                 .join("")}`
             : `<div class="prose">${input.html}</div>`
         }
+        ${itemFilesSection(input)}
       </article>
       ${diffSheet}
     `,

@@ -85,6 +85,19 @@ export function noticeMessage(notice: string | undefined, _status?: ItemStatus):
   if (notice === "reverted") {
     return "Reverted to the last published version. Item is Pending — Publish when it should be live again.";
   }
+  if (notice === "file_added") return "File added.";
+  if (notice === "file_pending") {
+    return "File added. This item is Pending until you Publish.";
+  }
+  if (notice === "file_removed") return "File removed.";
+  if (notice === "file_removed_pending") {
+    return "File removed. This item is Pending until you Publish.";
+  }
+  if (notice === "file_too_many") return "This item already has 5 files.";
+  if (notice === "file_too_big") return "That file is over 10 MB.";
+  if (notice === "file_type") return "Use a PDF or an image (PNG, JPEG, or WebP).";
+  if (notice === "file_empty") return "That file is empty.";
+  if (notice === "file_missing") return "Choose a file to add.";
   return "";
 }
 
