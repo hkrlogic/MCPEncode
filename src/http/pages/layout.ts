@@ -2,7 +2,7 @@
 import type { Access } from "../../auth/rbac.ts";
 import type { ItemRow, ItemStatus, ItemSummary, LibraryRow, PublishedSnapshot } from "../../db/models.ts";
 import type { LibrarySchema } from "../../items/library-schema.ts";
-import { focusChange, itemReview, type ItemReview } from "../../items/review.ts";
+import { focusChange, itemReview, sideDiff, type DiffSpan, type ItemReview } from "../../items/review.ts";
 import { isLibraryWriteMode, type LibraryWriteMode } from "../../items/schema.ts";
 import { staticUrl } from "../static-assets.ts";
 
@@ -107,6 +107,27 @@ function shown(value: string): string {
   return value.trim() ? value : "(none)";
 }
 
+/** Escape each span, then wrap only the changed words. */
+function highlightSpans(spans: DiffSpan[]): string {
+  return spans
+    .map((span) => {
+      const text = esc(span.text);
+      if (span.op === "equal") return text;
+      if (span.op === "delete") return `<mark class="diff-del">${text}</mark>`;
+      return `<mark class="diff-ins">${text}</mark>`;
+    })
+    .join("");
+}
+
+/** Before/after with shared words plain and the edit marked. */
+function highlightedSides(before: string, after: string): { before: string; after: string } {
+  const sides = sideDiff(shown(before), shown(after));
+  return {
+    before: highlightSpans(sides.before),
+    after: highlightSpans(sides.after),
+  };
+}
+
 /** Pending list: short fields in place, long fields named. */
 function reviewList(review: ItemReview): string {
   if (review.kind === "new") return `<span class="review-badge">New</span>`;
@@ -119,10 +140,11 @@ function reviewList(review: ItemReview): string {
       if (field.long) {
         return `<li class="review-change"><span class="review-field">${esc(field.label)}</span></li>`;
       }
+      const sides = highlightedSides(field.before, field.after);
       return `<li class="review-change">
         <span class="review-field">${esc(field.label)}</span>
-        <span class="review-side"><span class="review-k">Published</span> ${esc(shown(field.before))}</span>
-        <span class="review-side"><span class="review-k">Now</span> ${esc(shown(field.after))}</span>
+        <span class="review-side"><span class="review-k">Published</span> ${sides.before}</span>
+        <span class="review-side"><span class="review-k">Now</span> ${sides.after}</span>
       </li>`;
     })
     .join("");
@@ -139,13 +161,14 @@ function reviewFull(review: ItemReview): string {
       .map((field) => {
         const text = field.long ? focusChange(field.before, field.after) : { ...field, trimmed: false };
         const note = text.trimmed ? `<p class="hint">Showing the part that changed.</p>` : "";
+        const sides = highlightedSides(text.before, text.after);
         return `<li>
           <p class="diff-field">${esc(field.label)}</p>
           ${note}
           <p class="diff-label">Published</p>
-          <pre class="diff-before">${esc(shown(text.before))}</pre>
+          <pre class="diff-before">${sides.before}</pre>
           <p class="diff-label">Now</p>
-          <pre class="diff-after">${esc(shown(text.after))}</pre>
+          <pre class="diff-after">${sides.after}</pre>
         </li>`;
       })
       .join("")}

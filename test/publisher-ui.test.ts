@@ -233,6 +233,49 @@ test("publish diff labels the previous and current text", () => {
   assert.match(html, />Now</);
   assert.match(html, /Then/);
   assert.match(html, /Now name/);
+  assert.match(html, /class="diff-del"/);
+  assert.match(html, /class="diff-ins"/);
+});
+
+test("What changed marks only the edited words inside a shared sentence", () => {
+  const lib = library();
+  const item: ItemRow = {
+    id: "item-1",
+    library_id: lib.id,
+    name: "VPN",
+    entity_key: null,
+    labels: [],
+    summary: "Company VPN",
+    body: "Use travel VPN",
+    status: "draft",
+    details: null,
+    published_snapshot: {
+      name: "VPN",
+      labels: [],
+      summary: "Company VPN",
+      body: "Use company VPN",
+      details: null,
+      published_at: 1,
+    },
+    created_by: "alice",
+    updated_by: "alice",
+    created_at: 0,
+    updated_at: 0,
+  };
+  const html = itemPage({
+    access: publisher,
+    csrf: "token",
+    item,
+    library: lib,
+    html: "<p>Use travel VPN</p>",
+    shell: { libraries: [], csrf: "token", canAddLibrary: true },
+  });
+  assert.match(html, /id="what-changed"/);
+  assert.match(html, /<mark class="diff-del">company <\/mark>/);
+  assert.match(html, /<mark class="diff-ins">travel <\/mark>/);
+  assert.match(html, /Use <mark class="diff-del">company <\/mark>VPN/);
+  assert.match(html, /Use <mark class="diff-ins">travel <\/mark>VPN/);
+  assert.doesNotMatch(html, /<mark class="diff-del">Use/);
 });
 
 test("Edit and Archive live in Actions; Publish stays primary; only SA hard-deletes", () => {

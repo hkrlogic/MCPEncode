@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createItem, createLibrary, listItems, publishItem, updateItem } from "../src/db/queries.ts";
 import { schemaForStarter } from "../src/items/library-schema.ts";
-import { focusChange, itemReview } from "../src/items/review.ts";
+import { focusChange, itemReview, sideDiff, tokenize } from "../src/items/review.ts";
 import { withTestDatabase } from "./db.ts";
 
 const general = schemaForStarter("general");
@@ -118,6 +118,26 @@ test("a small edit inside a long description stays in view", () => {
   assert.match(focused.before, /Monday/);
   assert.match(focused.after, /Tuesday/);
   assert.ok(focused.before.length < before.length);
+});
+
+test("inline highlight keeps shared words and marks only the edit", () => {
+  assert.deepEqual(tokenize("Use company VPN"), ["Use ", "company ", "VPN"]);
+
+  const sides = sideDiff("Use company VPN", "Use travel VPN");
+  assert.deepEqual(sides.before, [
+    { op: "equal", text: "Use " },
+    { op: "delete", text: "company " },
+    { op: "equal", text: "VPN" },
+  ]);
+  assert.deepEqual(sides.after, [
+    { op: "equal", text: "Use " },
+    { op: "insert", text: "travel " },
+    { op: "equal", text: "VPN" },
+  ]);
+
+  const replaced = sideDiff("Company VPN", "Travel laptops");
+  assert.deepEqual(replaced.before, [{ op: "delete", text: "Company VPN" }]);
+  assert.deepEqual(replaced.after, [{ op: "insert", text: "Travel laptops" }]);
 });
 
 test("publisher lists attach a review only when asked", async () => {

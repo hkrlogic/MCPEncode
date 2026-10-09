@@ -2146,6 +2146,31 @@ fieldset.field-group legend { font-family: "Source Sans 3", "Segoe UI", sans-ser
 }
 .diff-before { border-left: 3px solid #b35c4a; margin-bottom: 0.35rem; }
 .diff-after { border-left: 3px solid #1f4d3a; }
+/* Inline edit marks: only the changed words, not the whole block. */
+mark.diff-del,
+mark.diff-ins {
+  color: inherit;
+  border-radius: 0.2em;
+  padding: 0.05em 0.12em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+mark.diff-del {
+  background: #f3d0c8;
+  color: #6b2a1f;
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: #a24a3a;
+}
+mark.diff-ins {
+  background: #c8e6d6;
+  color: #1a3d2e;
+  font-weight: 650;
+}
+.review-side mark.diff-del,
+.review-side mark.diff-ins {
+  font-family: inherit;
+}
 @keyframes sheet-up {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }

@@ -201,3 +201,77 @@ export function focusChange(
     trimmed: beforeView.trimmed || afterView.trimmed,
   };
 }
+
+/** One run of text in an inline before/after highlight. */
+export type DiffSpan =
+  | { op: "equal"; text: string }
+  | { op: "delete"; text: string }
+  | { op: "insert"; text: string };
+
+/**
+ * Each word keeps the spaces after it so a full rewrite is one mark,
+ * not deleted words with a plain space left in the middle.
+ */
+export function tokenize(text: string): string[] {
+  if (!text) return [];
+  const words = text.match(/\S+\s*/g) ?? [];
+  const lead = text.match(/^\s+/);
+  return lead ? [lead[0], ...words] : words;
+}
+
+/**
+ * Word-level LCS so the shared words stay plain and only the edit is marked.
+ * Used on the Pending list and the What changed box.
+ */
+export function sideDiff(
+  before: string,
+  after: string,
+): { before: DiffSpan[]; after: DiffSpan[] } {
+  if (before === after) {
+    return {
+      before: before ? [{ op: "equal", text: before }] : [],
+      after: after ? [{ op: "equal", text: after }] : [],
+    };
+  }
+  const left = tokenize(before);
+  const right = tokenize(after);
+  const m = left.length;
+  const n = right.length;
+  // dp[i][j] = LCS length of left[i..] and right[j..]
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i -= 1) {
+    for (let j = n - 1; j >= 0; j -= 1) {
+      dp[i]![j] =
+        left[i] === right[j] ? (dp[i + 1]![j + 1] ?? 0) + 1 : Math.max(dp[i + 1]![j] ?? 0, dp[i]![j + 1] ?? 0);
+    }
+  }
+
+  const beforeSpans: DiffSpan[] = [];
+  const afterSpans: DiffSpan[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < m || j < n) {
+    if (i < m && j < n && left[i] === right[j]) {
+      pushSpan(beforeSpans, "equal", left[i]!);
+      pushSpan(afterSpans, "equal", right[j]!);
+      i += 1;
+      j += 1;
+    } else if (j < n && (i === m || (dp[i]![j + 1] ?? 0) >= (dp[i + 1]![j] ?? 0))) {
+      pushSpan(afterSpans, "insert", right[j]!);
+      j += 1;
+    } else if (i < m) {
+      pushSpan(beforeSpans, "delete", left[i]!);
+      i += 1;
+    }
+  }
+  return { before: beforeSpans, after: afterSpans };
+}
+
+function pushSpan(spans: DiffSpan[], op: DiffSpan["op"], text: string): void {
+  const last = spans[spans.length - 1];
+  if (last && last.op === op) {
+    last.text += text;
+    return;
+  }
+  spans.push({ op, text });
+}
