@@ -16,6 +16,8 @@ test("add library shows each schema and its fields", () => {
     csrf: "token",
     libraries: [],
   });
+  assert.match(html, /data-name-examples="Remote access\|Windows patching\|Vendor contacts\|On-call runbooks\|Acceptable use\|Lobby procedures"/);
+  assert.match(html, /library-name\.js/);
   assert.match(html, /<legend>Data schema<\/legend>/);
   assert.match(html, /schema-choices-segmented/);
   assert.match(html, /schema-segments/);

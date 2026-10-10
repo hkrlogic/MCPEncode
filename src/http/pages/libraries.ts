@@ -177,7 +177,8 @@ export function addLibraryPage(input: {
     csrf: input.csrf,
     access: input.access,
     shell,
-    extraScripts: `<script src="${staticUrl("custom-schema.js")}"></script>`,
+    extraScripts: `<script src="${staticUrl("library-name.js")}"></script>
+    <script src="${staticUrl("custom-schema.js")}"></script>`,
     body: `
       <div class="library-view">
         <header class="library-head">
@@ -190,7 +191,9 @@ export function addLibraryPage(input: {
         <form method="post" action="/libraries" class="capture add-library-form">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
           <label>Library name
-            <input name="name" required maxlength="200" autocomplete="off" placeholder="Remote access" value="${esc(input.name ?? "")}">
+            <input name="name" required maxlength="200" autocomplete="off" placeholder="Remote access"
+              data-name-examples="Remote access|Windows patching|Vendor contacts|On-call runbooks|Acceptable use|Lobby procedures"
+              value="${esc(input.name ?? "")}">
           </label>
           ${schemaChoicesMarkup({ selected: input.template, customFields: input.customFields })}
           ${writeModeChoicesMarkup(input.writeMode)}
