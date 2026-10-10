@@ -68,10 +68,13 @@ fi
 
 step "Dependabot branches: built on the clean history?"
 if git rev-parse --git-dir >/dev/null 2>&1; then
-  git fetch -q origin 'refs/heads/dependabot/*:refs/remotes/origin/dependabot/*' 2>/dev/null
+  git fetch -q --prune origin 'refs/heads/dependabot/*:refs/remotes/origin/dependabot/*' 2>/dev/null
   clean="$(git rev-parse "$BRANCH")"
   for b in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin/dependabot); do
-    if git merge-base --is-ancestor "$clean" "$b" 2>/dev/null; then echo "  ok   $b"; else echo "  OLD  $b  (built before the rewrite; delete it, Dependabot recreates it)"; fi
+    # Sharing no commit with $BRANCH means the old history. Being behind $BRANCH is normal and only needs a rebase.
+    if ! git merge-base "$clean" "$b" >/dev/null 2>&1; then echo "  OLD  $b  (shares no history with $BRANCH; delete it, Dependabot recreates it)"
+    elif git merge-base --is-ancestor "$clean" "$b" 2>/dev/null; then echo "  ok   $b"
+    else echo "  ok   $b  (behind $BRANCH; comment '@dependabot rebase' on its PR to update it)"; fi
   done
 fi
 
