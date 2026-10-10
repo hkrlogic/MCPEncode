@@ -10,8 +10,8 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const db = await openDatabase(config.database);
 
-  const embedded =
-    config.authMode === "embedded" ? await createEmbeddedIdp(config, accountStore(db)) : undefined;
+  const accounts = config.authMode === "embedded" ? accountStore(db) : undefined;
+  const embedded = accounts ? await createEmbeddedIdp(config, accounts) : undefined;
   const authServer = embedded ? embedded.endpoints : await loadAuthServer(config.authIssuer);
 
   const app = createApp({
@@ -20,6 +20,7 @@ async function main(): Promise<void> {
     authServer,
     verifierKey: embedded?.publicKey,
     mountAuthServer: embedded?.mount,
+    accounts,
   });
 
   app.listen(config.port, config.bindHost, () => {

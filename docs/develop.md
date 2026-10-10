@@ -63,6 +63,9 @@ No publish, approve, write-mode, or revert tools. Those stay in the publisher UI
 - Access tokens must pass signature, issuer, expiry, and audience.
 - Library access is an allow-list of subjects with reader or publisher role.
 - A **Reader key** is optional, one per library, and Reader only. Publishers create it under Reader key; the plaintext is shown once and Postgres stores a SHA-256 hash. It lists and opens published items. It cannot write, publish, or read the audit log, and it cannot sign in to the publisher. Rotating Connect does not change it. In LibreChat, put the Connect link on the server, send `Authorization: Bearer <key>`, and set `requiresOAuth: false`.
+- **Disable and demotion take effect at once.** With built-in sign-in, every session, MCP request and token refresh looks the account up again. A disabled account gets nothing from an existing session, access token or refresh token, and a demoted SA is no longer SA even if its token says so. With `AUTH_MODE=oidc` the identity provider owns this.
+- **First account on a public address needs a setup code.** If `PUBLIC_BASE_URL` or `BIND_HOST` is not loopback, the create-account page asks for `SETUP_TOKEN` (or a random code printed once to the server log). Wrong codes count toward the sign-in wait. Local-only instances need no code.
+- **Sign-in shows where you will be sent.** MCP clients may use any callback, so the sign-in page names the destination before the password is typed. Set `OAUTH_REDIRECT_HOSTS` to pin remote web callbacks to known hostnames. Tokens can only be requested for this app's login or one of its library links.
 - The access token is never written to Postgres — only `sub` as actor fields.
 - Tool results label store content as **data**, not instructions.
 - Markdown preview does not execute raw HTML in item bodies.

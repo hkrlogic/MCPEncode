@@ -85,7 +85,7 @@ function attachEntityKey(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid entity key" };
   }
-  return { ok: true, item: { ...item, entity_key: normalizeEntityKey(parsed.data) } };
+  return { ok: true, item: { ...item, entity_key: normalizeEntityKey(parsed.data) ?? undefined } };
 }
 
 function policyStarterFields(): SchemaFieldDef[] {

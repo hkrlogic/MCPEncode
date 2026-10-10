@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { memoryAccountStore, type Account } from "../src/auth/accounts.ts";
 import { createEmbeddedIdp } from "../src/auth/embedded-idp.ts";
-import { hashPassword, verifyPassword } from "../src/auth/passwords.ts";
+import { hashPassword, needsRehash, verifyPassword } from "../src/auth/passwords.ts";
 import { ROLE_PERMISSIONS } from "../src/auth/rbac.ts";
 import { signSession } from "../src/auth/session.ts";
 import { accountStore } from "../src/db/accounts.ts";
@@ -30,6 +30,16 @@ test("passwords are stored as scrypt hashes", async () => {
   assert.equal(await verifyPassword("wrong horse battery", hash), false);
   assert.equal(await verifyPassword("correct horse battery", "not-a-hash"), false);
   assert.equal(await verifyPassword("correct horse battery", "scrypt$99999999$8$1$aaaa$bbbb"), false);
+});
+
+test("old, cheaper scrypt hashes still verify and are flagged for upgrade", async () => {
+  const { scryptSync, randomBytes } = await import("node:crypto");
+  const salt = randomBytes(16);
+  const key = scryptSync("correct horse battery", salt, 32, { N: 16384, r: 8, p: 1 });
+  const old = `scrypt$16384$8$1$${salt.toString("base64url")}$${key.toString("base64url")}`;
+  assert.equal(await verifyPassword("correct horse battery", old), true);
+  assert.equal(needsRehash(old), true);
+  assert.equal(needsRehash(await hashPassword("correct horse battery")), false);
 });
 
 test("the first visit creates an account and later visits sign in", async () => {

@@ -2,12 +2,26 @@
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 
-const scryptAsync = promisify(scrypt);
+type ScryptCost = { N: number; r: number; p: number; maxmem: number };
+const scryptAsync = promisify(scrypt) as unknown as (
+  password: string,
+  salt: Buffer,
+  keylen: number,
+  options: ScryptCost,
+) => Promise<Buffer>;
 
-/** OWASP-aligned interactive login cost. A stored hash cannot raise this. */
-const SCRYPT_N = 16384;
+/**
+ * Interactive login cost: N=2^16, r=8, p=2 (64 MiB per hash), one of the OWASP
+ * password-storage settings. A stored hash cannot raise this: verification
+ * refuses anything costlier, so a crafted row cannot pin the process.
+ * Hashes made with the older, cheaper setting (N=2^14, p=1) still verify and
+ * are upgraded at the next successful sign-in (see needsRehash).
+ */
+const SCRYPT_N = 65536;
 const SCRYPT_R = 8;
-const SCRYPT_P = 1;
+const SCRYPT_P = 2;
+/** Node refuses scrypt above 32 MiB unless told; this leaves room for SCRYPT_N * SCRYPT_R * 128. */
+const SCRYPT_MAXMEM = 128 * 1024 * 1024;
 const KEY_LENGTH = 32;
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -36,7 +50,8 @@ export async function hashPassword(password: string): Promise<string> {
     N: SCRYPT_N,
     r: SCRYPT_R,
     p: SCRYPT_P,
-  })) as Buffer;
+    maxmem: SCRYPT_MAXMEM,
+  }));
   return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString("base64url")}$${hash.toString("base64url")}`;
 }
 
@@ -56,7 +71,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const salt = decode(parts[4] ?? "");
   const expected = decode(parts[5] ?? "");
   if (!salt || !expected || salt.length < 8 || expected.length !== KEY_LENGTH) return false;
-  const actual = (await scryptAsync(password, salt, expected.length, { N: n, r, p })) as Buffer;
+  const actual = (await scryptAsync(password, salt, expected.length, { N: n, r, p, maxmem: SCRYPT_MAXMEM }));
   return timingSafeEqual(actual, expected);
 }
 
@@ -66,4 +81,13 @@ function decode(value: string): Buffer | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** True when a stored hash was made with a cheaper setting than the current one. */
+export function needsRehash(stored: string): boolean {
+  const parts = stored.split("$");
+  if (parts.length !== 6 || parts[0] !== "scrypt") return false;
+  return (
+    Number(parts[1]) < SCRYPT_N || Number(parts[2]) < SCRYPT_R || Number(parts[3]) < SCRYPT_P
+  );
 }

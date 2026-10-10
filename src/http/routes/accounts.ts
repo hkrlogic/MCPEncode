@@ -192,7 +192,7 @@ export function registerAccountRoutes(app: express.Express, ctx: AppRouteContext
       res.status(page.status).send(page.html);
       return;
     }
-    const result = await accounts.setDisabled(req.params.id, disabled);
+    const result = await accounts.setDisabled(String(req.params.id), disabled);
     if (!result.ok) {
       const page = await renderAccounts(access, { error: result.message, status: 400 });
       res.status(page.status).send(page.html);

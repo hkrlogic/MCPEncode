@@ -8,7 +8,10 @@
  *
  * The publisher's own browser sign-in stays on this app's /callback only.
  * The code is still single-use, bound to the exact address at the token
- * endpoint, and useless without the PKCE verifier.
+ * endpoint, and useless without the PKCE verifier. PKCE does not stop someone
+ * who starts the sign-in themselves, so the sign-in page shows where the person
+ * will be sent (callbackLabel), and an operator can pin remote web callbacks to
+ * known hostnames with OAUTH_REDIRECT_HOSTS.
  */
 
 const BLOCKED_SCHEMES = new Set(["javascript", "data", "file", "blob", "vbscript", "about"]);
@@ -17,6 +20,12 @@ export type CallbackCheck = {
   clientId: string;
   webClientId: string;
   publicBaseUrl: string;
+  /**
+   * Optional operator allowlist (OAUTH_REDIRECT_HOSTS). When set, an http(s)
+   * callback must go to one of these hostnames. Loopback callbacks (desktop
+   * apps) and app-scheme callbacks (cursor://) are not affected.
+   */
+  allowedHosts?: string[];
 };
 
 /** True when this client may be sent back to uri after sign-in. */
@@ -25,7 +34,18 @@ export function isAllowedCallback(uri: string, check: CallbackCheck): boolean {
   if (check.clientId === check.webClientId) {
     return uri === publisherCallback(check.publicBaseUrl);
   }
-  return true;
+  return hostAllowed(uri, check.allowedHosts);
+}
+
+/** With no allowlist, any callback passes. With one, remote web callbacks must be on it. */
+function hostAllowed(uri: string, allowedHosts: string[] | undefined): boolean {
+  if (!allowedHosts || allowedHosts.length === 0) return true;
+  const parsed = new URL(uri);
+  const scheme = parsed.protocol.slice(0, -1).toLowerCase();
+  if (scheme !== "http" && scheme !== "https") return true;
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (host === "127.0.0.1" || host === "localhost" || host === "::1") return true;
+  return allowedHosts.includes(host);
 }
 
 /** Address shown on the sign-in page so the return site is visible before the password. */

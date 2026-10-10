@@ -120,6 +120,8 @@ test("MCP access requires a library access-list row unless the caller is SA", as
       idpRole: "sa",
       schema: schemaForStarter("general"),
       writeMode: "reviewed",
+      shelfId: null,
+      shelfName: null,
     });
 
     await grantLibraryAccess(db, {
@@ -140,6 +142,8 @@ test("MCP access requires a library access-list row unless the caller is SA", as
       idpRole: "readonly",
       schema: schemaForStarter("general"),
       writeMode: "reviewed",
+      shelfId: null,
+      shelfName: null,
     });
   });
 });
@@ -159,6 +163,8 @@ test("create_library grants the creator as publisher", async () => {
       idpRole: "readonly",
       schema: row.schema,
       writeMode: "reviewed",
+      shelfId: null,
+      shelfName: null,
     });
   });
 });

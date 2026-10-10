@@ -1,6 +1,7 @@
 /** Cookie names and form/session helpers for HTTP routes. */
 import type { Request, Response } from "express";
 import type { AppConfig } from "../config.ts";
+import type { AccountGuard } from "../auth/account-guard.ts";
 import { accessFromIdentity, type Access } from "../auth/rbac.ts";
 import { readSession } from "../auth/session.ts";
 import {
@@ -72,7 +73,19 @@ export async function sessionAccess(
   if (!token) return undefined;
   const session = await readSession(token, config.sessionSecret);
   if (!session) return undefined;
-  return { ...accessFromIdentity(session), csrf: session.csrf };
+  let role = session.role;
+  // Built-in accounts: a disabled or demoted account loses its session at once,
+  // not when the cookie expires. The role comes from the account, not the cookie.
+  const guard = req.app?.locals?.accountGuard as AccountGuard | undefined;
+  if (guard) {
+    const check = await guard(session.sub);
+    if (!check.allowed) return undefined;
+    role = check.role;
+  }
+  return {
+    ...accessFromIdentity({ sub: session.sub, clientId: session.clientId, role }),
+    csrf: session.csrf,
+  };
 }
 
 export function requireCsrf(req: Request, csrf: string): boolean {

@@ -9,9 +9,10 @@ import type { AuthServerEndpoints } from "../http/discovery.ts";
 import { pkceChallenge } from "../http/pkce.ts";
 import { staticUrl } from "../http/static-assets.ts";
 import type { AccountStore } from "./accounts.ts";
-import { hashPassword, normalizeUsername, verifyPassword } from "./passwords.ts";
+import { hashPassword, needsRehash, normalizeUsername, verifyPassword } from "./passwords.ts";
+import { newSetupCode, setupCodeMatches } from "./setup-code.ts";
 import { SIGN_IN_WAIT, SignInLimit } from "./signin-limit.ts";
-import { isAllowedCallback } from "./redirect.ts";
+import { callbackLabel, isAllowedCallback } from "./redirect.ts";
 import type { Role } from "./rbac.ts";
 
 type AuthCode = {
@@ -67,7 +68,28 @@ function redirectAllowed(uri: string, clientId: string, config: AppConfig): bool
     clientId,
     webClientId: config.webClientId,
     publicBaseUrl: config.publicBaseUrl,
+    allowedHosts: config.oauthRedirectHosts,
   });
+}
+
+/**
+ * The token audience a client may ask for: this app's own login, or one of this
+ * app's library MCP links. Anything else is refused, so a sign-in link cannot
+ * mint a token addressed to some other service.
+ */
+function resourceAllowed(resource: string, config: AppConfig): boolean {
+  if (resource === config.authAudience) return true;
+  let url: URL;
+  try {
+    url = new URL(resource);
+  } catch {
+    return false;
+  }
+  if (url.search || url.hash || url.username || url.password) return false;
+  if (url.origin !== new URL(config.publicBaseUrl).origin) return false;
+  return /^\/libraries\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/mcp\/[A-Za-z0-9_-]{32,64}$/i.test(
+    url.pathname,
+  );
 }
 
 function escapeHtml(value: string): string {
@@ -83,6 +105,10 @@ function loginPage(input: {
   hidden: Record<string, string>;
   /** No accounts yet: this form creates the first one. There is no shared password. */
   setup: boolean;
+  /** Public deployment: creating the first account also takes the operator's setup code. */
+  setupCodeRequired?: boolean;
+  /** Where the browser goes after sign-in, shown before the password is typed. Omitted for the publisher's own sign-in. */
+  returnTo?: string;
   username?: string;
 }): string {
   const fields = Object.entries(input.hidden)
@@ -90,7 +116,9 @@ function loginPage(input: {
     .join("");
   const title = input.setup ? "Create account" : "Sign in";
   const lead = input.setup
-    ? "This is the first account. It is SA — it can manage people and every library. Choose a username and a password of at least 12 characters."
+    ? input.setupCodeRequired
+      ? "This is the first account. It is SA — it can manage people and every library. Enter the setup code from the server log (or the SETUP_TOKEN you set), then choose a username and a password of at least 12 characters."
+      : "This is the first account. It is SA — it can manage people and every library. Choose a username and a password of at least 12 characters."
     : "";
   return `<!DOCTYPE html>
 <html lang="en">
@@ -98,9 +126,6 @@ function loginPage(input: {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${title} · MCPEncode</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@450;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="${staticUrl("styles.css")}">
 </head>
 <body>
@@ -108,10 +133,20 @@ function loginPage(input: {
     <section class="panel">
       <h1>${title}</h1>
       ${lead ? `<p class="hint">${lead}</p>` : ""}
+      ${
+        input.returnTo
+          ? `<p class="hint">After you sign in, you will be sent to <strong>${escapeHtml(input.returnTo)}</strong>. Continue only if you started this from an app you trust.</p>`
+          : ""
+      }
       ${input.error ? `<p class="error" role="alert">${escapeHtml(input.error)}</p>` : ""}
       <form method="post" action="/id/authorize">
         ${fields}
         ${input.setup ? `<input type="hidden" name="setup" value="1">` : ""}
+        ${
+          input.setup && input.setupCodeRequired
+            ? `<label>Setup code <input name="setup_code" autocomplete="off" required maxlength="200"></label>`
+            : ""
+        }
         <label>Username <input name="username" autocomplete="username" required maxlength="64" value="${escapeHtml(input.username ?? "")}"></label>
         <label>Password <input name="password" type="password" autocomplete="${input.setup ? "new-password" : "current-password"}" required></label>
         ${
@@ -145,6 +180,16 @@ export async function createEmbeddedIdp(
   // Used when the username is unknown so a miss still spends a scrypt verification.
   const dummyPasswordHash = await hashPassword(`unused-${crypto.randomUUID()}`);
   const signInLimit = options?.signInLimit ?? new SignInLimit();
+  // Public deployment: the first-account page needs a code only the operator has.
+  // SETUP_TOKEN if set, otherwise a random one printed once to the log.
+  const setupCode = config.setupCodeRequired ? (config.setupToken ?? newSetupCode()) : undefined;
+  if (setupCode !== undefined && (await accounts.count()) === 0) {
+    console.log(
+      config.setupToken
+        ? "No account exists yet. The create-account page asks for your SETUP_TOKEN."
+        : `No account exists yet. First-account setup code: ${setupCode}  (set SETUP_TOKEN to choose your own)`,
+    );
+  }
   const { publicKey, privateKey } = await generateKeyPair("RS256", { extractable: true });
   const jwk = (await exportJWK(publicKey)) as JWK;
   jwk.kid = "mpos-dev";
@@ -279,8 +324,21 @@ export async function createEmbeddedIdp(
         res.status(400).send("PKCE S256 is required");
         return;
       }
+      if (!resourceAllowed(hidden.resource, config)) {
+        res.status(400).send("invalid resource");
+        return;
+      }
       const setup = (await accounts.count()) === 0;
-      res.send(loginPage({ error, hidden, setup, username }));
+      res.send(
+        loginPage({
+          error,
+          hidden,
+          setup,
+          setupCodeRequired: setup && setupCode !== undefined,
+          returnTo: hidden.client_id === config.webClientId ? undefined : callbackLabel(hidden.redirect_uri),
+          username,
+        }),
+      );
     };
 
     app.get("/id/authorize", (req, res) => {
@@ -299,6 +357,11 @@ export async function createEmbeddedIdp(
       }
       let user: { sub: string; role: Role; realmRole: string } | undefined;
       if (settingUp) {
+        if (setupCode !== undefined && !setupCodeMatches(form(req, "setup_code"), setupCode)) {
+          signInLimit.recordFailure(attemptKey, address);
+          await showAuthorize(req, res, "That setup code is not correct.", username);
+          return;
+        }
         if (password !== form(req, "password_confirm")) {
           signInLimit.recordFailure(attemptKey, address);
           await showAuthorize(req, res, "Those passwords do not match.", username);
@@ -325,6 +388,11 @@ export async function createEmbeddedIdp(
           await showAuthorize(req, res, "This account is disabled.", username);
           return;
         }
+        // Hashes made with an older, cheaper setting are upgraded now that the
+        // password is known. A failure here must not block sign-in.
+        if (needsRehash(account.passwordHash)) {
+          await accounts.setPassword(account.id, password).catch(() => undefined);
+        }
         user = { sub: account.id, role: account.role, realmRole: realmRoleFor(account.role) };
       }
       signInLimit.recordSuccess(attemptKey, address);
@@ -338,6 +406,11 @@ export async function createEmbeddedIdp(
         res.status(400).send("invalid redirect_uri");
         return;
       }
+      const resource = form(req, "resource") || config.authAudience;
+      if (!resourceAllowed(resource, config)) {
+        res.status(400).send("invalid resource");
+        return;
+      }
       const code = crypto.randomUUID();
       codes.set(code, {
         sub: user.sub,
@@ -346,7 +419,7 @@ export async function createEmbeddedIdp(
         clientId,
         redirectUri,
         challenge: form(req, "code_challenge"),
-        resource: form(req, "resource") || config.authAudience,
+        resource,
         nonce: form(req, "nonce"),
         expiresAt: Date.now() + 5 * 60 * 1000,
       });
@@ -420,15 +493,24 @@ export async function createEmbeddedIdp(
         return;
       }
       refreshGrants.delete(token);
+      // The refresh chain renews itself, so it must stop when the account does.
+      // Look the account up again: a disabled account gets nothing, and the role
+      // is the account's role now, not the one it had at sign-in.
+      const current = await accounts.findById(record.sub);
+      if (!current || current.disabled) {
+        res.status(400).json({ error: "invalid_grant" });
+        return;
+      }
+      const realmRole = realmRoleFor(current.role);
       const accessToken = await issueAccessToken({
         sub: record.sub,
-        realmRole: record.realmRole,
+        realmRole,
         clientId: record.clientId,
         resource: record.resource,
       });
       const refreshToken = issueRefreshToken({
         sub: record.sub,
-        realmRole: record.realmRole,
+        realmRole,
         clientId: record.clientId,
         resource: record.resource,
       });
@@ -437,7 +519,7 @@ export async function createEmbeddedIdp(
         token_type: "Bearer",
         expires_in: 900,
         refresh_token: refreshToken,
-        scope: scopeFor(record.realmRole),
+        scope: scopeFor(realmRole),
       });
     }
 

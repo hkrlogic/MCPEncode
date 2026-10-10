@@ -1,3 +1,20 @@
+/* Fonts are served from this app (public/fonts), never from a third party.
+   Run scripts/fetch-fonts.sh once to add the files; until then the system fonts below are used. */
+@font-face {
+  font-family: "Source Sans 3";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: local("Source Sans 3"), local("Source Sans 3 Regular"), url("fonts/source-sans-3-latin-wght-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: local("Source Serif 4"), local("Source Serif 4 Regular"), url("fonts/source-serif-4-latin-wght-normal.woff2") format("woff2");
+}
+
 :root {
   --bg: #f4f1ea;
   --ink: #1c1916;

@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { SETUP_TOKEN_MIN_LENGTH } from "./auth/setup-code.ts";
 
 /**
  * Runtime configuration. Leave AUTH_MODE unset to use the built-in accounts.
@@ -32,6 +33,12 @@ export type AppConfig = {
   webClientId: string;
   sessionSecret: string;
   database: DatabaseConfig;
+  /** Operator-chosen code for creating the first account (SETUP_TOKEN). */
+  setupToken?: string;
+  /** True when the first-account page must ask for a setup code (anything but local-only). */
+  setupCodeRequired?: boolean;
+  /** OAUTH_REDIRECT_HOSTS. When non-empty, remote web callbacks for MCP clients must use one of these hostnames. */
+  oauthRedirectHosts?: string[];
 };
 
 const DB_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
@@ -78,6 +85,16 @@ function parseAllowedHosts(raw: string | undefined): string[] {
 export function isLoopbackHost(host: string): boolean {
   const normalized = host.trim().toLowerCase();
   return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost";
+}
+
+/**
+ * True when people other than whoever runs this can reach it: the bind address
+ * or the public address is not loopback. A reverse proxy on 127.0.0.1 that
+ * serves a public domain counts, because the public address decides.
+ */
+export function isPublicDeployment(bindHost: string, publicBaseUrl: string): boolean {
+  const publicHost = new URL(publicBaseUrl).hostname.replace(/^\[|\]$/g, "");
+  return !(isLoopbackHost(bindHost) && isLoopbackHost(publicHost));
 }
 
 /**
@@ -260,10 +277,17 @@ export function loadConfig(): AppConfig {
     throw new Error("AUTH_ISSUER is required when AUTH_MODE=oidc");
   }
   const sessionSecret = assertSessionSecret(required("SESSION_SECRET"));
+  const setupToken = envValue("SETUP_TOKEN");
+  if (setupToken && setupToken.length < SETUP_TOKEN_MIN_LENGTH) {
+    throw new Error(
+      `SETUP_TOKEN must be at least ${SETUP_TOKEN_MIN_LENGTH} characters. Generate one with: openssl rand -base64 18`,
+    );
+  }
+  const bindHost = process.env.BIND_HOST?.trim() || (onRailway ? "0.0.0.0" : "127.0.0.1");
 
   return {
     port: Number(process.env.PORT ?? "3000"),
-    bindHost: process.env.BIND_HOST?.trim() || (onRailway ? "0.0.0.0" : "127.0.0.1"),
+    bindHost,
     publicBaseUrl,
     allowedHosts: parseAllowedHosts(process.env.ALLOWED_HOSTS),
     authMode,
@@ -277,6 +301,9 @@ export function loadConfig(): AppConfig {
     webClientId: process.env.WEB_CLIENT_ID ?? "mpos-web",
     sessionSecret,
     database: loadDatabaseConfig(),
+    setupToken,
+    setupCodeRequired: isPublicDeployment(bindHost, publicBaseUrl),
+    oauthRedirectHosts: parseAllowedHosts(process.env.OAUTH_REDIRECT_HOSTS),
   };
 }
 

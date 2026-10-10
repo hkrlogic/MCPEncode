@@ -21,11 +21,14 @@ import {
   readerKeyAuthInfo,
   readerKeyMatches,
 } from "../auth/reader-key.ts";
+import { createAccountGuard, type AccountGuard } from "../auth/account-guard.ts";
+import type { AccountStore } from "../auth/accounts.ts";
 import type { AppConfig } from "../config.ts";
 import { libraryTokenAudience } from "../auth/audience.ts";
 import { loginScopes } from "../auth/scopes.ts";
 import { createTokenVerifier } from "../auth/verifier.ts";
 import {
+  ACCOUNT_UNAVAILABLE,
   FORBIDDEN_LIBRARY,
   READER_KEY_REJECTED,
   UNAUTHORIZED_MCP,
@@ -47,6 +50,7 @@ import { registerEditorRoutes } from "./routes/editor.ts";
 import { registerItemRoutes } from "./routes/items.ts";
 import { registerLibraryRoutes } from "./routes/libraries.ts";
 import { registerShelfRoutes } from "./routes/shelves.ts";
+import { securityHeaders } from "./security-headers.ts";
 import { staticPublicDir } from "./static-assets.ts";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +62,8 @@ export function createApp(input: {
   authServer: AuthServerEndpoints;
   verifierKey?: Parameters<typeof createTokenVerifier>[0]["localKey"];
   mountAuthServer?: (app: express.Express) => void;
+  /** Built-in accounts. When set, sessions and tokens are re-checked against the account on every request. */
+  accounts?: AccountStore;
 }) {
   const { config, db, authServer } = input;
   const originHost = new URL(config.publicBaseUrl).hostname;
@@ -87,6 +93,9 @@ export function createApp(input: {
     allowedHosts: allowedNames,
     ...(loopbackBind ? { allowedOrigins: allowedNames } : {}),
   });
+  app.disable("x-powered-by");
+  app.use(securityHeaders({ https: config.publicBaseUrl.startsWith("https://") }));
+  if (input.accounts) app.locals.accountGuard = createAccountGuard(input.accounts);
   // One reverse proxy on a public bind, so the sign-in limit sees the browser address.
   if (!loopbackBind) app.set("trust proxy", 1);
   app.use(express.urlencoded({ extended: false }));
@@ -277,9 +286,15 @@ export function createApp(input: {
           });
           return;
         }
-        const scoped = await resolveLibraryMcpAccess(db, authInfo, libraryId);
+        const scoped = await resolveLibraryMcpAccess(
+          db,
+          authInfo,
+          libraryId,
+          app.locals.accountGuard as AccountGuard | undefined,
+        );
         if ("error" in scoped) {
-          const status = scoped.error === FORBIDDEN_LIBRARY ? 403 : 404;
+          const status =
+            scoped.error === FORBIDDEN_LIBRARY || scoped.error === ACCOUNT_UNAVAILABLE ? 403 : 404;
           res.status(status).json({
             error: status === 403 ? "access_denied" : "not_found",
             error_description: scoped.error,

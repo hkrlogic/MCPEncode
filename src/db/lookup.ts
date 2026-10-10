@@ -63,6 +63,7 @@ type LookupHit = {
   id: string;
   library_id: string;
   name: string;
+  entity_key: string | null;
   labels: string | string[];
   summary: string;
   body: string;
@@ -117,6 +118,7 @@ function summaryFromHit(hit: LookupHit): ItemSummary {
     id: hit.id,
     library_id: hit.library_id,
     name: hit.name,
+    entity_key: hit.entity_key ?? null,
     labels: parseLabels(hit.labels),
     summary: excerptOf(hit.summary),
     status: asStatus(hit.status),
@@ -137,7 +139,7 @@ async function findNameSummaryHits(
     // is left empty here, so this pass stays name/summary-focused.
     const rows = await allRows<Omit<LookupHit, "body"> & { relevance: number }>(
       db,
-      `SELECT id, library_id, name, labels, summary, status, updated_at,
+      `SELECT id, library_id, name, entity_key, labels, summary, status, updated_at,
               ts_rank(search_tsv, plainto_tsquery('english', ?)) AS relevance
        FROM items
        WHERE ${libraryWhere(scope)}
@@ -157,7 +159,7 @@ async function findNameSummaryHits(
     const pattern = `(^|[^a-z0-9])(${safeShort.join("|")})([^a-z0-9]|$)`;
     const rows = await allRows<Omit<LookupHit, "body">>(
       db,
-      `SELECT id, library_id, name, labels, summary, status, updated_at
+      `SELECT id, library_id, name, entity_key, labels, summary, status, updated_at
        FROM items
        WHERE ${libraryWhere(scope)}
          AND (LOWER(name) ~ ? OR LOWER(summary) ~ ?)
@@ -204,7 +206,7 @@ async function loadLookupHits(
   const placeholders = ids.map(() => "?").join(", ");
   return allRows<LookupHit>(
     db,
-    `SELECT id, library_id, name, labels, summary, body, status, updated_at
+    `SELECT id, library_id, name, entity_key, labels, summary, body, status, updated_at
      FROM items
      WHERE ${libraryWhere(scope)}
        AND id IN (${placeholders})`,

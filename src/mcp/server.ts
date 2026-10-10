@@ -1,3 +1,4 @@
+import type { AccountGuard } from "../auth/account-guard.ts";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { McpServer } from "@modelcontextprotocol/server";
 import type { Database } from "../db/types.ts";
@@ -45,6 +46,10 @@ export const NOT_CONNECTED =
 
 export const UNAUTHORIZED_MCP =
   "Not signed in. Reconnect this library's MCP link in Cursor (Tools & MCP), then sign in. Do not invent library items.";
+
+/** The account behind this token was disabled or removed after the token was issued. */
+export const ACCOUNT_UNAVAILABLE =
+  "This account is disabled or no longer exists. Ask an SA to enable it, then sign in again.";
 
 export const FORBIDDEN_LIBRARY =
   "Signed in, but this account cannot open this library. Ask a publisher on the library to grant your IdP subject access.";
@@ -744,12 +749,21 @@ export async function resolveLibraryMcpAccess(
   db: Database,
   authInfo: AuthInfo,
   libraryId: string,
+  /** Built-in accounts only. Re-checks the account on every request. */
+  guard?: AccountGuard,
 ): Promise<LibraryMcpContext | { error: string }> {
   const library = await getLibrary(db, libraryId);
   if (!library) return { error: "Library not found." };
   const extra = (authInfo.extra ?? {}) as { sub?: string; role?: Role };
   const sub = extra.sub || authInfo.clientId;
-  const idpRole: Role = extra.role === "sa" ? "sa" : "readonly";
+  let idpRole: Role = extra.role === "sa" ? "sa" : "readonly";
+  if (guard) {
+    // A token outlives the account. Disabled or removed means no access, and a
+    // demoted SA is no longer SA, whatever the token still says.
+    const check = await guard(sub);
+    if (!check.allowed) return { error: ACCOUNT_UNAVAILABLE };
+    idpRole = check.role;
+  }
   const membership = await getLibraryAccess(db, libraryId, sub);
   if (!membership && idpRole !== "sa") return { error: FORBIDDEN_LIBRARY };
   const shelfName = library.shelfId ? (await getShelf(db, library.shelfId))?.name ?? null : null;

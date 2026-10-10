@@ -11,6 +11,8 @@ import type { AppRouteContext } from "./context.ts";
 
 export function registerAuthRoutes(app: express.Express, ctx: AppRouteContext): void {
   const { config, authServer, verifier } = ctx;
+  // Browsers only send these cookies over HTTPS when the public address is HTTPS.
+  const secure = config.publicBaseUrl.startsWith("https://");
 
   app.get("/login", async (_req, res) => {
     const state = crypto.randomUUID();
@@ -30,7 +32,7 @@ export function registerAuthRoutes(app: express.Express, ctx: AppRouteContext): 
     if (config.authMode !== "oidc") {
       authorize.searchParams.set("resource", config.authAudience);
     }
-    setCookies(res, [cookieHeader(OAUTH_COOKIE, handshake, { maxAge: 600 })]);
+    setCookies(res, [cookieHeader(OAUTH_COOKIE, handshake, { maxAge: 600, secure })]);
     res.redirect(authorize.toString());
   });
 
@@ -86,14 +88,14 @@ export function registerAuthRoutes(app: express.Express, ctx: AppRouteContext): 
       config.sessionSecret,
     );
     setCookies(res, [
-      cookieHeader(SESSION_COOKIE, session, { maxAge: 60 * 60 }),
-      cookieHeader(OAUTH_COOKIE, "", { clear: true }),
+      cookieHeader(SESSION_COOKIE, session, { maxAge: 60 * 60, secure }),
+      cookieHeader(OAUTH_COOKIE, "", { clear: true, secure }),
     ]);
     res.redirect("/");
   });
 
   app.get("/logout", (_req, res) => {
-    setCookies(res, [cookieHeader(SESSION_COOKIE, "", { clear: true })]);
+    setCookies(res, [cookieHeader(SESSION_COOKIE, "", { clear: true, secure })]);
     if (authServer.endSessionEndpoint) {
       const logout = new URL(authServer.endSessionEndpoint);
       logout.searchParams.set("client_id", config.webClientId);

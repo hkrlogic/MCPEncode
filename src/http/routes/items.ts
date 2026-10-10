@@ -82,7 +82,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
 
   /** Shared gate for open item and Markdown export. */
   async function loadVisibleItem(req: Request, access: SessionUser) {
-    const item = await getItem(db, req.params.id, { publishedOnly: false }).catch(() => undefined);
+    const item = await getItem(db, String(req.params.id), { publishedOnly: false }).catch(() => undefined);
     if (!item) return { error: { status: 404 as const, message: "Item not found." } };
     const libraryAccess = await itemLibraryAccess(db, item.library_id, access);
     if (!libraryAccess) {
@@ -104,7 +104,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
     }
     try {
       const loaded = await loadVisibleItem(req, access);
-      if ("error" in loaded) {
+      if (loaded.error) {
         res.status(loaded.error.status).send(errorPage(loaded.error.message));
         return;
       }
@@ -130,7 +130,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
     }
     const notice = typeof req.query.notice === "string" ? req.query.notice : undefined;
     const loaded = await loadVisibleItem(req, access);
-    if ("error" in loaded) {
+    if (loaded.error) {
       res.status(loaded.error.status).send(errorPage(loaded.error.message));
       return;
     }
@@ -179,7 +179,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       return;
     }
     const loaded = await loadVisibleItem(req, access);
-    if ("error" in loaded) {
+    if (loaded.error) {
       res.status(loaded.error.status).send(errorPage(loaded.error.message));
       return;
     }
