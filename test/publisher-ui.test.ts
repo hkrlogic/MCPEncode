@@ -73,9 +73,30 @@ test("home idle state offers Add library when nothing is pending", () => {
     libraries: [{ ...shell.shellLibraries[0], pendingCount: 0 }],
   });
   assert.match(html, /Nothing waiting to publish/);
-  assert.match(html, /Choose a library on the left/);
+  assert.match(html, /Choose a library or a shelf on the left/);
   assert.match(html, /href="\/libraries\/new"/);
   assert.match(html, />Add library</);
+});
+
+test("home left menu lists a shelf as its own view", () => {
+  const html = librariesPage({
+    access: { sub: "alice", clientId: "test", role: "sa", permissions: ROLE_PERMISSIONS.sa },
+    csrf: "token",
+    libraries: [
+      { ...shell.shellLibraries[0], pendingCount: 0, shelfId: "shelf-1", shelfName: "Facilities" },
+    ],
+    shelves: [{ id: "shelf-1", name: "Facilities" }],
+  });
+  assert.match(html, /My shelves/);
+  assert.match(html, /href="\/shelves\/new"/);
+  assert.match(html, /href="\/shelves\/shelf-1"/);
+  assert.match(html, />Facilities</);
+  assert.match(html, /href="\/libraries\/11111111-1111-4111-8111-111111111111"/);
+  const shelfAt = html.indexOf("My shelves");
+  const addShelfAt = html.indexOf('href="/shelves/new"');
+  const addLibraryAt = html.indexOf('href="/libraries/new"');
+  assert.ok(shelfAt > addLibraryAt);
+  assert.ok(addShelfAt > shelfAt);
 });
 
 test("reader with no libraries sees Access guidance, not Add library", () => {
@@ -94,6 +115,8 @@ test("reader with no libraries sees Access guidance, not Add library", () => {
   assert.match(html, /grant you Access/);
   assert.doesNotMatch(html, /Add a library to get started/);
   assert.doesNotMatch(html, /href="\/libraries\/new"/);
+  assert.doesNotMatch(html, /My shelves/);
+  assert.doesNotMatch(html, /Add shelf/);
   assert.match(html, /No libraries assigned\./);
 });
 

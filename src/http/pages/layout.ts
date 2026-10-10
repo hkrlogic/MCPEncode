@@ -396,22 +396,17 @@ function librarySidebar(shell: AppShell): string {
   if (shell.settingsMode) return settingsSidebar(shell);
 
   const addLink = shell.canAddLibrary
-    ? `<span class="sidebar-add-links">
-        <a class="sidebar-add-link${shell.addingLibrary ? " is-active" : ""}" href="/libraries/new" aria-label="Add library"${
-          shell.addingLibrary ? ' aria-current="page"' : ""
-        }><span aria-hidden="true">+</span></a>
-        <a class="sidebar-shelf-add${shell.addingShelf ? " is-active" : ""}" href="/shelves/new"${
-          shell.addingShelf ? ' aria-current="page"' : ""
-        }>Add shelf</a>
-      </span>`
+    ? `<a class="sidebar-add-link${shell.addingLibrary ? " is-active" : ""}" href="/libraries/new" aria-label="Add library"${
+        shell.addingLibrary ? ' aria-current="page"' : ""
+      }><span aria-hidden="true">+</span></a>`
     : "";
 
-  const rows =
-    shell.libraries.length === 0 && (shell.shelves?.length ?? 0) === 0
+  const libraryRows =
+    shell.libraries.length === 0
       ? `<p class="sidebar-empty">${
           shell.canAddLibrary ? "No libraries yet." : "No libraries assigned."
         }</p>`
-      : sidebarLibraryGroups(shell);
+      : `<ul class="sidebar-libs">${shell.libraries.map((row) => librarySidebarRow(shell, row)).join("")}</ul>`;
 
   const orphans =
     shell.orphans && shell.orphans.length > 0
@@ -442,8 +437,9 @@ function librarySidebar(shell: AppShell): string {
           ${addLink}
         </div>
       </div>
-      <nav class="sidebar-nav" aria-label="Your libraries">
-        ${rows}
+      <nav class="sidebar-nav" aria-label="Libraries and shelves">
+        ${libraryRows}
+        ${sidebarShelfSection(shell)}
         ${orphans}
       </nav>
       ${sidebarFooter(shell)}
@@ -468,6 +464,7 @@ function librarySidebarRow(shell: AppShell, row: ShellLibrary): string {
                 <span class="sidebar-lib-text">
                   <span class="sidebar-lib-name">${esc(row.name)}</span>
                   ${mode ? `<span class="sidebar-lib-meta">${esc(mode)}</span>` : ""}
+                  ${row.shelfName ? `<span class="sidebar-lib-meta">${esc(row.shelfName)}</span>` : ""}
                 </span>
                 ${items}
               </a>
@@ -475,34 +472,41 @@ function librarySidebarRow(shell: AppShell, row: ShellLibrary): string {
             </li>`;
 }
 
-/** Shelves first, then libraries that stand alone. */
-function sidebarLibraryGroups(shell: AppShell): string {
+/** My shelves sits under the library list. Add shelf lives in this section. */
+function sidebarShelfSection(shell: AppShell): string {
   const shelves = [...(shell.shelves ?? [])].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
-  const loose = shell.libraries.filter((row) => !row.shelfId);
-  const groups = shelves
-    .map((shelf) => {
-      const members = shell.libraries.filter((row) => row.shelfId === shelf.id);
-      const active = shelf.id === shell.activeShelfId;
-      const libs =
-        members.length === 0
-          ? `<p class="sidebar-shelf-empty">No libraries</p>`
-          : `<ul class="sidebar-libs sidebar-shelf-libs">${members.map((row) => librarySidebarRow(shell, row)).join("")}</ul>`;
-      return `
-        <section class="sidebar-shelf">
-          <a class="sidebar-shelf-name${active ? " is-active" : ""}" href="/shelves/${esc(shelf.id)}"${
-            active ? ' aria-current="page"' : ""
-          }>${esc(shelf.name)}</a>
-          ${libs}
-        </section>`;
-    })
-    .join("");
-  const looseList =
-    loose.length === 0
-      ? ""
-      : `<ul class="sidebar-libs">${loose.map((row) => librarySidebarRow(shell, row)).join("")}</ul>`;
-  return `${groups}${looseList}`;
+  if (!shell.canAddLibrary && shelves.length === 0) return "";
+  const add = shell.canAddLibrary
+    ? `<a class="sidebar-shelf-add${shell.addingShelf ? " is-active" : ""}" href="/shelves/new"${
+        shell.addingShelf ? ' aria-current="page"' : ""
+      }>Add shelf</a>`
+    : "";
+  const rows =
+    shelves.length === 0
+      ? `<p class="sidebar-shelf-empty">No shelves yet.</p>`
+      : shelves
+          .map((shelf) => {
+            const active = shelf.id === shell.activeShelfId;
+            return `
+        <a class="sidebar-lib sidebar-shelf-link${active ? " is-active" : ""}" href="/shelves/${esc(shelf.id)}"${
+          active ? ' aria-current="page"' : ""
+        }>
+          <span class="sidebar-lib-text">
+            <span class="sidebar-lib-name">${esc(shelf.name)}</span>
+          </span>
+        </a>`;
+          })
+          .join("");
+  return `
+    <section class="sidebar-shelf-section" aria-labelledby="my-shelves-heading">
+      <div class="sidebar-section-head">
+        <p class="sidebar-section-label" id="my-shelves-heading">My shelves</p>
+        ${add}
+      </div>
+      ${rows}
+    </section>`;
 }
 
 function shellCurrentLabel(shell: AppShell): string {

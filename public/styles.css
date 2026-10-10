@@ -431,11 +431,15 @@ a { color: var(--accent); }
 }
 .sidebar-pending:hover { background: #ead7b0; }
 .sidebar-pending:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.sidebar-add-links {
+.sidebar-section-head {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 44px;
+  margin: 0.85rem 0.35rem 0.15rem;
 }
+.sidebar-section-head .sidebar-section-label { margin: 0; }
 .sidebar-shelf-add {
   color: var(--accent);
   font-size: 0.8rem;
@@ -444,28 +448,16 @@ a { color: var(--accent); }
   min-height: 44px;
   display: inline-flex;
   align-items: center;
+  padding: 0 0.15rem;
 }
 .sidebar-shelf-add.is-active { text-decoration: underline; }
-.sidebar-shelf { margin-top: 0.65rem; }
-.sidebar-shelf-name {
-  display: flex;
-  align-items: center;
-  min-height: 36px;
-  padding: 0.15rem 0.7rem;
-  color: var(--ink);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  text-decoration: none;
-}
-.sidebar-shelf-name.is-active { background: rgba(31, 77, 58, 0.08); border-radius: 8px; }
-.sidebar-shelf-name:hover { color: var(--accent); }
+.sidebar-shelf-add:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sidebar-shelf-section .sidebar-shelf-link { margin: 0 0 0.2rem; }
 .sidebar-shelf-empty {
-  margin: 0 0.7rem 0.35rem 1.15rem;
+  margin: 0 0.7rem 0.35rem;
   color: var(--muted);
   font-size: 0.8rem;
 }
-.sidebar-shelf-libs .sidebar-lib { padding-left: 1.15rem; }
 .shelf-libraries-heading {
   margin: 0.25rem 0 0.35rem;
   font-size: 1rem;

@@ -270,6 +270,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         csrf: access.csrf,
         libraries: shell.libraries,
         orphans: shell.orphans,
+        shelves: shell.shelves,
         username: shell.username,
         roleLabel: shell.roleLabel,
       }),

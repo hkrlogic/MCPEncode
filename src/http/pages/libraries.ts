@@ -23,6 +23,7 @@ export function librariesPage(input: {
   csrf: string;
   libraries: AppShell["libraries"];
   orphans?: AppShell["orphans"];
+  shelves?: AppShell["shelves"];
   username?: string;
   roleLabel?: string;
 }): string {
@@ -30,6 +31,7 @@ export function librariesPage(input: {
   const shell: AppShell = {
     libraries: input.libraries,
     orphans: input.orphans,
+    shelves: input.shelves,
     csrf: input.csrf,
     canAddLibrary: canAdd,
     showAccounts: can(input.access, "accounts.manage"),
@@ -130,8 +132,8 @@ export function librariesPage(input: {
     : "";
   const idleTitle = canAdd ? "Nothing waiting to publish" : "Your libraries";
   const idleLead = canAdd
-    ? "Choose a library on the left to browse items, or add another library."
-    : "Choose a library on the left to browse published items.";
+    ? "Choose a library or a shelf on the left, or add another library."
+    : "Choose a library or a shelf on the left to browse published items.";
   return layout({
     title: "Libraries · MCPEncode",
     csrf: input.csrf,
