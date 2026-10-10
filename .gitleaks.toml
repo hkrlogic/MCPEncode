@@ -1,0 +1,12 @@
+# Secret scanning config (gitleaks). Default rules stay on; only fake test values are allowed.
+title = "MCPEncode gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake values used only by tests"
+regexes = [
+  # Sample session secret in test/session-secret.test.ts: a made-up strong value, not a credential.
+  '''q8Vt3mZ0rL6wN1yH4pK7sD2fG9jB5cX0eU3iO8aR''',
+]
