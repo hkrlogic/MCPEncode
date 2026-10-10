@@ -38,6 +38,9 @@ export type LibraryRow = {
   readerKeyPrefix?: string | null;
   /** When the current Reader key was created. Null when there is no key. */
   readerKeyCreatedAt?: number | null;
+  /** Shelf this library is searched with. Null when it stands alone. */
+  shelfId?: string | null;
+  shelfName?: string | null;
   created_by: string;
   updated_by: string;
   created_at: number;

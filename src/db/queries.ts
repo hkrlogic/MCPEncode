@@ -61,6 +61,17 @@ export {
   type RemoveFileResult,
 } from "./files.ts";
 export { writeAudit, listAudit } from "./audit.ts";
+export {
+  listShelves,
+  getShelf,
+  createShelf,
+  renameShelf,
+  deleteShelf,
+  setLibraryShelf,
+  listShelfLibraries,
+  searchShelf,
+} from "./shelves.ts";
+export type { ShelfRow, ShelfHit } from "./shelves.ts";
 export { proposeTable, approveTableProposal, rejectTableProposal } from "./table-proposals.ts";
 export type { ProposeTableResult, ApproveTableResult } from "./table-proposals.ts";
 export { proposeField, approveFieldProposal, rejectFieldProposal } from "./field-proposals.ts";

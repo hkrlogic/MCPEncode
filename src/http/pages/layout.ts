@@ -272,12 +272,24 @@ export type ShellLibrary = {
   itemCount?: number;
   /** Drafts waiting to publish. Set only when this person is a publisher on the library. */
   pendingCount?: number;
+  /** Shelf this library is searched with. Absent when it stands alone. */
+  shelfId?: string | null;
+  shelfName?: string | null;
+};
+
+export type ShellShelf = {
+  id: string;
+  name: string;
 };
 
 export type AppShell = {
   libraries: ShellLibrary[];
   orphans?: ShellLibrary[];
+  /** Shelves this person can open. SA also sees empty shelves. */
+  shelves?: ShellShelf[];
   activeLibraryId?: string;
+  activeShelfId?: string;
+  addingShelf?: boolean;
   csrf: string;
   canAddLibrary: boolean;
   /** Add library page: the sidebar link is the current page. */
@@ -384,46 +396,22 @@ function librarySidebar(shell: AppShell): string {
   if (shell.settingsMode) return settingsSidebar(shell);
 
   const addLink = shell.canAddLibrary
-    ? `<a class="sidebar-add-link${shell.addingLibrary ? " is-active" : ""}" href="/libraries/new" aria-label="Add library"${
-        shell.addingLibrary ? ' aria-current="page"' : ""
-      }><span aria-hidden="true">+</span></a>`
+    ? `<span class="sidebar-add-links">
+        <a class="sidebar-add-link${shell.addingLibrary ? " is-active" : ""}" href="/libraries/new" aria-label="Add library"${
+          shell.addingLibrary ? ' aria-current="page"' : ""
+        }><span aria-hidden="true">+</span></a>
+        <a class="sidebar-shelf-add${shell.addingShelf ? " is-active" : ""}" href="/shelves/new"${
+          shell.addingShelf ? ' aria-current="page"' : ""
+        }>Add shelf</a>
+      </span>`
     : "";
 
   const rows =
-    shell.libraries.length === 0
+    shell.libraries.length === 0 && (shell.shelves?.length ?? 0) === 0
       ? `<p class="sidebar-empty">${
           shell.canAddLibrary ? "No libraries yet." : "No libraries assigned."
         }</p>`
-      : `<ul class="sidebar-libs">
-          ${shell.libraries
-            .map((row) => {
-              const active = row.id === shell.activeLibraryId;
-              const mode =
-                row.writeMode && isLibraryWriteMode(row.writeMode)
-                  ? shellWriteModeLabel(row.writeMode)
-                  : "";
-              const items =
-                typeof row.itemCount === "number"
-                  ? `<span class="sidebar-lib-count">${row.itemCount}<span class="sr-only"> items</span></span>`
-                  : "";
-              const pending =
-                typeof row.pendingCount === "number" && row.pendingCount > 0
-                  ? `<a class="sidebar-pending" href="/libraries/${esc(row.id)}?tab=pending">${row.pendingCount}<span class="sr-only"> pending</span></a>`
-                  : "";
-              return `
-            <li class="sidebar-lib-row${active ? " is-active" : ""}">
-              <a class="sidebar-lib${active ? " is-active" : ""}" href="/libraries/${esc(row.id)}"${active ? ' aria-current="page"' : ""}>
-                <span class="sidebar-lib-text">
-                  <span class="sidebar-lib-name">${esc(row.name)}</span>
-                  ${mode ? `<span class="sidebar-lib-meta">${esc(mode)}</span>` : ""}
-                </span>
-                ${items}
-              </a>
-              ${pending}
-            </li>`;
-            })
-            .join("")}
-        </ul>`;
+      : sidebarLibraryGroups(shell);
 
   const orphans =
     shell.orphans && shell.orphans.length > 0
@@ -462,12 +450,70 @@ function librarySidebar(shell: AppShell): string {
     </aside>`;
 }
 
+function librarySidebarRow(shell: AppShell, row: ShellLibrary): string {
+  const active = row.id === shell.activeLibraryId;
+  const mode =
+    row.writeMode && isLibraryWriteMode(row.writeMode) ? shellWriteModeLabel(row.writeMode) : "";
+  const items =
+    typeof row.itemCount === "number"
+      ? `<span class="sidebar-lib-count">${row.itemCount}<span class="sr-only"> items</span></span>`
+      : "";
+  const pending =
+    typeof row.pendingCount === "number" && row.pendingCount > 0
+      ? `<a class="sidebar-pending" href="/libraries/${esc(row.id)}?tab=pending">${row.pendingCount}<span class="sr-only"> pending</span></a>`
+      : "";
+  return `
+            <li class="sidebar-lib-row${active ? " is-active" : ""}">
+              <a class="sidebar-lib${active ? " is-active" : ""}" href="/libraries/${esc(row.id)}"${active ? ' aria-current="page"' : ""}>
+                <span class="sidebar-lib-text">
+                  <span class="sidebar-lib-name">${esc(row.name)}</span>
+                  ${mode ? `<span class="sidebar-lib-meta">${esc(mode)}</span>` : ""}
+                </span>
+                ${items}
+              </a>
+              ${pending}
+            </li>`;
+}
+
+/** Shelves first, then libraries that stand alone. */
+function sidebarLibraryGroups(shell: AppShell): string {
+  const shelves = [...(shell.shelves ?? [])].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+  const loose = shell.libraries.filter((row) => !row.shelfId);
+  const groups = shelves
+    .map((shelf) => {
+      const members = shell.libraries.filter((row) => row.shelfId === shelf.id);
+      const active = shelf.id === shell.activeShelfId;
+      const libs =
+        members.length === 0
+          ? `<p class="sidebar-shelf-empty">No libraries</p>`
+          : `<ul class="sidebar-libs sidebar-shelf-libs">${members.map((row) => librarySidebarRow(shell, row)).join("")}</ul>`;
+      return `
+        <section class="sidebar-shelf">
+          <a class="sidebar-shelf-name${active ? " is-active" : ""}" href="/shelves/${esc(shelf.id)}"${
+            active ? ' aria-current="page"' : ""
+          }>${esc(shelf.name)}</a>
+          ${libs}
+        </section>`;
+    })
+    .join("");
+  const looseList =
+    loose.length === 0
+      ? ""
+      : `<ul class="sidebar-libs">${loose.map((row) => librarySidebarRow(shell, row)).join("")}</ul>`;
+  return `${groups}${looseList}`;
+}
+
 function shellCurrentLabel(shell: AppShell): string {
   if (shell.settingsMode) {
     if (shell.settingsActive === "accounts") return "Accounts";
     return "Settings";
   }
+  if (shell.addingShelf) return "Add shelf";
   if (shell.addingLibrary) return "Add library";
+  const shelf = shell.shelves?.find((row) => row.id === shell.activeShelfId);
+  if (shelf) return shelf.name;
   const active =
     shell.libraries.find((row) => row.id === shell.activeLibraryId) ??
     shell.orphans?.find((row) => row.id === shell.activeLibraryId);

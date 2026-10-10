@@ -62,6 +62,8 @@ export type ShellLibraryRow = {
   template: string;
   write_mode: string;
   access_role: LibraryAccessRole;
+  shelf_id: string | null;
+  shelf_name: string | null;
 };
 
 /** Libraries this subject may open (readers and publishers). */
@@ -75,17 +77,22 @@ export async function listLibrariesForSubject(
     template: string;
     write_mode: string;
     access_role: string;
+    shelf_id: string | null;
+    shelf_name: string | null;
   }>(
     db,
-    `SELECT l.id, l.name, l.template, l.write_mode, a.role AS access_role
+    `SELECT l.id, l.name, l.template, l.write_mode, l.shelf_id, s.name AS shelf_name, a.role AS access_role
      FROM libraries l
      INNER JOIN library_access a ON a.library_id = l.id
+     LEFT JOIN shelves s ON s.id = l.shelf_id
      WHERE a.subject = ?
      ORDER BY LOWER(l.name) ASC, l.name ASC`,
     subject,
   );
   return rows.map((row) => ({
     ...row,
+    shelf_id: row.shelf_id || null,
+    shelf_name: row.shelf_name || null,
     access_role: asRole(row.access_role),
   }));
 }
@@ -97,11 +104,21 @@ export async function listAllLibrariesForSa(db: Database): Promise<ShellLibraryR
     name: string;
     template: string;
     write_mode: string;
+    shelf_id: string | null;
+    shelf_name: string | null;
   }>(
     db,
-    `SELECT id, name, template, write_mode FROM libraries ORDER BY LOWER(name) ASC, name ASC`,
+    `SELECT l.id, l.name, l.template, l.write_mode, l.shelf_id, s.name AS shelf_name
+     FROM libraries l
+     LEFT JOIN shelves s ON s.id = l.shelf_id
+     ORDER BY LOWER(l.name) ASC, l.name ASC`,
   );
-  return rows.map((row) => ({ ...row, access_role: "publisher" as const }));
+  return rows.map((row) => ({
+    ...row,
+    shelf_id: row.shelf_id || null,
+    shelf_name: row.shelf_name || null,
+    access_role: "publisher" as const,
+  }));
 }
 
 /**

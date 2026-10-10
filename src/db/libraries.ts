@@ -42,6 +42,7 @@ type SqlLibrary = Omit<
   connect_token?: string;
   reader_key_prefix?: string | null;
   reader_key_created_at?: number | string | null;
+  shelf_id?: string | null;
   schema?: unknown;
   table_proposal?: unknown;
   field_proposal?: unknown;
@@ -70,6 +71,7 @@ function toLibrary(row: SqlLibrary): LibraryRow {
     connectToken: row.connect_token ?? "",
     readerKeyPrefix: row.reader_key_prefix || null,
     readerKeyCreatedAt: asMillis(row.reader_key_created_at),
+    shelfId: row.shelf_id || null,
     created_by: row.created_by,
     updated_by: row.updated_by,
     created_at: row.created_at,

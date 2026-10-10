@@ -154,6 +154,7 @@ export function addLibraryPage(input: {
   csrf: string;
   libraries: AppShell["libraries"];
   orphans?: AppShell["orphans"];
+  shelves?: AppShell["shelves"];
   username?: string;
   roleLabel?: string;
   error?: string;
@@ -165,6 +166,7 @@ export function addLibraryPage(input: {
   const shell: AppShell = {
     libraries: input.libraries,
     orphans: input.orphans,
+    shelves: input.shelves,
     csrf: input.csrf,
     canAddLibrary: can(input.access, "libraries.create"),
     addingLibrary: true,
@@ -602,6 +604,9 @@ export function libraryPage(input: {
   /** Libraries for the left pane. */
   shellLibraries: AppShell["libraries"];
   shellOrphans?: AppShell["orphans"];
+  shellShelves?: AppShell["shelves"];
+  /** Every shelf, so a publisher can move this library onto one. */
+  shelfChoices?: { id: string; name: string }[];
   /** Session can add libraries (SA). Independent of library publisher powers. */
   canAddLibrary?: boolean;
   username?: string;
@@ -611,6 +616,7 @@ export function libraryPage(input: {
   const shell: AppShell = {
     libraries: input.shellLibraries,
     orphans: input.shellOrphans,
+    shelves: input.shellShelves,
     activeLibraryId: input.library.id,
     csrf: input.csrf,
     canAddLibrary: input.canAddLibrary ?? can(input.access, "libraries.create"),
@@ -678,6 +684,22 @@ export function libraryPage(input: {
                <input name="name" required maxlength="200" value="${esc(input.library.name)}" autocomplete="off">
              </label>
              <button type="submit">Rename library</button>
+           </form>
+           <form class="menu-form" method="post" action="/libraries/${esc(input.library.id)}/shelf">
+             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+             <label class="menu-field">
+               <span class="sr-only">Shelf</span>
+               <select name="shelf_id">
+                 <option value=""${input.library.shelfId ? "" : " selected"}>No shelf</option>
+                 ${(input.shelfChoices ?? [])
+                   .map(
+                     (shelf) =>
+                       `<option value="${esc(shelf.id)}"${shelf.id === input.library.shelfId ? " selected" : ""}>${esc(shelf.name)}</option>`,
+                   )
+                   .join("")}
+               </select>
+             </label>
+             <button type="submit">Move to shelf</button>
            </form>
            ${
              can(input.access, "libraries.delete")

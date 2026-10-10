@@ -18,6 +18,8 @@ import {
   grantLibraryAccess,
   listLibraryAccess,
   listItems,
+  listShelves,
+  setLibraryShelf,
   publishItems,
   cancelPublishItems,
   renameLibrary,
@@ -147,6 +149,13 @@ function connectNotice(flag: unknown): string | undefined {
   return undefined;
 }
 
+/** Fixed copy for ?shelf=. Query text is never echoed. */
+function shelfMoveNotice(flag: unknown): string | undefined {
+  if (flag === "1") return "Shelf updated. Published items are searched with that shelf.";
+  if (flag === "invalid") return "That shelf could not be used. Choose a shelf from the list.";
+  return undefined;
+}
+
 /** Fixed copy for ?renamed=. Query text is never echoed. */
 function renameNotice(flag: unknown): string | undefined {
   if (flag === "1") return "Library renamed.";
@@ -184,6 +193,7 @@ async function publisherShell(db: AppRouteContext["db"], access: SessionUser) {
   return {
     shellLibraries: shell.libraries,
     shellOrphans: shell.orphans,
+    shellShelves: shell.shelves,
     username: shell.username,
     roleLabel: shell.roleLabel,
     showAccounts: shell.showAccounts,
@@ -295,6 +305,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           csrf: access.csrf,
           libraries: shell.libraries,
           orphans: shell.orphans,
+          shelves: shell.shelves,
           username: shell.username,
           roleLabel: shell.roleLabel,
           name: formString(req.body, "name").slice(0, 200),
@@ -411,6 +422,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         csrf: access.csrf,
         libraries: shell.libraries,
         orphans: shell.orphans,
+        shelves: shell.shelves,
         username: shell.username,
         roleLabel: shell.roleLabel,
       }),
@@ -455,6 +467,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       connectNotice(req.query.connect) ??
       readerKeyNotice(req.query["reader-key"]) ??
       renameNotice(req.query.renamed) ??
+      shelfMoveNotice(req.query.shelf) ??
       copyNotice(req.query.copied);
     const waiting =
       ctxLib.library.tableProposal != null || ctxLib.library.tableProposalUnreadable;
@@ -475,6 +488,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       can(ctxLib.libraryAccess, "records.write") && config.authMode === "embedded"
         ? await accountStore(db).list()
         : [];
+    const shelfChoices = can(ctxLib.libraryAccess, "records.write") ? await listShelves(db) : [];
     const revealId = readCookie(req.headers, READER_REVEAL_COOKIE);
     let readerKey: string | undefined;
     if (revealId && can(ctxLib.libraryAccess, "records.write")) {
@@ -506,6 +520,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         notice,
         itemCount,
         canAddLibrary: can(access, "libraries.create"),
+        shelfChoices,
         ...shell,
       }),
     );
@@ -569,6 +584,37 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       params.set("canceled_new", String(result.archived.length));
     }
     res.redirect(`/libraries/${ctxLib.library.id}?${params.toString()}`);
+  });
+
+  app.post("/libraries/:id/shelf", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only a publisher on this library can move it to a shelf."));
+      return;
+    }
+    const raw = formString(req.body, "shelf_id").trim();
+    const shelfId = raw || null;
+    const moved = await setLibraryShelf(db, ctxLib.library.id, shelfId, access.sub);
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.set_library_shelf",
+      success: moved.ok,
+      detail: `${ctxLib.library.id}:${shelfId ?? "none"}`,
+    });
+    if (!moved.ok) {
+      res.redirect(`/libraries/${ctxLib.library.id}?shelf=invalid`);
+      return;
+    }
+    res.redirect(`/libraries/${ctxLib.library.id}?shelf=1`);
   });
 
   app.post("/libraries/:id/access", async (req, res) => {

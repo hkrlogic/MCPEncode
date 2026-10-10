@@ -14,7 +14,7 @@ import {
   createMcpHandler,
 } from "@modelcontextprotocol/server";
 import type { Database } from "../db/types.ts";
-import { getLibrary, getLibraryReaderKeyHash } from "../db/queries.ts";
+import { getLibrary, getLibraryReaderKeyHash, getShelf } from "../db/queries.ts";
 import {
   bearerFromAuthorization,
   isReaderKeyToken,
@@ -46,6 +46,7 @@ import type { AppRouteContext } from "./routes/context.ts";
 import { registerEditorRoutes } from "./routes/editor.ts";
 import { registerItemRoutes } from "./routes/items.ts";
 import { registerLibraryRoutes } from "./routes/libraries.ts";
+import { registerShelfRoutes } from "./routes/shelves.ts";
 import { staticPublicDir } from "./static-assets.ts";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -167,6 +168,7 @@ export function createApp(input: {
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);
   registerLibraryRoutes(app, ctx);
+  registerShelfRoutes(app, ctx);
   registerItemRoutes(app, ctx);
   registerEditorRoutes(app, ctx);
 
@@ -226,7 +228,8 @@ export function createApp(input: {
       }
       const authInfo = readerKeyAuthInfo(library.id);
       (req as express.Request & { auth?: typeof authInfo }).auth = authInfo;
-      const scoped = readerKeyLibraryContext(library);
+      const shelfName = library.shelfId ? (await getShelf(db, library.shelfId))?.name ?? null : null;
+      const scoped = readerKeyLibraryContext({ ...library, shelfName });
       const mcpHandler = createMcpHandler(({ authInfo: info }) => {
         if (!info) throw new Error("MCP handler invoked without authInfo");
         return buildMcpServer(db, info, scoped, { publicBaseUrl: config.publicBaseUrl });

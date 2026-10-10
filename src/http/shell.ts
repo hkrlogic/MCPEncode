@@ -5,6 +5,7 @@ import {
   listAllLibrariesForSa,
   listLibrariesForSubject,
   listOrphanLibraries,
+  listShelves,
   pendingCountsForPublisher,
   publishedCountsForSubject,
 } from "../db/queries.ts";
@@ -33,6 +34,7 @@ export async function loadAppShell(
     AppShell,
     | "libraries"
     | "orphans"
+    | "shelves"
     | "csrf"
     | "canAddLibrary"
     | "showAccounts"
@@ -44,11 +46,27 @@ export async function loadAppShell(
   const libraries = sa
     ? await listAllLibrariesForSa(db)
     : await listLibrariesForSubject(db, access.sub);
-  const [pending, published, account] = await Promise.all([
+  const [pending, published, account, shelves] = await Promise.all([
     pendingCountsForPublisher(db, access.sub, { everyLibrary: sa }),
     publishedCountsForSubject(db, access.sub, { everyLibrary: sa }),
     accountStore(db).findById(access.sub),
+    listShelves(db),
   ]);
+  const mapped = libraries.map((row) => ({
+    id: row.id,
+    name: row.name,
+    template: row.template,
+    writeMode: isLibraryWriteMode(row.write_mode) ? row.write_mode : ("reviewed" as const),
+    access_role: row.access_role,
+    shelfId: row.shelf_id,
+    shelfName: row.shelf_name,
+    itemCount: published.get(row.id) ?? 0,
+    pendingCount:
+      sa || row.access_role === "publisher" ? (pending.get(row.id) ?? 0) : undefined,
+  }));
+  const visibleShelfIds = new Set(
+    mapped.map((row) => row.shelfId).filter((id): id is string => Boolean(id)),
+  );
   return {
     csrf: access.csrf,
     canAddLibrary: can(access, "libraries.create"),
@@ -56,16 +74,10 @@ export async function loadAppShell(
     username: displayName(access, account?.username),
     // App admin flag only — library Access carries reader/publisher.
     roleLabel: sa ? "SA" : "",
-    libraries: libraries.map((row) => ({
-      id: row.id,
-      name: row.name,
-      template: row.template,
-      writeMode: isLibraryWriteMode(row.write_mode) ? row.write_mode : "reviewed",
-      access_role: row.access_role,
-      itemCount: published.get(row.id) ?? 0,
-      pendingCount:
-        sa || row.access_role === "publisher" ? (pending.get(row.id) ?? 0) : undefined,
-    })),
+    libraries: mapped,
+    shelves: (sa ? shelves : shelves.filter((shelf) => visibleShelfIds.has(shelf.id))).map(
+      (shelf) => ({ id: shelf.id, name: shelf.name }),
+    ),
     orphans: sa ? await listOrphanLibraries(db) : [],
   };
 }
