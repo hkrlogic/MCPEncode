@@ -2,6 +2,18 @@
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.pat
+*.bundle
+
+# Editor / agent config with machine-specific ids (keep the example)
+.cursor/mcp.json
+!.cursor/mcp.example.json
+.vscode/
+.idea/
 
 # Old SQLite file, if it is still on disk. Postgres data lives in the Docker volume.
 data/

@@ -4,6 +4,15 @@
   "private": true,
   "type": "module",
   "description": "OAuth 2.1 MCP server for libraries of items (MCPEncode)",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hkrlogic/MCPEncode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hkrlogic/MCPEncode/issues"
+  },
+  "homepage": "https://github.com/hkrlogic/MCPEncode#readme",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",

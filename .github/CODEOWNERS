@@ -1,0 +1,5 @@
+# Changes to these paths need review from the maintainer.
+*                    @hkrlogic
+/src/auth/           @hkrlogic
+/.github/            @hkrlogic
+/SECURITY.md         @hkrlogic

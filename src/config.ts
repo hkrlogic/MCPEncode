@@ -259,10 +259,7 @@ export function loadConfig(): AppConfig {
   if (!authIssuer) {
     throw new Error("AUTH_ISSUER is required when AUTH_MODE=oidc");
   }
-  const sessionSecret = required("SESSION_SECRET");
-  if (sessionSecret.length < 32) {
-    throw new Error("SESSION_SECRET must be at least 32 characters");
-  }
+  const sessionSecret = assertSessionSecret(required("SESSION_SECRET"));
 
   return {
     port: Number(process.env.PORT ?? "3000"),
@@ -281,6 +278,28 @@ export function loadConfig(): AppConfig {
     sessionSecret,
     database: loadDatabaseConfig(),
   };
+}
+
+/** Placeholder values that have appeared in docs or examples. Never valid. */
+const KNOWN_PLACEHOLDER_SECRETS = new Set(["change-me-to-a-long-random-value"]);
+
+/**
+ * SESSION_SECRET signs the UI session cookie. A guessable value lets anyone
+ * forge a session, so reject short values, copied placeholders, and
+ * single-character repeats. Generate one with `openssl rand -base64 48`.
+ */
+export function assertSessionSecret(value: string): string {
+  if (value.length < 32) {
+    throw new Error("SESSION_SECRET must be at least 32 characters. Generate one with: openssl rand -base64 48");
+  }
+  const lowered = value.toLowerCase();
+  if (KNOWN_PLACEHOLDER_SECRETS.has(lowered) || lowered.includes("change-me") || lowered.includes("changeme")) {
+    throw new Error("SESSION_SECRET is still the example placeholder. Generate one with: openssl rand -base64 48");
+  }
+  if (new Set(value).size < 8) {
+    throw new Error("SESSION_SECRET is too repetitive. Generate one with: openssl rand -base64 48");
+  }
+  return value;
 }
 
 /** True when a leftover SQLite file is still on disk. The app does not read it. */

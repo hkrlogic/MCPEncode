@@ -1,18 +1,19 @@
 services:
   # Local Postgres only. Published on 127.0.0.1 so it is not reachable from the network.
-  # Passwords match .env.example. Change both before this machine is shared.
+  # Credentials come from .env (run scripts/init-env.sh to generate them).
+  # Postgres reads them only when the volume is first created.
   postgres:
     image: postgres:16
     ports:
       - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_USER: mpos
-      POSTGRES_PASSWORD: mpos-local-dev
-      POSTGRES_DB: mpos
+      POSTGRES_USER: ${POSTGRES_USER:-mpos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (run scripts/init-env.sh)}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-mpos}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mpos -d mpos"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 20

@@ -1,0 +1,38 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security issue?** Don't file it here — use *Report a vulnerability* under the Security tab.
+        Please remove secrets, Connect links, Reader keys, hostnames and any real organization data before posting.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Sign-in mode
+      options:
+        - Built-in (embedded)
+        - External OIDC (AUTH_MODE=oidc)
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      description: e.g. Cursor, Claude, LibreChat

@@ -1,6 +1,6 @@
 # MCPEncode
 
-Publisher for organization libraries. Open this folder (`~/MCPEncode`) for publisher work — not the kiosk workspace.
+Publisher for organization libraries. Open the repository root for publisher work — not a kiosk workspace.
 
 GitHub: `hkrlogic/MCPEncode`.
 
@@ -14,7 +14,7 @@ You keep **libraries** of **items**. Auth is to a library. Each item has a **nam
 | **Item** | One thing in a library. |
 | **Section** | Typed chunk on an item (Table, Checklist, Details, Description) — body-shaped for now. |
 | **Publisher** | This app. |
-| **Kiosk** | Separate chat UI in `~/organization-chat/ollama-mcp-chat`. |
+| **Kiosk** | A separate chat UI that reads published items over MCP (not in this repo). |
 
 **MCP** is plumbing (Cursor, kiosk, Perplexity, etc.). Do not invent synonyms (vault, notebook, portal).
 
@@ -35,7 +35,7 @@ Review Unlock MCP connections include handoff instructions: prefer `entity_key` 
 ## Run
 
 ```bash
-cd ~/MCPEncode
+scripts/init-env.sh   # first run only
 docker compose up -d postgres
 npm start
 ```
@@ -61,4 +61,4 @@ A library can also have one **Reader key** (publisher UI). It is a static Reader
 
 ## Related
 
-Kiosk workspace: `~/organization-chat` — connect Settings to a library MCP URL from this publisher.
+Kiosk: any MCP chat client can act as a kiosk — point it at a library Connect link (or Reader key) from this publisher.

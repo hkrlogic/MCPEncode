@@ -10,6 +10,7 @@ Deeper operator notes for MCPEncode. Product words and the status gate live in [
 ## Run
 
 ```bash
+scripts/init-env.sh   # first run only: creates .env with random secrets
 docker compose up -d postgres
 npm install
 npm start
@@ -21,7 +22,7 @@ An SA can open **Accounts** to create more people. Grant Access on a library by 
 
 ### Cursor
 
-Open a library → **Connect** → put that URL in `.cursor/mcp.json`. With built-in sign-in, the client id is `mpos-mcp`. After Zitadel bootstrap, use the client id and scopes bootstrap wrote. In **Settings → Tools & MCP**, connect the library. Cursor will 401, discover the issuer, and open a browser login.
+Copy `.cursor/mcp.example.json` to `.cursor/mcp.json` (git-ignored), then open a library → **Connect** → put that URL in it. With built-in sign-in, the client id is `mpos-mcp`. After Zitadel bootstrap, use the client id and scopes bootstrap wrote. In **Settings → Tools & MCP**, connect the library. Cursor will 401, discover the issuer, and open a browser login.
 
 Use `127.0.0.1` consistently. `localhost` is a different host. Embedded mode: token audience is that library URL. Zitadel: audience is the Zitadel project; the access list still gates the library.
 
@@ -46,6 +47,7 @@ Each connection is one library.
 | `whoami` | any library role | sub, library, role, permissions |
 | `list_items` | `records.read` | Pass `q` to answer. One clear match returns the full item. Several matches return summaries. Omit `q` to browse. |
 | `open_item` | `records.read` | full item for one id |
+| `search_shelf` | `records.read` | published item summaries across the library's shelf (only when the library is on a shelf) |
 | `create_library` | `records.write` | name, schema starter, write_mode; optional table proposal |
 | `propose_table` | `records.write` | table design for an empty library; human Approves |
 | `propose_field` | `records.write` | one optional field to append; human Approves (cap 12) |

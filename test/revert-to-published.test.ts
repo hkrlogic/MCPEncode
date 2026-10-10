@@ -51,7 +51,7 @@ function testConfig(port: number): AppConfig {
       host: "127.0.0.1",
       port: 5432,
       user: "mpos",
-      password: "mpos-local-dev",
+      password: "stub-not-a-real-password",
       database: "mpos",
       ssl: false,
     },
