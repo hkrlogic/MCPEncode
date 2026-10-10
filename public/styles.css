@@ -1876,6 +1876,13 @@ button.linkish {
   gap: 0.75rem;
   min-width: 0;
 }
+.pending-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.pending-actions .btn { margin: 0; }
 .pending-selection {
   color: var(--muted);
   font-size: 0.9rem;
@@ -1914,7 +1921,8 @@ button.linkish {
 .pending-list .item-row > .item-pick {
   margin-top: 1.15rem;
 }
-#pending-publish-btn:disabled {
+#pending-publish-btn:disabled,
+#pending-cancel-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

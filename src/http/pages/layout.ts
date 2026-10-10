@@ -84,6 +84,12 @@ export function noticeMessage(notice: string | undefined, _status?: ItemStatus):
   if (notice === "restored") {
     return "Restored to Pending. Publish when it is ready for the kiosk.";
   }
+  if (notice === "canceled") {
+    return "Publish request canceled. This item is back to the last published version.";
+  }
+  if (notice === "canceled_new") {
+    return "Publish request canceled. This item was never published, so it is Archived.";
+  }
   if (notice === "reverted") {
     return "Reverted to the last published version. Item is Pending — Publish when it should be live again.";
   }

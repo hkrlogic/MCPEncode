@@ -19,6 +19,7 @@ import {
   listLibraryAccess,
   listItems,
   publishItems,
+  cancelPublishItems,
   renameLibrary,
   revokeLibraryAccess,
   rotateLibraryConnectToken,
@@ -151,6 +152,22 @@ function renameNotice(flag: unknown): string | undefined {
   if (flag === "1") return "Library renamed.";
   if (flag === "invalid") return "Enter a library name of 1–200 characters.";
   return undefined;
+}
+
+/** Fixed copy for ?canceled= and ?canceled_new=. Counts only; query text is never echoed. */
+function cancelNotice(canceledRaw: unknown, archivedRaw: unknown): string | undefined {
+  const canceled = typeof canceledRaw === "string" ? Number(canceledRaw) : NaN;
+  const archived = typeof archivedRaw === "string" ? Number(archivedRaw) : 0;
+  if (!Number.isInteger(canceled) || canceled < 1 || canceled > 500) return undefined;
+  const archivedCount =
+    Number.isInteger(archived) && archived >= 0 && archived <= canceled ? archived : 0;
+  const head =
+    canceled === 1 ? "1 publish request canceled." : `${canceled} publish requests canceled.`;
+  if (archivedCount === 0) return `${head} They are back to the last published version.`;
+  if (archivedCount === canceled) {
+    return `${head} They were never published, so they are in Archives.`;
+  }
+  return `${head} New items are in Archives. The others are back to the last published version.`;
 }
 
 /** Fixed copy for ?copied= — only fixed flags, never echo names from the query. */
@@ -431,6 +448,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
     const publishedCount =
       typeof req.query.published === "string" ? req.query.published : undefined;
     const notice =
+      cancelNotice(req.query.canceled, req.query.canceled_new) ??
       tableDecisionNotice(req.query.table) ??
       fieldDecisionNotice(req.query.field) ??
       writeModeNotice(req.query.mode) ??
@@ -518,6 +536,39 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       detail: `${ctxLib.library.id}:${published.length}`,
     });
     res.redirect(`/libraries/${ctxLib.library.id}?published=${published.length}`);
+  });
+
+  app.post("/libraries/:id/items/cancel", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access) {
+      res.redirect("/login");
+      return;
+    }
+    if (!requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("Invalid form token. Reload and try again."));
+      return;
+    }
+    const ctxLib = await libraryContext(db, req.params.id, access);
+    if (!ctxLib || "orphan" in ctxLib || !can(ctxLib.libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("Only publishers on this library can cancel a publish request."));
+      return;
+    }
+    const raw = (req.body as { item_id?: string | string[] } | undefined)?.item_id;
+    const ids = (Array.isArray(raw) ? raw : raw ? [raw] : []).filter((id) => typeof id === "string");
+    const result = await cancelPublishItems(db, ctxLib.library.id, ids, access.sub);
+    const canceled = result.restored.length + result.archived.length;
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.cancel_publish",
+      success: canceled > 0,
+      detail: `${ctxLib.library.id}:restored=${result.restored.length}:archived=${result.archived.length}`,
+    });
+    const params = new URLSearchParams({ tab: "pending" });
+    if (canceled > 0) {
+      params.set("canceled", String(canceled));
+      params.set("canceled_new", String(result.archived.length));
+    }
+    res.redirect(`/libraries/${ctxLib.library.id}?${params.toString()}`);
   });
 
   app.post("/libraries/:id/access", async (req, res) => {

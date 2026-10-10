@@ -496,6 +496,112 @@ export async function publishItem(
   return getItem(db, id, { publishedOnly: false });
 }
 
+export type CancelPublishResult =
+  | { ok: true; item: ItemRow; kind: "restored" | "archived" }
+  | { ok: false; reason: "not_found" | "not_pending" | "unreadable" };
+
+/**
+ * Withdraw a Pending item.
+ * If it was published before, working fields return to that snapshot and it is live again.
+ * If it was never published, it moves to Archives. Snapshots and entity_key stay put.
+ */
+export async function cancelPublishItem(
+  db: Database,
+  id: string,
+  actorSub: string,
+): Promise<CancelPublishResult> {
+  return db.transaction(async (tx) => {
+    const locked = await getRow<{ id: string; published_snapshot: string | null }>(
+      tx,
+      "SELECT id, published_snapshot FROM items WHERE id = ? FOR UPDATE",
+      id,
+    );
+    if (!locked) return { ok: false, reason: "not_found" };
+    const existing = await getItem(tx, id, { publishedOnly: false });
+    if (!existing) return { ok: false, reason: "not_found" };
+    if (existing.status !== "draft") return { ok: false, reason: "not_pending" };
+
+    const now = Date.now();
+    if (existing.published_snapshot) {
+      const snapshot = existing.published_snapshot;
+      await runSql(
+        tx,
+        `UPDATE items
+         SET name = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
+             status = 'published', updated_by = ?, updated_at = ?
+         WHERE id = ? AND status = 'draft'`,
+        snapshot.name,
+        JSON.stringify(snapshot.labels),
+        snapshot.summary,
+        snapshot.body,
+        snapshot.details,
+        actorSub,
+        now,
+        id,
+      );
+      await writePublishAudit(tx, {
+        libraryId: existing.library_id,
+        itemId: id,
+        actorSub,
+        fromStatus: "draft",
+        toStatus: "published",
+      });
+      const item = await getItem(tx, id, { publishedOnly: false });
+      if (!item) return { ok: false, reason: "not_found" };
+      return { ok: true, item, kind: "restored" };
+    }
+
+    // A stored snapshot we cannot read must not be archived as if it never existed.
+    if (locked.published_snapshot) return { ok: false, reason: "unreadable" };
+
+    await runSql(
+      tx,
+      `UPDATE items SET status = 'archived', updated_by = ?, updated_at = ? WHERE id = ? AND status = 'draft'`,
+      actorSub,
+      now,
+      id,
+    );
+    await writePublishAudit(tx, {
+      libraryId: existing.library_id,
+      itemId: id,
+      actorSub,
+      fromStatus: "draft",
+      toStatus: "archived",
+    });
+    const item = await getItem(tx, id, { publishedOnly: false });
+    if (!item) return { ok: false, reason: "not_found" };
+    return { ok: true, item, kind: "archived" };
+  });
+}
+
+/**
+ * Cancel many Pending items in one library.
+ * Skips ids that are missing, in another library, or not Pending.
+ */
+export async function cancelPublishItems(
+  db: Database,
+  libraryId: string,
+  ids: string[],
+  actorSub: string,
+): Promise<{ restored: string[]; archived: string[]; unreadable: string[] }> {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))].slice(0, LIST_LIMIT_MAX);
+  const restored: string[] = [];
+  const archived: string[] = [];
+  const unreadable: string[] = [];
+  for (const id of unique) {
+    const existing = await getItem(db, id, { publishedOnly: false });
+    if (!existing || existing.library_id !== libraryId || existing.status !== "draft") continue;
+    const result = await cancelPublishItem(db, id, actorSub);
+    if (!result.ok) {
+      if (result.reason === "unreadable") unreadable.push(id);
+      continue;
+    }
+    if (result.kind === "restored") restored.push(result.item.id);
+    else archived.push(result.item.id);
+  }
+  return { restored, archived, unreadable };
+}
+
 /** Hide a published item from readers without archiving. Keeps last published snapshot. */
 export async function unpublishItem(
   db: Database,

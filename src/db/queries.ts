@@ -34,13 +34,15 @@ export {
   updateItem,
   publishItem,
   publishItems,
+  cancelPublishItem,
+  cancelPublishItems,
   unpublishItem,
   archiveItem,
   restoreItem,
   revertToPublished,
   deleteItem,
 } from "./items.ts";
-export type { RevertToPublishedResult } from "./items.ts";
+export type { RevertToPublishedResult, CancelPublishResult } from "./items.ts";
 export {
   canRevertToPublished,
   itemDiffersFromSnapshot,

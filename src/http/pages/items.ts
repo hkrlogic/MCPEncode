@@ -187,12 +187,19 @@ export function itemPage(input: {
          </form>`
       : "";
   // Publish stays a primary button on Pending. Edit / gate moves / delete live in ⋯.
+  const cancelConfirm = input.item.published_snapshot
+    ? "Cancel this publish request? The item goes back to the last published version."
+    : "Cancel this publish request? This item was never published, so it will move to Archives.";
   const publishAction =
     canWrite && status === "draft"
       ? `<div class="gate-actions">
           <form method="post" action="/items/${esc(input.item.id)}/publish">
             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
             <button class="btn" type="submit">Publish</button>
+          </form>
+          <form method="post" action="/items/${esc(input.item.id)}/cancel" onsubmit="${onConfirm(cancelConfirm)}">
+            <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+            <button class="btn secondary" type="submit">Cancel</button>
           </form>
         </div>`
       : "";

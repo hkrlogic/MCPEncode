@@ -739,8 +739,13 @@ export function libraryPage(input: {
               <div class="pending-list-head">
                 <input type="checkbox" id="pending-select-all" class="item-pick" aria-label="Select all pending items">
                 <div class="pending-list-head-main">
-                  <span class="pending-selection" id="pending-selection" aria-live="polite">Select items to publish</span>
-                  <button class="btn" type="submit" id="pending-publish-btn" disabled>Publish</button>
+                  <span class="pending-selection" id="pending-selection" aria-live="polite">Select items</span>
+                  <div class="pending-actions">
+                    <button class="btn secondary" type="submit" id="pending-cancel-btn" disabled
+                      formaction="/libraries/${esc(input.library.id)}/items/cancel"
+                      onclick="${onConfirm("Cancel the selected publish requests? Items that were already live go back to the last published version. Items that were never published move to Archives.")}">Cancel</button>
+                    <button class="btn" type="submit" id="pending-publish-btn" disabled>Publish</button>
+                  </div>
                 </div>
               </div>
               ${rowsOrEmpty(input.library, pending, "Nothing pending.", false, true, searching)}
@@ -883,6 +888,7 @@ export function libraryPage(input: {
           if (!form) return;
           const selectAll = document.getElementById("pending-select-all");
           const publishBtn = document.getElementById("pending-publish-btn");
+          const cancelBtn = document.getElementById("pending-cancel-btn");
           const selection = document.getElementById("pending-selection");
           const boxes = () => Array.from(form.querySelectorAll('input[name="item_id"]'));
           function sync() {
@@ -897,10 +903,19 @@ export function libraryPage(input: {
                     ? "Publish 1"
                     : "Publish " + checked.length;
             }
+            if (cancelBtn) {
+              cancelBtn.disabled = checked.length === 0;
+              cancelBtn.textContent =
+                checked.length === 0
+                  ? "Cancel"
+                  : checked.length === 1
+                    ? "Cancel 1"
+                    : "Cancel " + checked.length;
+            }
             if (selection) {
               selection.textContent =
                 checked.length === 0
-                  ? "Select items to publish"
+                  ? "Select items"
                   : checked.length === all.length
                     ? "All " + checked.length + " selected"
                     : checked.length + " selected";

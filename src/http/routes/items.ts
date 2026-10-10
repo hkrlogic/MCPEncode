@@ -14,6 +14,7 @@ import {
   removeItemFile,
   getItem,
   publishItem,
+  cancelPublishItem,
   restoreItem,
   revertToPublished,
   unpublishItem,
@@ -431,6 +432,47 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
 
   app.post("/items/:id/publish", (req, res) => {
     void gateAction(req, res, "publish");
+  });
+  app.post("/items/:id/cancel", async (req, res) => {
+    const access = await sessionAccess(req, config);
+    if (!access || !requireCsrf(req, access.csrf)) {
+      res.status(403).send(errorPage("You cannot change publish status with this account."));
+      return;
+    }
+    const id = typeof req.params.id === "string" ? req.params.id : req.params.id?.[0];
+    if (!id) {
+      res.status(404).send(errorPage("Item not found."));
+      return;
+    }
+    const existing = await getItem(db, id, { publishedOnly: false });
+    if (!existing) {
+      res.status(404).send(errorPage("Item not found."));
+      return;
+    }
+    const libraryAccess = await itemLibraryAccess(db, existing.library_id, access);
+    if (!libraryAccess || !can(libraryAccess, "records.write")) {
+      res.status(403).send(errorPage("You cannot change publish status with this account."));
+      return;
+    }
+    const result = await cancelPublishItem(db, id, access.sub);
+    if (!result.ok) {
+      res.status(400).send(
+        errorPage(
+          result.reason === "unreadable"
+            ? "The last published copy could not be read. The publish request was not canceled."
+            : "Only Pending items can have a publish request canceled.",
+        ),
+      );
+      return;
+    }
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.cancel_publish",
+      success: true,
+      detail: `${result.item.id}:${result.kind}`,
+    });
+    const notice = result.kind === "archived" ? "canceled_new" : "canceled";
+    res.redirect(`/items/${result.item.id}?notice=${notice}`);
   });
   app.post("/items/:id/unpublish", (req, res) => {
     void gateAction(req, res, "unpublish");
