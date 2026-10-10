@@ -205,34 +205,28 @@ a { color: var(--accent); }
   font-weight: 650;
   color: var(--muted);
 }
-.schema-prompt-samples {
-  list-style: none;
+.schema-prompt-label .hint { font-weight: 450; margin-left: 0.35rem; }
+.custom-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(6.5rem, 0.7fr) minmax(5.5rem, 0.55fr) auto;
+  gap: 0.5rem;
+  align-items: end;
+  margin-top: 0.65rem;
+}
+.custom-field-row label {
   margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
+  font-size: 0.8rem;
 }
-.schema-prompt-samples li {
-  margin: 0;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  font-family: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, serif;
-  font-size: 0.95rem;
-  line-height: 1.4;
-  color: var(--ink);
+.custom-fields .btn { margin-top: 0.75rem; }
+.custom-field-remove.btn {
+  margin-top: 0;
+  min-height: 44px;
 }
-.schema-prompt-samples q {
-  quotes: "“" "”";
-}
-.schema-prompt-samples q::before { content: open-quote; }
-.schema-prompt-samples q::after { content: close-quote; }
-/* Custom is designed in agent chat — hide the create path on this form. */
-.add-library-form:has(#schema-custom:checked) .write-mode-choices,
-.add-library-form:has(#schema-custom:checked) .add-library-submit {
-  display: none;
+.custom-field-add:disabled { opacity: 0.45; cursor: not-allowed; }
+@media (max-width: 640px) {
+  .custom-field-row { grid-template-columns: 1fr 1fr; }
+  .custom-field-label { grid-column: 1 / -1; }
+  .custom-field-remove { grid-column: 1 / -1; }
 }
 /* Write mode: stacked radios (unchanged interaction) */
 .schema-option {

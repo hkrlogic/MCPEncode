@@ -13,6 +13,9 @@ import {
   onConfirm,
   type AppShell,
 } from "./layout.ts";
+import type { CustomFieldRow } from "../../items/custom-schema.ts";
+import type { LibraryWriteMode } from "../../items/schema.ts";
+import { staticUrl } from "../static-assets.ts";
 import { schemaChoicesMarkup, writeModeChoicesMarkup, writeModeLabel } from "./schema-choice.ts";
 
 export function librariesPage(input: {
@@ -155,6 +158,9 @@ export function addLibraryPage(input: {
   roleLabel?: string;
   error?: string;
   name?: string;
+  template?: string;
+  writeMode?: LibraryWriteMode;
+  customFields?: CustomFieldRow[];
 }): string {
   const shell: AppShell = {
     libraries: input.libraries,
@@ -171,6 +177,7 @@ export function addLibraryPage(input: {
     csrf: input.csrf,
     access: input.access,
     shell,
+    extraScripts: `<script src="${staticUrl("custom-schema.js")}"></script>`,
     body: `
       <div class="library-view">
         <header class="library-head">
@@ -185,8 +192,8 @@ export function addLibraryPage(input: {
           <label>Library name
             <input name="name" required maxlength="200" autocomplete="off" placeholder="Remote access" value="${esc(input.name ?? "")}">
           </label>
-          ${schemaChoicesMarkup()}
-          ${writeModeChoicesMarkup()}
+          ${schemaChoicesMarkup({ selected: input.template, customFields: input.customFields })}
+          ${writeModeChoicesMarkup(input.writeMode)}
           <button class="btn add-library-submit" type="submit">Add library</button>
         </form>
       </div>

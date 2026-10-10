@@ -477,6 +477,8 @@ export function layout(input: {
   csrf?: string;
   access?: Access;
   extraHead?: string;
+  /** Scripts after the page body. Used by Add library’s custom field list. */
+  extraScripts?: string;
   library?: { id: string; name: string };
   /** When set, renders libraries on the left and body on the right. */
   shell?: AppShell;
@@ -553,6 +555,7 @@ export function layout(input: {
 <body class="${shellMode ? "app-body" : ""}">
   ${nav}
   ${content}
+  ${input.extraScripts ?? ""}
 </body>
 </html>`;
 }

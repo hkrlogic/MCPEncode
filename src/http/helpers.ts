@@ -9,7 +9,8 @@ import {
   parseLabelField,
   type LibraryWriteMode,
 } from "../items/schema.ts";
-import { generalHasExtraFields, type ItemWriteInput, type LibrarySchema } from "../items/library-schema.ts";
+import type { CustomFieldRow } from "../items/custom-schema.ts";
+import { isPlainGeneral, type ItemWriteInput, type LibrarySchema } from "../items/library-schema.ts";
 import {
   itemForLibrary,
   type LibraryTemplate,
@@ -28,6 +29,39 @@ export function formString(body: unknown, key: string): string {
   if (!body || typeof body !== "object") return "";
   const value = (body as Record<string, unknown>)[key];
   return typeof value === "string" ? value : "";
+}
+
+/**
+ * Custom field rows from Add library.
+ * Every row posts a label, a type, and required yes/no, aligned by index.
+ */
+export function postedCustomFields(
+  body: unknown,
+): { ok: true; rows: CustomFieldRow[] } | { ok: false; message: string } {
+  const labels = formStrings(body, "field_label");
+  const types = formStrings(body, "field_type");
+  const required = formStrings(body, "field_required");
+  const count = Math.max(labels.length, types.length, required.length);
+  if (labels.length !== count || types.length !== count || required.length !== count) {
+    return { ok: false, message: "Each field needs a label, a type, and whether it is required." };
+  }
+  return {
+    ok: true,
+    rows: labels.map((label, index) => ({
+      label,
+      type: types[index] ?? "",
+      required: required[index] === "required",
+    })),
+  };
+}
+
+/** Repeated form keys. A single value is a one-item list. */
+export function formStrings(body: unknown, key: string): string[] {
+  if (!body || typeof body !== "object") return [];
+  const value = (body as Record<string, unknown>)[key];
+  if (typeof value === "string") return [value];
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string");
 }
 
 export async function sessionAccess(
@@ -73,7 +107,7 @@ export function libraryWriteModeFromForm(value: string): LibraryWriteMode | unde
 
 /** Form fields for one library. Plain Documents keep markdown; structured schemas use columns. */
 export function formToItemWrite(body: unknown, schema: LibrarySchema): ItemWriteInput {
-  if (schema.starter === "general" && !generalHasExtraFields(schema)) {
+  if (isPlainGeneral(schema)) {
     return {
       name: formString(body, "name"),
       body: combineSummaryAndBody(
@@ -103,7 +137,7 @@ export function parseLibraryItem(
   body: unknown,
   library: { template: LibraryTemplate; schema: LibrarySchema },
 ) {
-  if (library.schema.starter === "general" && !generalHasExtraFields(library.schema)) {
+  if (isPlainGeneral(library.schema)) {
     return parseItem(body);
   }
   const saved = itemForLibrary(library.schema, formToItemWrite(body, library.schema));

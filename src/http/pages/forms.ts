@@ -133,7 +133,7 @@ export function schemaItemFields(input: {
           <input name="summary" required maxlength="160" value="${esc(input.summary)}"
             placeholder="One line. This is what search shows." autocomplete="off">
         </label>
-        ${controlMarkup ? `<fieldset class="field-group"><legend>Columns</legend>${controlMarkup}</fieldset>` : ""}
+        ${controlMarkup ? `<fieldset class="field-group"><legend>${input.schema.starter === "table" ? "Columns" : "Fields"}</legend>${controlMarkup}</fieldset>` : ""}
         ${bodyMarkup}
   `;
 }

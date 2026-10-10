@@ -3,6 +3,8 @@
  * Field lists come from the same starters copied onto a library at create,
  * so the choice on screen matches the fields items will use.
  */
+import { MAX_LIBRARY_FIELDS } from "../../items/field-proposal.ts";
+import type { CustomFieldRow } from "../../items/custom-schema.ts";
 import { schemaForStarter } from "../../items/library-schema.ts";
 import type { LibraryWriteMode } from "../../items/schema.ts";
 import type { LibraryTemplate } from "../../items/templates.ts";
@@ -10,7 +12,7 @@ import { esc } from "./layout.ts";
 
 const SCHEMA_STARTERS = ["general", "policy", "procedure"] as const satisfies readonly LibraryTemplate[];
 
-/** UI-only option: Custom is designed in agent chat, not on this form. */
+/** Custom is built on this form. Agent design of a schema is a later feature. */
 const SCHEMA_CHOICES = [...SCHEMA_STARTERS, "custom"] as const;
 type SchemaChoice = (typeof SCHEMA_CHOICES)[number];
 
@@ -27,14 +29,13 @@ const SCHEMA_BLURB: Record<SchemaChoice, string> = {
   policy: "Owner, version, dates, purpose, scope, and the policy text.",
   procedure: "Owner, related policy, when to use it, steps, and who does each step.",
   custom:
-    "In your agentic LLM chat (with this publisher’s MCP connected), ask it to design a library. It will ask what the library is for, then help define the schema and create it.",
+    "Name, labels, and a summary are on every item. Add the other fields here. After you add the library, those fields stay. You can add optional fields later. You cannot rename or remove these.",
 };
 
-/** Example chat prompts that start the custom-library design conversation. */
-const CUSTOM_SCHEMA_PROMPTS = [
-  "I would like to make a new library",
-  "Help me design a library for …",
-  "Create a custom library and walk me through the fields",
+const CUSTOM_FIELD_TYPES = [
+  { value: "text", label: "Text" },
+  { value: "date", label: "Date" },
+  { value: "longtext", label: "Long text" },
 ] as const;
 
 const WRITE_MODE_CHOICES = ["reviewed", "direct"] as const satisfies readonly LibraryWriteMode[];
@@ -59,11 +60,65 @@ function fieldRows(starter: (typeof SCHEMA_STARTERS)[number]): { label: string; 
   ];
 }
 
+function customFieldRow(row: CustomFieldRow): string {
+  const types = CUSTOM_FIELD_TYPES.map((type) => {
+    const selected = row.type === type.value ? " selected" : "";
+    return `<option value="${type.value}"${selected}>${type.label}</option>`;
+  }).join("");
+  const required = row.required ? " selected" : "";
+  const optional = row.required ? "" : " selected";
+  return `
+    <div class="custom-field-row" data-custom-field-row>
+      <label class="custom-field-label">Label
+        <input name="field_label" maxlength="40" value="${esc(row.label)}" autocomplete="off">
+      </label>
+      <label>Type
+        <select name="field_type">${types}</select>
+      </label>
+      <label>Required
+        <select name="field_required">
+          <option value="optional"${optional}>No</option>
+          <option value="required"${required}>Yes</option>
+        </select>
+      </label>
+      <button class="btn secondary custom-field-remove" type="button" data-custom-field-remove>Remove</button>
+    </div>`;
+}
+
+function customFieldsMarkup(rows: CustomFieldRow[]): string {
+  const shown = rows.length > 0 ? rows : [{ label: "", type: "text", required: false }];
+  const locked = [
+    { label: "Name", required: true },
+    { label: "Labels", required: false },
+    { label: "Summary", required: true },
+  ]
+    .map(
+      (field) =>
+        `<li><span class="schema-field-name">${field.label}</span><span class="schema-field-req">${field.required ? "Required" : "Optional"}</span></li>`,
+    )
+    .join("");
+  return `
+    <div class="custom-fields" data-custom-fields data-custom-field-cap="${MAX_LIBRARY_FIELDS}">
+      <p class="schema-blurb schema-blurb-guide">${esc(SCHEMA_BLURB.custom)}</p>
+      <ul class="schema-fields">${locked}</ul>
+      <p class="schema-prompt-label">Other fields <span class="hint">Up to ${MAX_LIBRARY_FIELDS}.</span></p>
+      <div data-custom-field-list>${shown.map(customFieldRow).join("")}</div>
+      <button class="btn secondary custom-field-add" type="button" data-custom-field-add>Add field</button>
+      <template id="custom-field-template">${customFieldRow({ label: "", type: "text", required: false })}</template>
+    </div>`;
+}
+
 /** Radios posted as `template`. Segmented control; detail panel shows the selected shape. */
-export function schemaChoicesMarkup(): string {
+export function schemaChoicesMarkup(input?: {
+  selected?: string;
+  customFields?: CustomFieldRow[];
+}): string {
+  const selected = SCHEMA_CHOICES.includes(input?.selected as SchemaChoice)
+    ? (input?.selected as SchemaChoice)
+    : undefined;
   const segments = SCHEMA_CHOICES.map((choice) => {
     const id = `schema-${choice}`;
-    const checked = choice === "general" ? " checked" : "";
+    const checked = (selected ? choice === selected : choice === "general") ? " checked" : "";
     return `
       <label class="schema-segment" for="${id}">
         <input class="schema-radio schema-segment-radio" type="radio" name="template" id="${id}" value="${choice}" aria-describedby="${id}-detail"${checked}>
@@ -74,14 +129,9 @@ export function schemaChoicesMarkup(): string {
   const details = SCHEMA_CHOICES.map((choice) => {
     const id = `schema-${choice}`;
     if (choice === "custom") {
-      const prompts = CUSTOM_SCHEMA_PROMPTS.map(
-        (prompt) => `<li><q>${esc(prompt)}</q></li>`,
-      ).join("");
       return `
       <div class="schema-detail schema-detail-custom" id="${id}-detail">
-        <p class="schema-blurb schema-blurb-guide">${esc(SCHEMA_BLURB.custom)}</p>
-        <p class="schema-prompt-label">Try saying:</p>
-        <ul class="schema-prompt-samples">${prompts}</ul>
+        ${customFieldsMarkup(input?.customFields ?? [])}
       </div>`;
     }
     const fields = fieldRows(choice)
@@ -106,12 +156,13 @@ export function schemaChoicesMarkup(): string {
 }
 
 /** Radios posted as `write_mode`. Required on Add library — no silent default in the UI. */
-export function writeModeChoicesMarkup(): string {
+export function writeModeChoicesMarkup(selected?: LibraryWriteMode): string {
   const options = WRITE_MODE_CHOICES.map((mode) => {
     const id = `write-mode-${mode}`;
+    const checked = selected === mode ? " checked" : "";
     return `
       <div class="schema-option">
-        <input class="schema-radio" type="radio" name="write_mode" id="${id}" value="${mode}" aria-describedby="${id}-blurb" required>
+        <input class="schema-radio" type="radio" name="write_mode" id="${id}" value="${mode}" aria-describedby="${id}-blurb" required${checked}>
         <label for="${id}">${WRITE_MODE_TITLE[mode]}</label>
         <p class="schema-blurb" id="${id}-blurb">${esc(WRITE_MODE_BLURB[mode])}</p>
       </div>`;

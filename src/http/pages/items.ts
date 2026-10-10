@@ -4,7 +4,7 @@ import type { ItemFileMeta } from "../../db/files.ts";
 import type { ItemRow, LibraryRow } from "../../db/models.ts";
 import { canRevertToPublished, revertPlan } from "../../db/queries.ts";
 import { fileKindLabel, formatFileSize, MAX_FILES_PER_ITEM } from "../../items/files.ts";
-import { generalHasExtraFields } from "../../items/library-schema.ts";
+import { isPlainGeneral } from "../../items/library-schema.ts";
 import { valuesForSchemaEdit } from "../../items/table-proposal.ts";
 import { itemFields, schemaItemFields } from "./forms.ts";
 import { writeModeLabel } from "./schema-choice.ts";
@@ -98,8 +98,7 @@ function pageShell(
 }
 
 function usesSchemaForm(library: LibraryRow): boolean {
-  const kind = library.schema.starter;
-  return kind === "table" || kind === "policy" || kind === "procedure" || generalHasExtraFields(library.schema);
+  return !isPlainGeneral(library.schema);
 }
 
 export function addItemPage(input: {
@@ -132,7 +131,9 @@ export function addItemPage(input: {
       ? `Fill the policy fields for this library. ${liveHint}`
       : kind === "procedure"
         ? `Fill the procedure fields for this library. ${liveHint}`
-        : liveHint;
+        : input.library.schema.custom
+          ? `Fill the fields for this library. ${liveHint}`
+          : liveHint;
   return layout({
     title: `Add item · ${input.library.name}`,
     csrf: input.csrf,

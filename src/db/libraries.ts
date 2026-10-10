@@ -1,7 +1,7 @@
 /** Library CRUD and name/id resolution for lookups. */
 import { randomBytes } from "node:crypto";
 import type { Database } from "./types.ts";
-import { librarySchemaOf, schemaForStarter } from "../items/library-schema.ts";
+import { librarySchemaOf, schemaForStarter, type LibrarySchema } from "../items/library-schema.ts";
 import { isLibraryWriteMode, libraryInputSchema, type LibraryWriteMode } from "../items/schema.ts";
 import { parseStoredFieldProposal } from "../items/field-proposal.ts";
 import { parseStoredTableProposal, type TableProposal, type TableProposalDraft } from "../items/table-proposal.ts";
@@ -109,9 +109,20 @@ export async function createLibrary(
   template: LibraryTemplate = "general",
   table?: TableProposalDraft,
   writeMode: LibraryWriteMode = "reviewed",
+  /** Portal Custom: the field set the human just confirmed. Locks on insert. */
+  schemaOverride?: LibrarySchema,
 ): Promise<LibraryRow> {
   if (table && template !== "general") {
     throw new Error("A custom table is stored on a general library until a publisher approves it");
+  }
+  if (table && schemaOverride) {
+    throw new Error("Pass a table proposal or a finished schema, not both");
+  }
+  if (schemaOverride && schemaOverride.starter !== template) {
+    throw new Error("Schema starter must match the library template");
+  }
+  if (schemaOverride?.custom && template !== "general") {
+    throw new Error("A custom schema is stored as a general library");
   }
   if (!isLibraryWriteMode(writeMode)) {
     throw new Error("write_mode must be reviewed or direct");
@@ -119,7 +130,7 @@ export async function createLibrary(
   const now = Date.now();
   const id = crypto.randomUUID();
   const connectToken = freshConnectToken();
-  const schema = schemaForStarter(template);
+  const schema = schemaOverride ?? schemaForStarter(template);
   const proposal: TableProposal | null = table
     ? { ...table, proposedBy: actorSub, proposedAt: now }
     : null;

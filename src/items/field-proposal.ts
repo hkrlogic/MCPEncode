@@ -12,9 +12,10 @@ export type FieldProposalType = (typeof FIELD_PROPOSAL_TYPES)[number];
 /** Total fields on a library schema (starter fields + approved add-ons). */
 export const MAX_LIBRARY_FIELDS = 12;
 
-const MAX_FIELD_LABEL = 40;
+export const MAX_FIELD_LABEL = 40;
 
-const RESERVED_KEYS = new Set([
+/** Keys an item already uses. A schema field must not take one of these. */
+export const RESERVED_FIELD_KEYS = new Set([
   "name",
   "labels",
   "summary",
@@ -54,7 +55,8 @@ export type ProposeFieldInput = z.infer<typeof proposeFieldInputSchema>;
 /** After checks, before the server stamps who proposed it. */
 export type FieldProposalDraft = Omit<FieldProposal, "proposedBy" | "proposedAt">;
 
-function fieldKey(label: string): string {
+/** Stable key from a human label. Same rules as an approved add-on field. */
+export function fieldKeyFromLabel(label: string): string {
   const ascii = label.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
   let base = ascii
     .toLowerCase()
@@ -64,7 +66,8 @@ function fieldKey(label: string): string {
   return base.slice(0, 32);
 }
 
-function cleanLabel(label: string): string | undefined {
+/** Short label safe to store and show. Rejects control characters and markup. */
+export function cleanFieldLabel(label: string): string | undefined {
   const trimmed = label.trim().replace(/\s+/g, " ");
   if (!trimmed || trimmed.length > MAX_FIELD_LABEL) return undefined;
   if (/[\u0000-\u001f<>]/.test(trimmed)) return undefined;
@@ -79,7 +82,7 @@ export function normalizeFieldProposal(
   input: ProposeFieldInput,
   schema: LibrarySchema,
 ): { ok: true; draft: FieldProposalDraft } | { ok: false; message: string } {
-  const label = cleanLabel(input.label);
+  const label = cleanFieldLabel(input.label);
   if (!label) {
     return { ok: false, message: "Field needs a short label without raw control characters." };
   }
@@ -92,8 +95,8 @@ export function normalizeFieldProposal(
       message: `This library already has ${MAX_LIBRARY_FIELDS} fields. Remove is not allowed — copy the library template to change shape, or stop here.`,
     };
   }
-  const key = fieldKey(label);
-  if (RESERVED_KEYS.has(key)) {
+  const key = fieldKeyFromLabel(label);
+  if (RESERVED_FIELD_KEYS.has(key)) {
     return {
       ok: false,
       message: `Field "${label}" clashes with a reserved item field. Pick another name.`,
@@ -153,7 +156,7 @@ export function parseStoredFieldProposal(
   const key = typeof row.key === "string" ? row.key : "";
   const label = typeof row.label === "string" ? row.label.trim() : "";
   const type = row.type;
-  if (!STORED_KEY.test(key) || RESERVED_KEYS.has(key)) {
+  if (!STORED_KEY.test(key) || RESERVED_FIELD_KEYS.has(key)) {
     return { proposal: null, unreadable: true };
   }
   if (!label || label.length > MAX_FIELD_LABEL || /[\u0000-\u001f<>]/.test(label)) {

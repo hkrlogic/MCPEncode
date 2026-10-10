@@ -39,7 +39,7 @@ A **starter** is a suggested field set plus design/write instructions for chat. 
 | Policy | Guided | Suggested typical fields (not hardcoded forever); human may edit before lock |
 | Procedure | Guided | Suggested typical fields; human may edit before lock |
 | 1–2 guided starters (e.g. service tickets) | Guided | Suggest fields; human may edit before lock |
-| Custom | Open | Empty/minimal suggestions; same design conversation as today |
+| Custom | Open | Built on Add library: label, type (Text, Date, Long text), required or optional. Locks when the library is created. Agent design of a schema is later. |
 
 Starters are **guides**, not sealed product law. What locks is **this library’s approved schema**, not the starter definition in the codebase.
 
@@ -58,10 +58,9 @@ Starters are **guides**, not sealed product law. What locks is **this library’
 ### Create
 
 1. Add library → pick starter (or Custom).
-2. Design chat uses starter instructions → suggested fields (guided/custom) or sealed set.
-3. Human adjusts fields **before** lock (guided/custom only).
-4. Confirm → create / propose as today.
-5. Human **Approves** structural result in the publisher → schema **locks**.
+2. Starters use their field set. Custom: the human adds fields on the form (up to 12, besides name, labels, and summary).
+3. Add library locks that schema. There is no second Approve for a shape the human just set.
+4. Agent design chat for a schema is a later, advanced path — not required to create Custom.
 
 ### After lock (integrity rules)
 
@@ -190,7 +189,7 @@ Optional checks that a library still “looks like” its starter guide — e.g.
 - Exact starter names and which guided packs ship in v1.
 - Retire semantics for the next fork-with-items feature.
 - When initial schema “locks” for guided Policy/Procedure (explicit Approve vs first item vs create-as-today).
-- How design chat edits starter fields before first lock (MCP-only vs publisher UI).
+- How design chat edits starter fields before first lock. Custom itself is built in the publisher; agent schema design is later.
 
 ## Implementation note
 

@@ -25,9 +25,11 @@ test("add library shows each schema and its fields", () => {
   assert.match(html, /name="template" id="schema-custom" value="custom"/);
   assert.match(html, /class="schema-detail schema-detail-general"/);
   assert.match(html, /class="schema-detail schema-detail-custom"/);
-  assert.match(html, /agentic LLM chat/);
-  assert.match(html, /I would like to make a new library/);
-  assert.match(html, /schema-prompt-samples/);
+  assert.match(html, /name="field_label"/);
+  assert.match(html, /name="field_type"/);
+  assert.match(html, /Add field/);
+  assert.match(html, /data-custom-field-cap="12"/);
+  assert.doesNotMatch(html, /agentic LLM chat/);
   assert.match(html, /Effective date/);
   assert.match(html, /Who does each step/);
   assert.match(html, /Description/);

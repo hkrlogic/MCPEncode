@@ -30,6 +30,11 @@ export type LibrarySchema = {
   fields: SchemaFieldDef[];
   /** Set when a publisher approved a proposed table. */
   tableName?: string;
+  /**
+   * Built on Add library → Custom. Name, labels, and summary stay.
+   * `fields` is the rest, locked at create (may be empty).
+   */
+  custom?: boolean;
 };
 
 export type SavedItem = ItemInput & {
@@ -182,10 +187,12 @@ export function parseLibrarySchema(raw: unknown): LibrarySchema | undefined {
     typeof row.tableName === "string" && row.tableName.trim()
       ? row.tableName.trim().slice(0, 80)
       : undefined;
+  const custom = row.starter === "general" && row.custom === true;
   return {
     starter: row.starter as LibraryTemplate,
     fields,
     ...(tableName ? { tableName } : {}),
+    ...(custom ? { custom: true } : {}),
   };
 }
 
@@ -200,11 +207,12 @@ export function librarySchemaOf(
 export function schemaFieldMessage(schema: LibrarySchema): string {
   const required = schema.fields.filter((field) => field.required).map((field) => field.key);
   const optional = schema.fields.filter((field) => !field.required).map((field) => field.key);
-  const kind =
-    schema.starter === "table" && schema.tableName
+  const kind = schema.custom
+    ? "custom schema"
+    : schema.starter === "table" && schema.tableName
       ? `table "${schema.tableName}"`
       : `${schema.starter} schema`;
-  const needsSummary = schema.starter !== "general" || generalHasExtraFields(schema);
+  const needsSummary = !isPlainGeneral(schema);
   const parts = [
     `This library uses the ${kind}.`,
     `Send name${needsSummary ? ", summary" : ""}`,
@@ -222,6 +230,14 @@ export function schemaFieldMessage(schema: LibrarySchema): string {
 /** True when Documents/General has approved add-on fields beyond the markdown body. */
 export function generalHasExtraFields(schema: LibrarySchema): boolean {
   return schema.starter === "general" && schema.fields.some((field) => field.key !== "body");
+}
+
+/**
+ * General with only the markdown description.
+ * A custom schema is not this, even when it has no extra fields.
+ */
+export function isPlainGeneral(schema: LibrarySchema): boolean {
+  return schema.starter === "general" && schema.custom !== true && !generalHasExtraFields(schema);
 }
 
 /**
@@ -246,6 +262,11 @@ export function formatSchemaFields(
 }
 
 export function schemaAgentBlurb(schema: LibrarySchema): string {
+  if (schema.custom) {
+    const labels = schema.fields.map((field) => field.label).join(", ");
+    const extra = labels ? ` Other fields: ${labels}.` : " No other fields.";
+    return `This library uses a custom schema. Every item has a name, labels, and a summary.${extra} Use those names when adding or editing. Do not invent fields. To add a field after lock, propose_field (one optional field); a human Approves it in the publisher.`;
+  }
   if (schema.starter === "general" && !generalHasExtraFields(schema)) {
     return "This library is General. Items use name, optional labels, and a markdown body (summary is derived from the body). To add a field, propose_field after the human confirms; they Approve in the publisher.";
   }
@@ -284,7 +305,7 @@ export function mcpItemWriteShape(schema: LibrarySchema): Record<string, z.ZodTy
       .optional()
       .describe("Labels (optional)"),
   };
-  if (schema.starter !== "general" || generalHasExtraFields(schema)) {
+  if (!isPlainGeneral(schema)) {
     shape.summary = z
       .string()
       .trim()
@@ -338,9 +359,9 @@ export function mcpWriteToolDescription(
       : kind === "create"
         ? "Add a library item as a draft (Pending). Not visible to readers or the kiosk until a human Publishes it in the publisher UI. Optional entity_key is a stable id for later updates."
         : "Replace one library item. Saves as draft: if published, it becomes Pending until a human Publishes again in the publisher UI. Optional entity_key is a stable id for later updates.";
-  const summaryBit =
-    schema.starter === "general" && !generalHasExtraFields(schema) ? "" : ", summary";
-  return `${head} This library uses the ${schema.starter} schema. Send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}. Optional: entity_key, labels. Do not invent fields. To add a field, propose_field after the human confirms — they Approve in the publisher. Use only when the human asked.`;
+  const summaryBit = isPlainGeneral(schema) ? "" : ", summary";
+  const shape = schema.custom ? "custom" : schema.starter;
+  return `${head} This library uses the ${shape} schema. Send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}. Optional: entity_key, labels. Do not invent fields. To add a field, propose_field after the human confirms — they Approve in the publisher. Use only when the human asked.`;
 }
 
 function isoDate(label: string) {
@@ -396,7 +417,7 @@ function unexpectedFields(schema: LibrarySchema, input: ItemWriteInput): string 
   }
   // Non-general schemas do not take a free-form body unless "body" is a schema field.
   if (
-    schema.starter !== "general" &&
+    !isPlainGeneral(schema) &&
     !schema.fields.some((field) => field.key === "body") &&
     typeof input.body === "string" &&
     input.body.trim()
@@ -431,7 +452,7 @@ export function itemForLibrarySchema(
   if (unexpected) return { ok: false, message: unexpected };
 
   // Plain Documents: markdown body only (no approved add-on fields yet).
-  if (schema.starter === "general" && !generalHasExtraFields(schema)) {
+  if (isPlainGeneral(schema)) {
     const parsed = itemInputSchema.safeParse({
       name: input.name,
       body: input.body ?? "",
@@ -527,14 +548,15 @@ export function itemForLibrarySchema(
     );
   }
 
-  // Documents/General with approved add-on fields — structured like a light form.
-  if (schema.starter === "general" && generalHasExtraFields(schema)) {
+  // Custom schema, or General after an approved add-on field.
+  if (schema.starter === "general") {
     const data = parsed.data as Record<string, string> & { name: string; summary: string; labels: string[] };
     const values = Object.fromEntries(schema.fields.map((field) => [field.key, data[field.key] ?? ""]));
+    const title = schema.custom ? "Template: Custom" : "Template: General";
     return attachEntityKey(
       {
         name: data.name,
-        body: formatSchemaFields("Template: General", schema.fields, values),
+        body: formatSchemaFields(title, schema.fields, values),
         labels: data.labels,
         summary: data.summary,
         details: JSON.stringify({ _kind: "fields", values }),

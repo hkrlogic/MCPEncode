@@ -31,11 +31,13 @@ import {
 } from "../../db/queries.ts";
 import { normalizeUsername } from "../../auth/passwords.ts";
 import { READER_REVEAL_COOKIE, stashReaderKeyReveal, takeReaderKeyReveal } from "../../auth/reader-key.ts";
+import { customSchemaFromRows } from "../../items/custom-schema.ts";
 import { libraryInputSchema } from "../../items/schema.ts";
 import { writeModeLabel } from "../pages/schema-choice.ts";
 import {
   formString,
   formToItemWrite,
+  postedCustomFields,
   libraryTemplateFromForm,
   libraryWriteModeFromForm,
   requireCsrf,
@@ -258,27 +260,17 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       return;
     }
     const templateRaw = formString(req.body, "template");
-    // Custom schemas are designed in agent chat, not created from this form.
-    if (templateRaw === "custom") {
-      const shell = await loadAppShell(db, access);
-      res.status(400).send(
-        addLibraryPage({
-          access,
-          csrf: access.csrf,
-          libraries: shell.libraries,
-          orphans: shell.orphans,
-          username: shell.username,
-          roleLabel: shell.roleLabel,
-          name: formString(req.body, "name").slice(0, 200),
-          error: "Custom schemas are designed in your agent chat, not on this form.",
-        }),
-      );
-      return;
-    }
-    const template = libraryTemplateFromForm(templateRaw);
     const writeMode = libraryWriteModeFromForm(formString(req.body, "write_mode"));
     const parsed = libraryInputSchema.safeParse({ name: formString(req.body, "name") });
-    if (!parsed.success || !writeMode) {
+    const customPosted = templateRaw === "custom" ? postedCustomFields(req.body) : undefined;
+    const customBuilt =
+      customPosted?.ok === true ? customSchemaFromRows(customPosted.rows) : undefined;
+    const customError = customPosted && !customPosted.ok
+      ? customPosted.message
+      : customBuilt && !customBuilt.ok
+        ? customBuilt.message
+        : undefined;
+    if (!parsed.success || !writeMode || customError) {
       const shell = await loadAppShell(db, access);
       res.status(400).send(
         addLibraryPage({
@@ -289,14 +281,28 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           username: shell.username,
           roleLabel: shell.roleLabel,
           name: formString(req.body, "name").slice(0, 200),
-          error: !writeMode
-            ? `Choose ${writeModeLabel("reviewed")} or ${writeModeLabel("direct")} for how writes go live.`
-            : (parsed.error?.issues[0]?.message ?? "Invalid library"),
+          template: templateRaw,
+          writeMode,
+          customFields: customPosted?.ok ? customPosted.rows : undefined,
+          error: customError
+            ?? (!writeMode
+              ? `Choose ${writeModeLabel("reviewed")} or ${writeModeLabel("direct")} for how writes go live.`
+              : (parsed.error?.issues[0]?.message ?? "Invalid library")),
         }),
       );
       return;
     }
-    const row = await createLibrary(db, parsed.data.name, access.sub, template, undefined, writeMode);
+    const template = templateRaw === "custom" ? "general" : libraryTemplateFromForm(templateRaw);
+    const schema = customBuilt?.ok ? customBuilt.schema : undefined;
+    const row = await createLibrary(
+      db,
+      parsed.data.name,
+      access.sub,
+      template,
+      undefined,
+      writeMode,
+      schema,
+    );
     await writeAudit(db, {
       actorSub: access.sub,
       tool: "ui.create_library",
