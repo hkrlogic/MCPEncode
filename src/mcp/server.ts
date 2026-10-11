@@ -37,6 +37,7 @@ import {
 import { proposeFieldInputSchema } from "../items/field-proposal.ts";
 import { normalizeTableProposal, proposeTableInputSchema } from "../items/table-proposal.ts";
 import { itemForLibrary } from "../items/templates.ts";
+import { APP_VERSION } from "../version.ts";
 import { libraryDesignGuide } from "./library-design.ts";
 import { labeledItemData } from "../markdown/render.ts";
 
@@ -214,7 +215,7 @@ export function buildMcpServer(
         libraryRole: "reader",
       })!);
   const server = new McpServer(
-    { name: "mcpencode", version: "0.3.0" },
+    { name: "mcpencode", version: APP_VERSION },
     {
       instructions: [
         readerKey
