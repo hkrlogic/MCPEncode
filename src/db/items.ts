@@ -459,7 +459,7 @@ export async function publishItem(
   actorSub: string,
 ): Promise<ItemRow | undefined> {
   const existing = await getItem(db, id, { publishedOnly: false });
-  if (!existing || existing.status !== "draft") return undefined;
+  if (existing?.status !== "draft") return undefined;
   const now = Date.now();
   const nextFields = {
     name: existing.name,
@@ -609,7 +609,7 @@ export async function unpublishItem(
   actorSub: string,
 ): Promise<ItemRow | undefined> {
   const existing = await getItem(db, id, { publishedOnly: false });
-  if (!existing || existing.status !== "published") return undefined;
+  if (existing?.status !== "published") return undefined;
   const now = Date.now();
   await runSql(
     db,
@@ -662,7 +662,7 @@ export async function restoreItem(
   actorSub: string,
 ): Promise<ItemRow | undefined> {
   const existing = await getItem(db, id, { publishedOnly: false });
-  if (!existing || existing.status !== "archived") return undefined;
+  if (existing?.status !== "archived") return undefined;
   const now = Date.now();
   await runSql(
     db,

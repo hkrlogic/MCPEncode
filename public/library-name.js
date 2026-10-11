@@ -2,7 +2,7 @@
  * Add library: cycle example names in the empty Library name field.
  * Stops while the field is focused or already filled. Reduced motion keeps one example.
  */
-(function () {
+(() => {
   const input = document.querySelector("[data-name-examples]");
   if (!(input instanceof HTMLInputElement)) return;
   const examples = (input.getAttribute("data-name-examples") || "")
