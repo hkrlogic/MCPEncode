@@ -20,8 +20,5 @@ set_value() {
 
 set_value SESSION_SECRET "$(openssl rand -base64 48 | tr -d '\n' | tr '+/' '-_')"
 set_value POSTGRES_PASSWORD "$(openssl rand -hex 24)"
-set_value ZITADEL_MASTERKEY "$(openssl rand -hex 16)"
-set_value ZITADEL_DB_PASSWORD "$(openssl rand -hex 24)"
-set_value ZITADEL_LOGIN_COOKIE_SECRET "$(openssl rand -hex 16)"
 
 echo "Wrote .env with new random secrets (permissions 600)."
