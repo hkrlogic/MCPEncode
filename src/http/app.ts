@@ -4,8 +4,8 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import {
-  createMcpExpressApp,
   getOAuthProtectedResourceMetadataUrl,
+  hostHeaderValidation,
   requireBearerAuth,
 } from "@modelcontextprotocol/express";
 import { toNodeHandler } from "@modelcontextprotocol/node";
@@ -37,6 +37,7 @@ import {
   resolveLibraryMcpAccess,
 } from "../mcp/server.ts";
 import type { AuthServerEndpoints } from "./discovery.ts";
+import { healthHandler } from "./health.ts";
 import {
   connectTokensMatch,
   isConnectToken,
@@ -86,14 +87,17 @@ export function createApp(input: {
     ),
   ];
   const loopbackBind = ["127.0.0.1", "localhost", "::1"].includes(config.bindHost);
-  // The SDK's own Origin check rejects the browser value "null", which is what
-  // follows the sign-in form redirect. Host "0.0.0.0" skips that automatic check.
-  // Listening still uses config.bindHost. Host allowlisting stays on, and the
-  // origin check below allows the sign-in navigation while rejecting other sites.
-  const app = createMcpExpressApp({
-    host: "0.0.0.0",
-    allowedHosts: allowedNames,
-  });
+  // Same middleware as the SDK's createMcpExpressApp({ host: "0.0.0.0", allowedHosts }),
+  // built by hand so /healthz can sit in front of the Host check: platform health
+  // probes often send an internal Host name. The SDK's own Origin check rejects the
+  // browser value "null", which is what follows the sign-in form redirect, so it
+  // stays off. Listening still uses config.bindHost. Host allowlisting stays on, and
+  // the origin check below allows the sign-in navigation while rejecting other sites.
+  const app = express();
+  // No auth and no Host check. Returns only ok / unavailable.
+  app.get("/healthz", healthHandler(db));
+  app.use(express.json());
+  app.use(hostHeaderValidation(allowedNames));
   app.use((req, res, next) => {
     const header = req.headers.origin;
     const origin = Array.isArray(header) ? header[0] : header;
