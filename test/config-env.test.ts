@@ -27,6 +27,7 @@ const KEYS = [
   "PGDATABASE",
   "POSTGRES_DB",
   "POSTGRES_SSL",
+  "POSTGRES_CONNECT_TIMEOUT_SECONDS",
 ];
 
 /** Run fn with only the given variables set (from the list above). Restores the rest. */

@@ -16,6 +16,8 @@ export type DatabaseConfig = {
   database: string;
   /** When true, the driver verifies the server certificate. */
   ssl: boolean;
+  /** POSTGRES_CONNECT_TIMEOUT_SECONDS: how long startup retries an unreachable server. Unset or 0 tries once. */
+  connectTimeoutSeconds?: number;
 };
 
 export type AppConfig = {
@@ -177,6 +179,19 @@ function firstDefined(...values: Array<string | undefined>): string | undefined 
 const DATABASE_HELP =
   "Set DATABASE_URL, or POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DATABASE. scripts/init-env.sh creates a local .env.";
 
+/** Default for POSTGRES_CONNECT_TIMEOUT_SECONDS. */
+export const DEFAULT_CONNECT_TIMEOUT_SECONDS = 60;
+
+/** POSTGRES_CONNECT_TIMEOUT_SECONDS: whole seconds, 0 (try once) to 3600. */
+export function parseConnectTimeoutSeconds(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_CONNECT_TIMEOUT_SECONDS;
+  const seconds = Number(raw);
+  if (!/^\d+$/.test(raw) || seconds > 3600) {
+    throw new Error("POSTGRES_CONNECT_TIMEOUT_SECONDS must be a whole number of seconds from 0 to 3600");
+  }
+  return seconds;
+}
+
 export function loadDatabaseConfig(): DatabaseConfig {
   const rawUrl = envValue("DATABASE_URL");
   const fromUrl = rawUrl ? parseDatabaseUrl(rawUrl) : undefined;
@@ -211,6 +226,7 @@ export function loadDatabaseConfig(): DatabaseConfig {
     password,
     database,
     ssl: resolvePostgresSsl(host, sslEnv),
+    connectTimeoutSeconds: parseConnectTimeoutSeconds(envValue("POSTGRES_CONNECT_TIMEOUT_SECONDS")),
   };
 }
 

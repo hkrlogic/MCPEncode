@@ -1,5 +1,6 @@
 import pg from "pg";
 import type { DatabaseConfig } from "../config.ts";
+import { connectionErrorReason, isRetryableConnectionError, retryConnection } from "./connect-retry.ts";
 import { applyMigrations } from "./migrate.ts";
 import { assertNoDropTable, splitSql } from "./sql.ts";
 import type { Database } from "./types.ts";
@@ -34,6 +35,8 @@ export function toPgParams(sql: string): string {
 
 /**
  * Open the Postgres pool and apply migrations.
+ * While Postgres is unreachable (refused, DNS, timeout, starting up) the first
+ * check is retried for config.connectTimeoutSeconds; other errors fail at once.
  * Pass { migrate: false } only to plant a schema in tests.
  * The database itself is created by Docker Compose (or by you).
  * The app user is not required to create or drop databases.
@@ -76,12 +79,31 @@ export async function openDatabase(
     if (cached?.key === key) cached = undefined;
   });
 
+  const timeoutSeconds = config.connectTimeoutSeconds ?? 0;
+  let retried = false;
   try {
-    await db.get("SELECT 1 AS ok");
+    await retryConnection(() => db.get("SELECT 1 AS ok"), {
+      timeoutMs: timeoutSeconds * 1000,
+      onRetry: ({ attempt, delayMs, error }) => {
+        retried = true;
+        console.error(
+          `Postgres at ${config.host}:${config.port} is not reachable yet (${connectionErrorReason(error)}). Retrying in ${(delayMs / 1000).toFixed(1)}s (attempt ${attempt}, waiting up to ${timeoutSeconds}s).`,
+        );
+      },
+    });
   } catch (error) {
-    await pool.end();
-    throw explainConnectionError(error, config);
+    const explained = explainConnectionError(error, config);
+    if (timeoutSeconds > 0 && isRetryableConnectionError(error)) {
+      const end = explained.message.endsWith(".") ? "" : ".";
+      explained.message += `${end} Gave up after ${timeoutSeconds}s (POSTGRES_CONNECT_TIMEOUT_SECONDS).`;
+      // An abandoned attempt may still be connecting; do not wait for it to give up.
+      pool.end().catch(() => {});
+    } else {
+      await pool.end();
+    }
+    throw explained;
   }
+  if (retried) console.log(`Postgres at ${config.host}:${config.port} is reachable.`);
 
   try {
     if (migrate) await applyMigrations(db);
@@ -172,6 +194,11 @@ function explainConnectionError(error: unknown, config: DatabaseConfig): Error {
   if (err.code === "ECONNREFUSED" || /ECONNREFUSED/i.test(message)) {
     return new Error(
       `Cannot reach Postgres at ${config.host}:${config.port}. Start it with: docker compose up -d postgres`,
+    );
+  }
+  if (isRetryableConnectionError(error)) {
+    return new Error(
+      `Cannot reach Postgres at ${config.host}:${config.port} (${connectionErrorReason(error)}). Check the host and port, and that Postgres is running.`,
     );
   }
   if (err.code === "3D000") {

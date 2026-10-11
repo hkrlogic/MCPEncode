@@ -41,11 +41,18 @@ The image runs as the unprivileged `node` user, listens on `0.0.0.0:$PORT` (defa
 | `BIND_HOST` | no | Listen address. Default `127.0.0.1`; the image sets `0.0.0.0`. |
 | `DATABASE_URL` | one of | `postgresql://user:password@host:port/database[?sslmode=require]` |
 | `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` | one of | Separate settings. They override the matching part of `DATABASE_URL`. Standard `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` also work. |
+| `POSTGRES_CONNECT_TIMEOUT_SECONDS` | no | How long startup keeps retrying while Postgres is unreachable. Default 60; `0` tries once. See [Startup and the database](#startup-and-the-database). |
 | `POSTGRES_SSL` | for a remote database | `required` (verify TLS, preferred) or `disable` (trusted private network only). Not needed for `127.0.0.1`. |
 | `ALLOWED_HOSTS` | no | Extra hostnames (comma-separated) beyond the one in `PUBLIC_BASE_URL`, e.g. `www.` |
 | `OAUTH_REDIRECT_HOSTS` | no | Pin remote MCP client callbacks to these hostnames. |
 
 The database role needs to own its database (it creates tables on migration). It does not need `CREATEDB`.
+
+## Startup and the database
+
+If Postgres is not reachable when the app starts (connection refused, unknown host, timeout, or "the database system is starting up"), the app retries with an exponential backoff (0.5s, 1s, 2s, 4s, then every 5s) for up to `POSTGRES_CONNECT_TIMEOUT_SECONDS` (default 60)." An attempt still running when the window closes (for example a slow DNS lookup for a stopped Compose service) counts as a timeout. Each retry logs one line with the host, port and error code, never the password. If Postgres is still unreachable after that, the app exits non-zero with `Cannot reach Postgres at host:port`, so your orchestrator can restart it.
+
+A wrong password, a missing database or a configuration error is not retried: the app exits at once with the error.
 
 ## Health check
 
