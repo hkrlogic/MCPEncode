@@ -1,5 +1,5 @@
 /** Add library → Custom: add and remove field rows, up to the cap on the form. */
-(function () {
+(() => {
   const root = document.querySelector("[data-custom-fields]");
   if (!root) return;
   const list = root.querySelector("[data-custom-field-list]");

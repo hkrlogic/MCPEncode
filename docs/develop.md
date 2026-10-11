@@ -5,7 +5,7 @@ Deeper operator notes for MCPEncode. Product words and the status gate live in [
 ## Prerequisites
 
 - Node.js 22+
-- Docker (PostgreSQL)
+- PostgreSQL 16 (the documented version, used by Compose and CI; also verified on 17). Docker Compose is the easy way to get it.
 
 ## Run
 
@@ -18,6 +18,8 @@ npm start
 
 Open `http://127.0.0.1:3000/` and sign in. The first visit creates the account (username, password of at least 12 characters). Postgres listens on `127.0.0.1:5432`. Connection settings are in `.env` (see `.env.example`).
 
+For a deploy (Docker image, environment variables, `/healthz`, TLS), see [deploy.md](deploy.md).
+
 An SA can open **Accounts** to create more people. Grant Access on a library by username (built-in sign-in) or IdP `sub` (OIDC). There are no shared demo passwords.
 
 ### Cursor
@@ -27,6 +29,16 @@ Copy `.cursor/mcp.example.json` to `.cursor/mcp.json` (git-ignored), then open a
 Use `127.0.0.1` consistently. `localhost` is a different host. The token audience is that library URL.
 
 Cursor’s desktop OAuth return URL is `http://localhost:8787/callback`. Leave that port free while connecting.
+
+## Tests and lint
+
+```bash
+npm run typecheck
+npm run lint      # Biome
+npm test
+```
+
+Tests need a running Postgres. Each test creates a throwaway `mpos_test_…` database and drops it afterwards, so the role that connects needs `CREATEDB`. The Compose `mpos` user is the database superuser, so it already can. With your own Postgres, either grant it (`ALTER ROLE mpos CREATEDB;`) or set `POSTGRES_ADMIN_USER` and `POSTGRES_ADMIN_PASSWORD` to a role that can create databases; tests use that role only to create and drop the throwaway databases, which stay owned by `POSTGRES_USER`. The app itself never needs `CREATEDB`.
 
 ## MCP tools (Lookups)
 
@@ -41,7 +53,7 @@ Each connection is one library.
 | `create_library` | `records.write` | name, schema starter, write_mode; optional table proposal |
 | `propose_table` | `records.write` | table design for an empty library; human Approves |
 | `propose_field` | `records.write` | one optional field to append; human Approves (cap 12) |
-| `create_item` / `update_item` | `records.write` | Review Lock → draft; Review Unlock → published |
+| `create_item` / `update_item` | `records.write` | Review Lock → draft; Review Unlock → published. General libraries take no `summary`: it is built from the body (text before the first table). Other libraries take a required one-line `summary`. |
 | `delete_item` | `records.delete` | by id |
 | `list_audit` | `audit.read` | who invoked which tool |
 

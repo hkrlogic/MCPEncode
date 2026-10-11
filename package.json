@@ -17,7 +17,8 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "test": "tsx --test test/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint"
   },
   "engines": {
     "node": ">=22"
@@ -38,6 +39,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@types/busboy": "^1.5.4",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.3",

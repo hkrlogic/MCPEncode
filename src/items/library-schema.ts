@@ -487,7 +487,7 @@ export function itemForLibrarySchema(
     payload[field.key] = readField(input, field.key);
   }
 
-  let parsed = z.object(shape).safeParse(payload);
+  const parsed = z.object(shape).safeParse(payload);
   if (!parsed.success) {
     const detail = parsed.error.issues[0]?.message ?? "Invalid item";
     return { ok: false, message: `${schemaFieldMessage(schema)} ${detail}` };

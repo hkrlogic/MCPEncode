@@ -43,6 +43,7 @@ import {
   readerKeyLibraryContext,
   READER_KEY_REJECTED,
 } from "../src/mcp/server.ts";
+import { APP_VERSION } from "../src/version.ts";
 import { withTestDatabase } from "./db.ts";
 
 const SESSION_SECRET = "test-session-secret-32-bytes-minimum!!";
@@ -339,6 +340,10 @@ test("HTTP: Reader key is shown once, stays Reader, and rejects a leaked key", a
       const okInit = await mcpPost(base, mcpPath, key, initBody);
       assert.equal(okInit.status, 200, okInit.text.slice(0, 500));
       assert.equal(okInit.text.includes(key), false);
+      // serverInfo.version comes from package.json, not a hardcoded string.
+      const serverInfo = /"serverInfo":(\{[^}]*\})/.exec(okInit.text);
+      assert.ok(serverInfo, okInit.text.slice(0, 500));
+      assert.deepEqual(JSON.parse(serverInfo[1]), { name: "mcpencode", version: APP_VERSION });
 
       const listed = await mcpCall(base, mcpPath, key, "tools/list", {});
       assert.equal(listed.status, 200, listed.text.slice(0, 800));

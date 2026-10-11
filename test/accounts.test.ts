@@ -142,7 +142,7 @@ test("only one first account can be created", async () => {
     const wins = [first, second].filter((result) => result.ok);
     assert.equal(wins.length, 1);
     assert.equal(await accounts.count(), 1);
-    const stored = await accounts.findByUsername(wins[0] && wins[0].ok ? wins[0].account.username : "");
+    const stored = await accounts.findByUsername(wins[0]?.ok ? wins[0].account.username : "");
     assert.equal(stored?.passwordHash.includes("correct horse battery"), false);
   });
 });

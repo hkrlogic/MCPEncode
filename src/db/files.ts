@@ -197,7 +197,7 @@ async function holdPublishedForReview(
 ): Promise<boolean> {
   if (status !== "published") return false;
   const library = await getLibrary(db, libraryId);
-  if (!library || library.writeMode !== "reviewed") return false;
+  if (library?.writeMode !== "reviewed") return false;
   const now = Date.now();
   await runSql(
     db,

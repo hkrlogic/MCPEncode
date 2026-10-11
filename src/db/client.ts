@@ -65,6 +65,12 @@ export async function openDatabase(
     ssl: config.ssl ? { rejectUnauthorized: true } : undefined,
   });
 
+  // An idle connection that Postgres drops (restart, failover) emits here. Without a
+  // listener Node exits. Log it; the pool reconnects and /healthz reports the outage.
+  pool.on("error", (error) => {
+    console.error("Postgres idle connection error:", error.message);
+  });
+
   const db = createDatabase(pool, async () => {
     await pool.end();
     if (cached?.key === key) cached = undefined;
@@ -175,7 +181,7 @@ function explainConnectionError(error: unknown, config: DatabaseConfig): Error {
   }
   if (err.code === "28P01") {
     return new Error(
-      `Postgres rejected user "${config.user}" at ${config.host}:${config.port}. That database kept the password from when its volume was first created, so a new .env will not match. Use the POSTGRES_PASSWORD from the .env that first started it.`,
+      `Postgres rejected the password for user "${config.user}" at ${config.host}:${config.port}. Check that POSTGRES_PASSWORD (or DATABASE_URL) matches that role's password on the server. One possible cause with Docker Compose: the postgres_data volume keeps the password from when it was first created, so a newer .env will not match; use the POSTGRES_PASSWORD from the .env that first started it.`,
     );
   }
   return error instanceof Error ? error : new Error(message);
