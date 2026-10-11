@@ -59,16 +59,6 @@ function required(name: string): string {
   return value;
 }
 
-/**
- * Railway sets RAILWAY_PUBLIC_DOMAIN to the public hostname, with no scheme.
- * Used when PUBLIC_BASE_URL was not typed in by hand.
- */
-function railwayPublicOrigin(): string | undefined {
-  const domain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
-  if (!domain || domain.length > 253 || /[\s/]/.test(domain)) return undefined;
-  return `https://${domain}`;
-}
-
 /** Comma-separated hostnames for Host / Origin checks (no scheme, no path). */
 function parseAllowedHosts(raw: string | undefined): string[] {
   if (!raw?.trim()) return [];
@@ -98,16 +88,14 @@ export function isPublicDeployment(bindHost: string, publicBaseUrl: string): boo
 }
 
 /**
- * Remote Postgres must use TLS unless the host is local, Railway's private
- * network, or an operator opts out (`POSTGRES_SSL=disable`).
+ * Remote Postgres must use TLS unless the host is local or an operator opts out
+ * (`POSTGRES_SSL=disable`, e.g. on a private container network).
  */
 export function resolvePostgresSsl(host: string, sslEnv: string | undefined): boolean {
   const mode = sslEnv?.trim().toLowerCase();
   if (mode === "required") return true;
   if (mode === "disable") return false;
   if (isLoopbackHost(host)) return false;
-  // Railway private DNS. The database is not on the public internet and does not present a cert.
-  if (host.trim().toLowerCase().endsWith(".railway.internal")) return false;
   throw new Error(
     "POSTGRES_SSL must be set for a remote host: use POSTGRES_SSL=required (preferred) or POSTGRES_SSL=disable only on a trusted private network",
   );
@@ -137,7 +125,7 @@ export type ParsedDatabaseUrl = {
 };
 
 /**
- * Read a Postgres URL without the WHATWG parser. Passwords from Railway can
+ * Read a Postgres URL without the WHATWG parser. Generated passwords can
  * contain characters that parser treats as the end of the address.
  * Host or database may be blank; the caller fills those from other variables.
  */
@@ -186,49 +174,32 @@ function firstDefined(...values: Array<string | undefined>): string | undefined 
   return values.find((value) => value !== undefined && value !== "");
 }
 
-function onRailway(): boolean {
-  return Boolean(
-    envValue("RAILWAY_ENVIRONMENT") || envValue("RAILWAY_PROJECT_ID") || envValue("RAILWAY_SERVICE_ID"),
-  );
-}
-
-function railwayDatabaseHelp(): string {
-  return (
-    "On the app service, add five variables and pick each value from the Postgres service: " +
-    "POSTGRES_HOST=${{Postgres.PGHOST}}, POSTGRES_PORT=${{Postgres.PGPORT}}, " +
-    "POSTGRES_USER=${{Postgres.PGUSER}}, POSTGRES_PASSWORD=${{Postgres.PGPASSWORD}}, " +
-    "POSTGRES_DATABASE=${{Postgres.PGDATABASE}}. " +
-    "Use the service's real name if it is not Postgres. Delete DATABASE_URL if it is not a full postgresql://user:password@host:port/database address."
-  );
-}
+const DATABASE_HELP =
+  "Set DATABASE_URL, or POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DATABASE. scripts/init-env.sh creates a local .env.";
 
 export function loadDatabaseConfig(): DatabaseConfig {
   const rawUrl = envValue("DATABASE_URL");
-  // A pasted ${{Postgres.DATABASE_URL}} that Railway did not fill in is not a connection.
-  const fromUrl = rawUrl && !rawUrl.includes("${{") ? parseDatabaseUrl(rawUrl) : undefined;
+  const fromUrl = rawUrl ? parseDatabaseUrl(rawUrl) : undefined;
   const portRaw = firstDefined(envValue("POSTGRES_PORT"), envValue("PGPORT"), fromUrl ? String(fromUrl.port) : undefined) ?? "5432";
   const port = Number(portRaw);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("POSTGRES_PORT must be an integer from 1 to 65535");
   }
-  const railway = onRailway();
-  const host =
-    firstDefined(envValue("POSTGRES_HOST"), envValue("PGHOST"), fromUrl?.host) || (railway ? "" : "127.0.0.1");
-  if (!host || /\s/.test(host) || host.length > 253 || host.includes("${{")) {
-    throw new Error(`Database host is missing. ${railwayDatabaseHelp()}`);
+  const host = firstDefined(envValue("POSTGRES_HOST"), envValue("PGHOST"), fromUrl?.host) || "127.0.0.1";
+  if (/\s/.test(host) || host.length > 253) {
+    throw new Error(`Database host is invalid. ${DATABASE_HELP}`);
   }
   const user = assertDbIdentifier(
     firstDefined(envValue("POSTGRES_USER"), envValue("PGUSER"), fromUrl?.user) || "mpos",
     "POSTGRES_USER",
   );
-  // Railway's Postgres image creates a database named railway. A URL with no path still means that.
   const databaseName =
     firstDefined(envValue("POSTGRES_DATABASE"), envValue("PGDATABASE"), envValue("POSTGRES_DB"), fromUrl?.database) ||
-    (railway || host.toLowerCase().endsWith(".railway.internal") ? "railway" : "mpos");
+    "mpos";
   const database = assertDbIdentifier(databaseName, "POSTGRES_DATABASE");
   const password = firstDefined(envValue("POSTGRES_PASSWORD"), envValue("PGPASSWORD"), fromUrl?.password);
   if (!password) {
-    throw new Error(`Database password is missing. ${railwayDatabaseHelp()}`);
+    throw new Error(`Database password is missing. ${DATABASE_HELP}`);
   }
   const sslEnv =
     envValue("POSTGRES_SSL") ||
@@ -244,7 +215,6 @@ export function loadDatabaseConfig(): DatabaseConfig {
 }
 
 export function loadConfig(): AppConfig {
-  const origin = railwayPublicOrigin();
   // MCP_RESOURCE_URL used to be the global /mcp address. Accept its origin only.
   const legacyMcp = process.env.MCP_RESOURCE_URL?.trim();
   let legacyOrigin: string | undefined;
@@ -257,16 +227,14 @@ export function loadConfig(): AppConfig {
   }
   const publicBaseUrl = (
     process.env.PUBLIC_BASE_URL?.trim() ||
-    origin ||
     legacyOrigin ||
     "http://127.0.0.1:3000"
   ).replace(/\/$/, "");
   if (!publicBaseUrl) {
     throw new Error(
-      "Missing PUBLIC_BASE_URL. On Railway, generate a public domain under Networking. Locally, set PUBLIC_BASE_URL.",
+      "Missing PUBLIC_BASE_URL. Set it to the address people open, e.g. https://library.example.org.",
     );
   }
-  const onRailway = Boolean(process.env.RAILWAY_ENVIRONMENT?.trim() || origin);
   const authMode: AuthMode = process.env.AUTH_MODE === "oidc" ? "oidc" : "embedded";
   const authIssuer = (
     authMode === "embedded"
@@ -283,7 +251,8 @@ export function loadConfig(): AppConfig {
       `SETUP_TOKEN must be at least ${SETUP_TOKEN_MIN_LENGTH} characters. Generate one with: openssl rand -base64 18`,
     );
   }
-  const bindHost = process.env.BIND_HOST?.trim() || (onRailway ? "0.0.0.0" : "127.0.0.1");
+  // Containers set BIND_HOST=0.0.0.0 (the Dockerfile does). Everything else stays on loopback.
+  const bindHost = process.env.BIND_HOST?.trim() || "127.0.0.1";
 
   return {
     port: Number(process.env.PORT ?? "3000"),

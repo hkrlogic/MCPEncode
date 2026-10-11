@@ -1,0 +1,112 @@
+/**
+ * Configuration comes only from documented env vars (PUBLIC_BASE_URL, PORT,
+ * BIND_HOST, DATABASE_URL / POSTGRES_*). Nothing is inferred from the host platform.
+ */
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { loadConfig, loadDatabaseConfig } from "../src/config.ts";
+
+const KEYS = [
+  "PUBLIC_BASE_URL",
+  "MCP_RESOURCE_URL",
+  "BIND_HOST",
+  "PORT",
+  "SESSION_SECRET",
+  "SETUP_TOKEN",
+  "AUTH_MODE",
+  "DATABASE_URL",
+  "POSTGRES_HOST",
+  "PGHOST",
+  "POSTGRES_PORT",
+  "PGPORT",
+  "POSTGRES_USER",
+  "PGUSER",
+  "POSTGRES_PASSWORD",
+  "PGPASSWORD",
+  "POSTGRES_DATABASE",
+  "PGDATABASE",
+  "POSTGRES_DB",
+  "POSTGRES_SSL",
+];
+
+/** Run fn with only the given variables set (from the list above). Restores the rest. */
+function withEnv<T>(values: Record<string, string>, fn: () => T): T {
+  const saved = new Map(KEYS.map((key) => [key, process.env[key]]));
+  for (const key of KEYS) delete process.env[key];
+  Object.assign(process.env, values);
+  try {
+    return fn();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+const BASE = {
+  SESSION_SECRET: "test-session-secret-32-bytes-minimum!!",
+  POSTGRES_PASSWORD: "stub-not-a-real-password",
+};
+
+test("defaults stay local: loopback bind, local origin, local database", () => {
+  withEnv(BASE, () => {
+    const config = loadConfig();
+    assert.equal(config.publicBaseUrl, "http://127.0.0.1:3000");
+    assert.equal(config.bindHost, "127.0.0.1");
+    assert.equal(config.port, 3000);
+    assert.equal(config.database.host, "127.0.0.1");
+    assert.equal(config.database.database, "mpos");
+    assert.equal(config.setupCodeRequired, false);
+  });
+});
+
+test("PUBLIC_BASE_URL, PORT and BIND_HOST set the public address and listener", () => {
+  withEnv({ ...BASE, PUBLIC_BASE_URL: "https://library.example.org/", PORT: "8080", BIND_HOST: "0.0.0.0" }, () => {
+    const config = loadConfig();
+    assert.equal(config.publicBaseUrl, "https://library.example.org");
+    assert.equal(config.authIssuer, "https://library.example.org/id");
+    assert.equal(config.port, 8080);
+    assert.equal(config.bindHost, "0.0.0.0");
+    assert.equal(config.setupCodeRequired, true);
+  });
+});
+
+test("DATABASE_URL configures the database; POSTGRES_* override its parts", () => {
+  withEnv(
+    { DATABASE_URL: "postgresql://app:s3cret@db.example.internal:6543/library?sslmode=require" },
+    () => {
+      const db = loadDatabaseConfig();
+      assert.equal(db.host, "db.example.internal");
+      assert.equal(db.port, 6543);
+      assert.equal(db.user, "app");
+      assert.equal(db.database, "library");
+      assert.equal(db.ssl, true);
+    },
+  );
+  withEnv(
+    {
+      DATABASE_URL: "postgresql://app:s3cret@db.example.internal:6543/library",
+      POSTGRES_HOST: "127.0.0.1",
+      POSTGRES_DATABASE: "mpos",
+    },
+    () => {
+      const db = loadDatabaseConfig();
+      assert.equal(db.host, "127.0.0.1");
+      assert.equal(db.database, "mpos");
+      assert.equal(db.ssl, false);
+    },
+  );
+});
+
+test("a missing database password names the standard variables", () => {
+  withEnv({}, () => {
+    assert.throws(
+      () => loadDatabaseConfig(),
+      (error: Error) =>
+        /password is missing/.test(error.message) &&
+        /DATABASE_URL/.test(error.message) &&
+        /POSTGRES_PASSWORD/.test(error.message),
+    );
+  });
+});

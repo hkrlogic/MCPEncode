@@ -34,31 +34,31 @@ test("remote Postgres requires an explicit SSL choice", () => {
   assert.equal(resolvePostgresSsl("db.example.com", "required"), true);
   assert.equal(resolvePostgresSsl("db.example.com", "disable"), false);
   assert.throws(() => resolvePostgresSsl("db.example.com", undefined), /POSTGRES_SSL/);
-  assert.equal(resolvePostgresSsl("postgres.railway.internal", undefined), false);
+  // No hosting provider gets a TLS exception by name.
+  assert.throws(() => resolvePostgresSsl("postgres.internal.example", undefined), /POSTGRES_SSL/);
 });
 
-test("DATABASE_URL supplies the Railway private connection", () => {
+test("DATABASE_URL supplies host, port, user, password and database", () => {
   const parsed = parseDatabaseUrl(
-    "postgresql://postgres:s3cret%2Fpw@postgres.railway.internal:5432/railway",
+    "postgresql://postgres:s3cret%2Fpw@db.example.internal:5432/library",
   );
-  assert.equal(parsed.host, "postgres.railway.internal");
+  assert.equal(parsed.host, "db.example.internal");
   assert.equal(parsed.port, 5432);
   assert.equal(parsed.user, "postgres");
   assert.equal(parsed.password, "s3cret/pw");
-  assert.equal(parsed.database, "railway");
+  assert.equal(parsed.database, "library");
 });
 
 test("DATABASE_URL keeps a password that contains a slash", () => {
-  const parsed = parseDatabaseUrl("postgresql://postgres:sec/ret@postgres.railway.internal:5432");
+  const parsed = parseDatabaseUrl("postgresql://postgres:sec/ret@db.example.internal:5432");
   assert.equal(parsed.password, "sec/ret");
-  assert.equal(parsed.host, "postgres.railway.internal");
+  assert.equal(parsed.host, "db.example.internal");
   assert.equal(parsed.database, "");
 });
 
-test("a Railway URL with no database name uses the platform default", () => {
+test("a DATABASE_URL with no database name uses the default database", () => {
   const previous = {
     DATABASE_URL: process.env.DATABASE_URL,
-    RAILWAY_ENVIRONMENT: process.env.RAILWAY_ENVIRONMENT,
     POSTGRES_HOST: process.env.POSTGRES_HOST,
     PGHOST: process.env.PGHOST,
     POSTGRES_DATABASE: process.env.POSTGRES_DATABASE,
@@ -72,8 +72,7 @@ test("a Railway URL with no database name uses the platform default", () => {
     PGPORT: process.env.PGPORT,
     POSTGRES_SSL: process.env.POSTGRES_SSL,
   };
-  process.env.DATABASE_URL = "postgresql://postgres:s3cret@postgres.railway.internal:5432";
-  delete process.env.RAILWAY_ENVIRONMENT;
+  process.env.DATABASE_URL = "postgresql://postgres:s3cret@db.example.internal:5432";
   for (const key of [
     "POSTGRES_HOST",
     "PGHOST",
@@ -90,10 +89,12 @@ test("a Railway URL with no database name uses the platform default", () => {
   ]) {
     delete process.env[key];
   }
+  // A private network: the operator opts out of TLS explicitly.
+  process.env.POSTGRES_SSL = "disable";
   try {
     const config = loadDatabaseConfig();
-    assert.equal(config.host, "postgres.railway.internal");
-    assert.equal(config.database, "railway");
+    assert.equal(config.host, "db.example.internal");
+    assert.equal(config.database, "mpos");
     assert.equal(config.user, "postgres");
     assert.equal(config.password, "s3cret");
     assert.equal(config.ssl, false);
