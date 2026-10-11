@@ -31,7 +31,7 @@ Cursor’s desktop OAuth return URL is `http://localhost:8787/callback`. Leave t
 ### Zitadel (optional)
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.zitadel.yml up -d
 npm run zitadel:bootstrap
 npm start
 ```

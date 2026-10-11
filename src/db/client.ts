@@ -175,7 +175,7 @@ function explainConnectionError(error: unknown, config: DatabaseConfig): Error {
   }
   if (err.code === "28P01") {
     return new Error(
-      `Postgres rejected user "${config.user}" at ${config.host}:${config.port}. Check POSTGRES_USER and POSTGRES_PASSWORD.`,
+      `Postgres rejected user "${config.user}" at ${config.host}:${config.port}. That database kept the password from when its volume was first created, so a new .env will not match. Use the POSTGRES_PASSWORD from the .env that first started it.`,
     );
   }
   return error instanceof Error ? error : new Error(message);
