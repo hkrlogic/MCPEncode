@@ -10,7 +10,7 @@ Thanks for your interest. MCPEncode is maintained in spare time, so a little coo
 
 ## Development setup
 
-Requires Node 22+ and Docker.
+Requires Node 22+ and Docker (or your own PostgreSQL 16+; see [docs/develop.md](docs/develop.md) for the `CREATEDB` note on tests).
 
 ```bash
 scripts/init-env.sh            # creates .env with random secrets
@@ -23,6 +23,7 @@ Before opening a pull request:
 
 ```bash
 npm run typecheck
+npm run lint
 npm test
 ```
 

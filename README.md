@@ -41,18 +41,24 @@ MCPEncode keeps that knowledge in **libraries** with a shape you define. Agents 
 
 ## Quick start
 
-Requires Node 22+ and Docker.
+Requires Docker (or Node 22+ and PostgreSQL for development).
 
 ```bash
 git clone https://github.com/hkrlogic/MCPEncode.git
 cd MCPEncode
 scripts/init-env.sh         # creates .env with fresh random secrets
-docker compose up -d postgres
-npm install
-npm start
+docker compose up -d --build
 ```
 
 Open <http://127.0.0.1:3000/>. The first visit creates your account. Add a library, add an item, Publish.
+
+To work on the code, run only Postgres in Docker and the app with Node: `docker compose up -d postgres`, `npm install`, `npm start` (see [docs/develop.md](docs/develop.md)).
+
+### Deploy
+
+Use the [`Dockerfile`](Dockerfile) on any container host, with a TLS reverse proxy in front. [docs/deploy.md](docs/deploy.md) lists the environment variables, the `/healthz` check and proxy notes.
+
+> **Every public deploy must set `SETUP_TOKEN`**, so a stranger cannot create the first account.
 
 ### Connect an MCP client
 
@@ -86,13 +92,20 @@ There is **no publish, approve or revert tool.** Those stay with people in the p
 | Idea | Meaning |
 | --- | --- |
 | **Library** | A set of items with one schema, one Connect link, one Access list |
-| **Item** | One entry — name, labels, summary, fields |
+| **Item** | One entry — name, labels, summary, fields (see [Summaries](#summaries)) |
 | **Shelf** | A group of libraries searched together |
 | **Review Lock** | Writes stay Pending until a person Publishes (default) |
 | **Review Unlock** | Writes publish immediately — for automation output |
 | **Entity key** | Stable id (e.g. a hostname) so repeated syncs update one item |
 | **Access** | Per-library Publisher / Reader grants |
 | **SA** | App admin — accounts, add libraries, hard-delete |
+
+### Summaries
+
+Every item has a summary: the short text `list_items` and `search_shelf` return before an item is opened.
+
+- **General** libraries (no extra fields) have no `summary` input. `create_item` / `update_item` take `name`, `labels` and a markdown `body`, and the summary is built from the body: the text before the first table, or the whole body, flattened to one line (up to 500 characters; lists show the first 160). An empty body falls back to the name.
+- **Policy, Procedure, Custom and extended General** libraries take a required one-line `summary` (up to 160 characters) on `create_item` / `update_item`.
 
 ---
 
@@ -113,11 +126,12 @@ Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 ## Stack
 
-Node 22 · Express · PostgreSQL · OAuth 2.1 + PKCE · MCP
+Node 22 · Express · PostgreSQL 16 (also verified on 17) · OAuth 2.1 + PKCE · MCP
 
 ```bash
 npm test
 npm run typecheck
+npm run lint
 ```
 
 ## Docs
@@ -125,7 +139,8 @@ npm run typecheck
 | Doc | For |
 | --- | --- |
 | [AGENTS.md](AGENTS.md) | Product vocabulary and the status gate |
-| [docs/develop.md](docs/develop.md) | Run details, security notes, layout |
+| [docs/develop.md](docs/develop.md) | Run details, tests, security notes, layout |
+| [docs/deploy.md](docs/deploy.md) | Docker image, environment, health check, TLS |
 | [docs/library-schema-v1.md](docs/library-schema-v1.md) | Starters, propose field, copy/rename |
 | [docs/revert-to-published.md](docs/revert-to-published.md) | Overwrite recovery |
 
