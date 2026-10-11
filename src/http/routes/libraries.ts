@@ -48,7 +48,7 @@ import {
 } from "../helpers.ts";
 import { cookieHeader, readCookie } from "../cookies.ts";
 import { libraryMcpUrl } from "../library-url.ts";
-import { addItemPage, addLibraryPage, errorPage, librariesPage, libraryPage, loginPage } from "../pages.ts";
+import { addItemPage, addLibraryPage, errorPage, librariesPage, libraryPage } from "../pages.ts";
 import { loadAppShell } from "../shell.ts";
 import type { AppRouteContext } from "./context.ts";
 
@@ -260,7 +260,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
   app.get("/", async (req, res) => {
     const access = await sessionAccess(req, config);
     if (!access) {
-      res.send(loginPage());
+      res.redirect("/login");
       return;
     }
     const shell = await loadAppShell(db, access);

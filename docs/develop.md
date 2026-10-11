@@ -16,7 +16,7 @@ npm install
 npm start
 ```
 
-Open `http://127.0.0.1:3000/` and choose **Sign in**. The first visit creates the account (username, password of at least 12 characters). Postgres listens on `127.0.0.1:5432`. Connection settings are in `.env` (see `.env.example`).
+Open `http://127.0.0.1:3000/` and sign in. The first visit creates the account (username, password of at least 12 characters). Postgres listens on `127.0.0.1:5432`. Connection settings are in `.env` (see `.env.example`).
 
 An SA can open **Accounts** to create more people. Grant Access on a library by username (built-in sign-in) or IdP `sub` (OIDC). There are no shared demo passwords.
 
