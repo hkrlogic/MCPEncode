@@ -92,7 +92,7 @@ services:
       - traefik.http.routers.zitadel-api.priority=100
 
   zitadel-login:
-    image: ghcr.io/zitadel/zitadel-login:v4.16.0
+    image: ghcr.io/zitadel/zitadel-login:v4.19.4
     user: "0"
     environment:
       ZITADEL_API_URL: http://zitadel-api:8080
