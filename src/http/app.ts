@@ -50,6 +50,7 @@ import { registerEditorRoutes } from "./routes/editor.ts";
 import { registerItemRoutes } from "./routes/items.ts";
 import { registerLibraryRoutes } from "./routes/libraries.ts";
 import { registerShelfRoutes } from "./routes/shelves.ts";
+import { originAllowed } from "./origin.ts";
 import { securityHeaders } from "./security-headers.ts";
 import { staticPublicDir } from "./static-assets.ts";
 
@@ -84,14 +85,35 @@ export function createApp(input: {
       ].filter((name) => name.length > 0),
     ),
   ];
-  // Origin validation rejects the literal browser value "null" (opaque origins), which
-  // OAuth redirects from a local app to /id/authorize often send. Host allowlisting is
-  // enough on public binds; keep Origin checks only on loopback for DNS-rebinding defense.
   const loopbackBind = ["127.0.0.1", "localhost", "::1"].includes(config.bindHost);
+  // The SDK's own Origin check rejects the browser value "null", which is what
+  // follows the sign-in form redirect. Host "0.0.0.0" skips that automatic check.
+  // Listening still uses config.bindHost. Host allowlisting stays on, and the
+  // origin check below allows the sign-in navigation while rejecting other sites.
   const app = createMcpExpressApp({
-    host: config.bindHost,
+    host: "0.0.0.0",
     allowedHosts: allowedNames,
-    ...(loopbackBind ? { allowedOrigins: allowedNames } : {}),
+  });
+  app.use((req, res, next) => {
+    const header = req.headers.origin;
+    const origin = Array.isArray(header) ? header[0] : header;
+    const modeHeader = req.headers["sec-fetch-mode"];
+    const secFetchMode = Array.isArray(modeHeader) ? modeHeader[0] : modeHeader;
+    const result = originAllowed({
+      origin,
+      method: req.method,
+      secFetchMode,
+      allowedHostnames: allowedNames,
+    });
+    if (result.ok) {
+      next();
+      return;
+    }
+    res.status(403).json({
+      jsonrpc: "2.0",
+      error: { code: -32000, message: result.message },
+      id: null,
+    });
   });
   app.disable("x-powered-by");
   app.use(securityHeaders({ https: config.publicBaseUrl.startsWith("https://") }));
