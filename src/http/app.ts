@@ -99,10 +99,13 @@ export function createApp(input: {
     const origin = Array.isArray(header) ? header[0] : header;
     const modeHeader = req.headers["sec-fetch-mode"];
     const secFetchMode = Array.isArray(modeHeader) ? modeHeader[0] : modeHeader;
+    const siteHeader = req.headers["sec-fetch-site"];
+    const secFetchSite = Array.isArray(siteHeader) ? siteHeader[0] : siteHeader;
     const result = originAllowed({
       origin,
       method: req.method,
       secFetchMode,
+      secFetchSite,
       allowedHostnames: allowedNames,
     });
     if (result.ok) {

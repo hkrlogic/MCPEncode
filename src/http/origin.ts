@@ -9,6 +9,7 @@ export function originAllowed(input: {
   origin: string | undefined;
   method: string;
   secFetchMode: string | undefined;
+  secFetchSite?: string | undefined;
   allowedHostnames: readonly string[];
 }): { ok: true } | { ok: false; message: string } {
   const origin = input.origin;
@@ -16,9 +17,14 @@ export function originAllowed(input: {
 
   if (origin === "null") {
     const method = input.method.toUpperCase();
-    const navigation = method === "GET" || method === "HEAD";
     const mode = input.secFetchMode;
-    if (navigation && (mode === undefined || mode === "" || mode === "navigate")) return { ok: true };
+    const site = input.secFetchSite;
+    // Browsers send Origin: null on this app's own sign-in form and on the
+    // redirect that follows it. Another site cannot set Sec-Fetch-Site.
+    if (site === "same-origin" || site === "none") return { ok: true };
+    if ((method === "GET" || method === "HEAD") && (mode === undefined || mode === "" || mode === "navigate")) {
+      return { ok: true };
+    }
     return { ok: false, message: "Invalid Origin header: null" };
   }
 

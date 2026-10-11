@@ -16,6 +16,19 @@ test("a sign-in redirect with Origin null is allowed", () => {
   );
 });
 
+test("a same-origin sign-in form that sends Origin null is allowed", () => {
+  assert.equal(
+    originAllowed({
+      origin: "null",
+      method: "POST",
+      secFetchMode: "navigate",
+      secFetchSite: "same-origin",
+      allowedHostnames: allowed,
+    }).ok,
+    true,
+  );
+});
+
 test("a fetch that sends Origin null is rejected", () => {
   const result = originAllowed({
     origin: "null",
