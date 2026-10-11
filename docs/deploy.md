@@ -2,17 +2,19 @@
 
 MCPEncode ships as a container image built from the [`Dockerfile`](../Dockerfile). It runs on any host that runs containers (a VM with Docker Compose, Kubernetes, or a container platform) next to a PostgreSQL database. There is nothing provider-specific in the app: all configuration comes from the environment variables below.
 
-> **Every public deploy must set `SETUP_TOKEN`.** On a non-local address the first visitor creates the first account (an SA). Without `SETUP_TOKEN` the page falls back to a one-time code printed in the server log, which anyone with log access can read. Set a 16+ character value (`openssl rand -base64 18`) before the app is reachable, and keep it secret.
+> **Every public deploy must set `SETUP_TOKEN`.** On a non-local address the first visitor creates the first account (an SA). Without `SETUP_TOKEN` the page falls back to a one-time code printed in the server log, which anyone with log access can read. `scripts/init-env.sh` generates one in `.env` (and adds one to an existing `.env` that has none, without touching other values). Otherwise set a 16+ character value (`openssl rand -base64 18`) before the app is reachable, and keep it secret.
 
 ## Quick start with Docker Compose
 
 ```bash
-scripts/init-env.sh        # creates .env with random secrets
+scripts/init-env.sh        # creates .env with random secrets, including SETUP_TOKEN
 docker compose up -d --build
 curl http://127.0.0.1:3000/healthz
 ```
 
-[`docker-compose.yml`](../docker-compose.yml) runs the app and Postgres 16. Both publish on `127.0.0.1` only. For a public address, put a TLS reverse proxy in front (see below) and set `PUBLIC_BASE_URL` and `SETUP_TOKEN` in `.env`.
+[`docker-compose.yml`](../docker-compose.yml) runs the app and Postgres 16. Both publish on `127.0.0.1` only. For a public address, put a TLS reverse proxy in front (see below) and set `PUBLIC_BASE_URL` in `.env` (keep the generated `SETUP_TOKEN`).
+
+`scripts/init-env.sh` is safe to re-run: it never overwrites a value that is already set. On an existing `.env` it only adds a `SETUP_TOKEN` when there is none. It writes secrets to `.env` only and never prints them.
 
 ## Image only
 
