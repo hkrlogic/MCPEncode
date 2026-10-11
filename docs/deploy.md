@@ -2,17 +2,19 @@
 
 MCPEncode ships as a container image built from the [`Dockerfile`](../Dockerfile). It runs on any host that runs containers (a VM with Docker Compose, Kubernetes, or a container platform) next to a PostgreSQL database. There is nothing provider-specific in the app: all configuration comes from the environment variables below.
 
-> **Every public deploy must set `SETUP_TOKEN`.** On a non-local address the first visitor creates the first account (an SA). Without `SETUP_TOKEN` the page falls back to a one-time code printed in the server log, which anyone with log access can read. Set a 16+ character value (`openssl rand -base64 18`) before the app is reachable, and keep it secret.
+> **Every public deploy must set `SETUP_TOKEN`.** On a non-local address the first visitor creates the first account (an SA). Without `SETUP_TOKEN` the page falls back to a one-time code printed in the server log, which anyone with log access can read. `scripts/init-env.sh` generates one in `.env` (and adds one to an existing `.env` that has none, without touching other values). Otherwise set a 16+ character value (`openssl rand -base64 18`) before the app is reachable, and keep it secret.
 
 ## Quick start with Docker Compose
 
 ```bash
-scripts/init-env.sh        # creates .env with random secrets
+scripts/init-env.sh        # creates .env with random secrets, including SETUP_TOKEN
 docker compose up -d --build
 curl http://127.0.0.1:3000/healthz
 ```
 
-[`docker-compose.yml`](../docker-compose.yml) runs the app and Postgres 16. Both publish on `127.0.0.1` only. For a public address, put a TLS reverse proxy in front (see below) and set `PUBLIC_BASE_URL` and `SETUP_TOKEN` in `.env`.
+[`docker-compose.yml`](../docker-compose.yml) runs the app and Postgres 16. Both publish on `127.0.0.1` only. For a public address, put a TLS reverse proxy in front (see below) and set `PUBLIC_BASE_URL` in `.env` (keep the generated `SETUP_TOKEN`).
+
+`scripts/init-env.sh` is safe to re-run: it never overwrites a value that is already set. On an existing `.env` it only adds a `SETUP_TOKEN` when there is none. It writes secrets to `.env` only and never prints them.
 
 ## Image only
 
@@ -39,11 +41,18 @@ The image runs as the unprivileged `node` user, listens on `0.0.0.0:$PORT` (defa
 | `BIND_HOST` | no | Listen address. Default `127.0.0.1`; the image sets `0.0.0.0`. |
 | `DATABASE_URL` | one of | `postgresql://user:password@host:port/database[?sslmode=require]` |
 | `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` | one of | Separate settings. They override the matching part of `DATABASE_URL`. Standard `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` also work. |
+| `POSTGRES_CONNECT_TIMEOUT_SECONDS` | no | How long startup keeps retrying while Postgres is unreachable. Default 60; `0` tries once. See [Startup and the database](#startup-and-the-database). |
 | `POSTGRES_SSL` | for a remote database | `required` (verify TLS, preferred) or `disable` (trusted private network only). Not needed for `127.0.0.1`. |
 | `ALLOWED_HOSTS` | no | Extra hostnames (comma-separated) beyond the one in `PUBLIC_BASE_URL`, e.g. `www.` |
 | `OAUTH_REDIRECT_HOSTS` | no | Pin remote MCP client callbacks to these hostnames. |
 
 The database role needs to own its database (it creates tables on migration). It does not need `CREATEDB`.
+
+## Startup and the database
+
+If Postgres is not reachable when the app starts (connection refused, unknown host, timeout, or "the database system is starting up"), the app retries with an exponential backoff (0.5s, 1s, 2s, 4s, then every 5s) for up to `POSTGRES_CONNECT_TIMEOUT_SECONDS` (default 60)." An attempt still running when the window closes (for example a slow DNS lookup for a stopped Compose service) counts as a timeout. Each retry logs one line with the host, port and error code, never the password. If Postgres is still unreachable after that, the app exits non-zero with `Cannot reach Postgres at host:port`, so your orchestrator can restart it.
+
+A wrong password, a missing database or a configuration error is not retried: the app exits at once with the error.
 
 ## Health check
 

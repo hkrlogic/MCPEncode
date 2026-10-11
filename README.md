@@ -46,7 +46,7 @@ Requires Docker (or Node 22+ and PostgreSQL for development).
 ```bash
 git clone https://github.com/hkrlogic/MCPEncode.git
 cd MCPEncode
-scripts/init-env.sh         # creates .env with fresh random secrets
+scripts/init-env.sh         # creates .env with fresh random secrets (incl. SETUP_TOKEN)
 docker compose up -d --build
 ```
 
@@ -58,7 +58,7 @@ To work on the code, run only Postgres in Docker and the app with Node: `docker 
 
 Use the [`Dockerfile`](Dockerfile) on any container host, with a TLS reverse proxy in front. [docs/deploy.md](docs/deploy.md) lists the environment variables, the `/healthz` check and proxy notes.
 
-> **Every public deploy must set `SETUP_TOKEN`**, so a stranger cannot create the first account.
+> **Every public deploy must set `SETUP_TOKEN`**, so a stranger cannot create the first account. `scripts/init-env.sh` generates one, and re-running it adds one to an existing `.env` without changing other values.
 
 ### Connect an MCP client
 
@@ -111,7 +111,7 @@ Every item has a summary: the short text `list_items` and `search_shelf` return 
 
 ## Security
 
-- Secrets are generated per install by `scripts/init-env.sh`; the app refuses to start with a placeholder `SESSION_SECRET`.
+- Secrets (`SESSION_SECRET`, `POSTGRES_PASSWORD`, `SETUP_TOKEN`) are generated per install by `scripts/init-env.sh`; the app refuses to start with a placeholder `SESSION_SECRET`.
 - Default bind is `127.0.0.1`. The built-in sign-in is meant for local and small-team use — **put MCPEncode behind TLS and set real secrets before exposing it.**
 - Disabling or demoting an account takes effect immediately: sessions, tokens and refreshes are re-checked on every request.
 - On a public address, creating the first account takes a setup code, so a stranger cannot claim a new instance.
