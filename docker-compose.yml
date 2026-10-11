@@ -1,6 +1,10 @@
-# Local Postgres for the publisher. Published on 127.0.0.1 only.
+# The publisher and its Postgres. Both are published on 127.0.0.1 only; put a
+# TLS reverse proxy in front for a public address (see docs/deploy.md).
 # Credentials come from .env (scripts/init-env.sh). Postgres reads the password
 # only when this volume is first created.
+#
+#   docker compose up -d --build     # app + Postgres
+#   docker compose up -d postgres    # Postgres only, for npm start during development
 services:
   postgres:
     image: postgres:16
@@ -18,6 +22,27 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+
+  # Uses the same .env, but reaches Postgres by its service name and listens on
+  # all interfaces inside the container. Port 3000 is still published on 127.0.0.1 only.
+  app:
+    build: .
+    image: mcpencode:local
+    init: true
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      # Compose's private network, not the internet. Use POSTGRES_SSL=required for a remote database.
+      POSTGRES_SSL: disable
+      BIND_HOST: 0.0.0.0
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:
