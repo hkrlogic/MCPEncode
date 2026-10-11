@@ -52,7 +52,7 @@ export async function loadAuthServer(issuer: string): Promise<AuthServerEndpoint
   }
   if (!discovery?.authorization_endpoint || !discovery.token_endpoint || !discovery.issuer) {
     throw new Error(
-      `Could not load OAuth discovery from ${issuer}. Start Zitadel (docker compose up -d) or leave AUTH_MODE unset to use the built-in sign-in.`,
+      `Could not load OAuth discovery from ${issuer}. Leave AUTH_MODE unset to use the built-in sign-in.`,
       { cause: lastError },
     );
   }

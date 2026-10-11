@@ -25,7 +25,7 @@ You can expect an acknowledgement within 7 days. This is a spare-time project, s
 
 In scope: the publisher web app, the MCP server, authentication and access control, the publish gate, Reader keys, and anything that lets an agent read unpublished items, write without permission, or reach another library.
 
-Out of scope: running with the example or placeholder secrets, exposing the built-in sign-in to the internet without TLS, and issues in third-party services (Zitadel, Postgres, your MCP client) — report those upstream.
+Out of scope: running with the example or placeholder secrets, exposing the built-in sign-in to the internet without TLS, and issues in third-party services (Postgres, your MCP client) — report those upstream.
 
 ## Deployment hardening
 
@@ -34,6 +34,5 @@ Out of scope: running with the example or placeholder secrets, exposing the buil
 - Responses carry a Content-Security-Policy (no framing, no third-party loads), `nosniff`, and HSTS on HTTPS. Session cookies are `Secure` on an HTTPS address. Password hashes use scrypt at 64 MiB per hash and older hashes are upgraded at sign-in.
 - On a public address, the first account needs a setup code: set `SETUP_TOKEN` (16+ characters), or read the one-time code from the server log at first start.
 - If you only connect known clients, set `OAUTH_REDIRECT_HOSTS` to their hostnames (for example `claude.ai`).
-- Prefer `AUTH_MODE=oidc` with MFA at your identity provider for anything beyond a single machine.
 - Remote Postgres must use `POSTGRES_SSL=required`.
 - Treat each library's Connect link and Reader key as secrets. Rotate them from the publisher UI if they leak.

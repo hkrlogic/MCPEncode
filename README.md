@@ -99,7 +99,7 @@ There is **no publish, approve or revert tool.** Those stay with people in the p
 ## Security
 
 - Secrets are generated per install by `scripts/init-env.sh`; the app refuses to start with a placeholder `SESSION_SECRET`.
-- Default bind is `127.0.0.1`. The built-in sign-in is meant for local and small-team use — **put MCPEncode behind TLS and set real secrets before exposing it.** Use `AUTH_MODE=oidc` for an external identity provider (Zitadel bootstrap included).
+- Default bind is `127.0.0.1`. The built-in sign-in is meant for local and small-team use — **put MCPEncode behind TLS and set real secrets before exposing it.**
 - Disabling or demoting an account takes effect immediately: sessions, tokens and refreshes are re-checked on every request.
 - On a public address, creating the first account takes a setup code, so a stranger cannot claim a new instance.
 - The sign-in page shows where you will be sent. Tokens can only be requested for this app's own libraries, and `OAUTH_REDIRECT_HOSTS` can pin callbacks to known hostnames.

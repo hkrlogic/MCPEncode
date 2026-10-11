@@ -5,7 +5,7 @@ Deeper operator notes for MCPEncode. Product words and the status gate live in [
 ## Prerequisites
 
 - Node.js 22+
-- Docker (PostgreSQL). Zitadel is optional and not required to sign in.
+- Docker (PostgreSQL)
 
 ## Run
 
@@ -22,21 +22,11 @@ An SA can open **Accounts** to create more people. Grant Access on a library by 
 
 ### Cursor
 
-Copy `.cursor/mcp.example.json` to `.cursor/mcp.json` (git-ignored), then open a library → **Connect** → put that URL in it. With built-in sign-in, the client id is `mpos-mcp`. After Zitadel bootstrap, use the client id and scopes bootstrap wrote. In **Settings → Tools & MCP**, connect the library. Cursor will 401, discover the issuer, and open a browser login.
+Copy `.cursor/mcp.example.json` to `.cursor/mcp.json` (git-ignored), then open a library → **Connect** → put that URL in it. With built-in sign-in, the client id is `mpos-mcp`. In **Settings → Tools & MCP**, connect the library. Cursor will 401, discover the issuer, and open a browser login.
 
-Use `127.0.0.1` consistently. `localhost` is a different host. Embedded mode: token audience is that library URL. Zitadel: audience is the Zitadel project; the access list still gates the library.
+Use `127.0.0.1` consistently. `localhost` is a different host. The token audience is that library URL.
 
-Cursor’s desktop OAuth return URL is `http://localhost:8787/callback`. Leave that port free while connecting. Embedded sign-in accepts any absolute callback. Zitadel only accepts the callbacks registered by bootstrap.
-
-### Zitadel (optional)
-
-```bash
-docker compose -f docker-compose.zitadel.yml up -d
-npm run zitadel:bootstrap
-npm start
-```
-
-Bootstrap writes `AUTH_MODE=oidc`, the issuer, `AUTH_AUDIENCE`, and client ids. Admin console is that origin. Do not commit real passwords. `ZITADEL_MASTERKEY` must stay the same for the life of the Zitadel database.
+Cursor’s desktop OAuth return URL is `http://localhost:8787/callback`. Leave that port free while connecting.
 
 ## MCP tools (Lookups)
 
