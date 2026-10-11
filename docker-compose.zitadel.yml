@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
   zitadel-api:
-    image: ghcr.io/zitadel/zitadel:v4.16.0
+    image: ghcr.io/zitadel/zitadel:v4.19.4
     user: "0"
     command: ["start-from-init", "--masterkey", "${ZITADEL_MASTERKEY:?Set ZITADEL_MASTERKEY before starting Zitadel}"]
     environment:
