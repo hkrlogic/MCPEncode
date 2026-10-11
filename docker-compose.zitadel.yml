@@ -135,7 +135,7 @@ services:
   # the login UI and the API to the right container. The published port is
   # loopback only; do not expose this socket or port on a shared network.
   zitadel-proxy:
-    image: traefik:v3.7.7
+    image: traefik:v3.7.14
     command:
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
