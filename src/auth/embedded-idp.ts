@@ -583,7 +583,7 @@ export async function createEmbeddedIdp(
       const now = Date.now();
       await store.pruneClients(now - UNUSED_CLIENT_TTL_MS);
       if ((await store.countPendingClients(now - UNUSED_CLIENT_TTL_MS)) >= maxPendingClients) {
-        console.warn(`OAuth registration refused: ${maxPendingClients} unused registrations already stored (OAUTH_MAX_PENDING_CLIENTS).`);
+        console.warn("OAuth registration refused: the OAUTH_MAX_PENDING_CLIENTS limit of unused registrations is reached.");
         res.status(503).setHeader("Retry-After", "3600").json({
           error: "temporarily_unavailable",
           error_description: "Too many pending client registrations. Try again later.",

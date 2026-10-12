@@ -192,10 +192,10 @@ export function parseAllowedSchemes(raw: string | undefined): string[] {
     .filter(Boolean);
   for (const scheme of extra) {
     if (!/^[a-z][a-z0-9+.-]*$/.test(scheme)) {
-      throw new Error(`OAUTH_ALLOWED_SCHEMES entry "${scheme}" is not a URI scheme`);
+      throw new Error("OAUTH_ALLOWED_SCHEMES has an entry that is not a URI scheme (letters, digits, +, - and . only)");
     }
     if (scheme === "http" || scheme === "https" || isLauncherScheme(scheme)) {
-      throw new Error(`OAUTH_ALLOWED_SCHEMES entry "${scheme}" opens a browser or the OS shell and cannot be allowed`);
+      throw new Error("OAUTH_ALLOWED_SCHEMES lists http, https or a browser-launcher / OS-handler scheme, which cannot be allowed");
     }
   }
   return [...new Set([...DEFAULT_ALLOWED_SCHEMES, ...extra])];
