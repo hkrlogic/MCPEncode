@@ -9,4 +9,6 @@ description = "Fake values used only by tests"
 regexes = [
   # Sample session secret in test/session-secret.test.ts: a made-up strong value, not a credential.
   '''q8Vt3mZ0rL6wN1yH4pK7sD2fG9jB5cX0eU3iO8aR''',
+  # Stand-in md5-era Connect token in test/connect-token.test.ts ("0123456789abcdef".repeat(4)): a counting pattern, not a credential.
+  '''^0123456789abcdef$''',
 ]

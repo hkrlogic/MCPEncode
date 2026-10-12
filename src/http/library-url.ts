@@ -35,3 +35,13 @@ export function libraryMcpUrl(
   const base = publicBaseUrl.replace(/\/$/, "");
   return `${base}/libraries/${libraryId}/mcp/${connectToken}`;
 }
+
+/**
+ * The same library without the token in the path. Clients that can set
+ * headers connect here and send the token in X-Library-Token, so it never
+ * appears in a URL or an access log.
+ */
+export function libraryMcpBaseUrl(publicBaseUrl: string, libraryId: string): string {
+  const base = publicBaseUrl.replace(/\/$/, "");
+  return `${base}/libraries/${libraryId}/mcp`;
+}

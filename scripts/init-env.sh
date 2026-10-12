@@ -48,4 +48,4 @@ else
   echo "Wrote .env with new random secrets (permissions 600)."
 fi
 
-echo "Reminder: every public deploy needs a SETUP_TOKEN (it is in .env; keep it secret). The first-account page asks for it."
+echo "Reminder: the first-account page asks for SETUP_TOKEN (it is in .env; keep it secret)."

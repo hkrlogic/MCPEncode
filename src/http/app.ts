@@ -23,7 +23,7 @@ import {
 } from "../auth/reader-key.ts";
 import { createAccountGuard, type AccountGuard } from "../auth/account-guard.ts";
 import type { AccountStore } from "../auth/accounts.ts";
-import type { AppConfig } from "../config.ts";
+import { DEFAULT_MCP_RATE_LIMIT_PER_MINUTE, type AppConfig } from "../config.ts";
 import { libraryTokenAudience } from "../auth/audience.ts";
 import { loginScopes } from "../auth/scopes.ts";
 import { createTokenVerifier } from "../auth/verifier.ts";
@@ -40,6 +40,7 @@ import type { AuthServerEndpoints } from "./discovery.ts";
 import { healthHandler } from "./health.ts";
 import {
   connectTokensMatch,
+  libraryMcpBaseUrl,
   isConnectToken,
   isLibraryId,
   libraryMcpUrl,
@@ -52,6 +53,7 @@ import { registerItemRoutes } from "./routes/items.ts";
 import { registerLibraryRoutes } from "./routes/libraries.ts";
 import { registerShelfRoutes } from "./routes/shelves.ts";
 import { originAllowed } from "./origin.ts";
+import { mcpRateLimit } from "./mcp-rate-limit.ts";
 import { securityHeaders } from "./security-headers.ts";
 import { staticPublicDir } from "./static-assets.ts";
 
@@ -88,7 +90,6 @@ export function createApp(input: {
       ].filter((name) => name.length > 0),
     ),
   ];
-  const loopbackBind = ["127.0.0.1", "localhost", "::1"].includes(config.bindHost);
   // Same middleware as the SDK's createMcpExpressApp({ host: "0.0.0.0", allowedHosts }),
   // built by hand so /healthz can sit in front of the Host check: platform health
   // probes often send an internal Host name. The SDK's own Origin check rejects the
@@ -127,8 +128,9 @@ export function createApp(input: {
   app.disable("x-powered-by");
   app.use(securityHeaders({ https: config.publicBaseUrl.startsWith("https://") }));
   if (input.accounts) app.locals.accountGuard = createAccountGuard(input.accounts);
-  // One reverse proxy on a public bind, so the sign-in limit sees the browser address.
-  if (!loopbackBind) app.set("trust proxy", 1);
+  // Only when the operator says a proxy is in front (TRUST_PROXY). Otherwise a
+  // client could choose its own address for the sign-in throttle.
+  if (config.trustProxy !== undefined) app.set("trust proxy", config.trustProxy);
   app.use(express.urlencoded({ extended: false }));
 
   // Authorization Server metadata (RFC 8414) at the publisher origin.
@@ -140,7 +142,19 @@ export function createApp(input: {
   });
 
   // Per-library Protected Resource Metadata (RFC 9728 path-aware well-known).
-  // The connect token must match so a rotated link cannot be rediscovered.
+  const sendResourceMetadata = (res: express.Response, resourceUrl: URL): void => {
+    const metadata = buildOAuthProtectedResourceMetadata({
+      oauthMetadata: authServer.metadata,
+      resourceServerUrl: resourceUrl,
+      resourceName: "MCPEncode library",
+      scopesSupported: loginScopes(config),
+      dangerouslyAllowInsecureIssuerUrl:
+        resourceUrl.protocol === "http:" ||
+        process.env.MCP_DANGEROUSLY_ALLOW_INSECURE_ISSUER_URL === "true",
+    });
+    res.json(metadata);
+  };
+  // Link form: the connect token must match so a rotated link cannot be rediscovered.
   app.get(
     "/.well-known/oauth-protected-resource/libraries/:libraryId/mcp/:connectToken",
     (req, res, next) => {
@@ -156,22 +170,21 @@ export function createApp(input: {
           res.status(404).json({ error: "not_found" });
           return;
         }
-        const resourceUrl = new URL(
-          libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken),
-        );
-        const metadata = buildOAuthProtectedResourceMetadata({
-          oauthMetadata: authServer.metadata,
-          resourceServerUrl: resourceUrl,
-          resourceName: "MCPEncode library",
-          scopesSupported: loginScopes(config),
-          dangerouslyAllowInsecureIssuerUrl:
-            resourceUrl.protocol === "http:" ||
-            process.env.MCP_DANGEROUSLY_ALLOW_INSECURE_ISSUER_URL === "true",
-        });
-        res.json(metadata);
+        sendResourceMetadata(res, new URL(libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken)));
       })().catch(next);
     },
   );
+  // Header form (X-Library-Token): discovery requests do not carry the header,
+  // so this answers for any well-formed id without looking it up. It names
+  // nothing secret and says nothing about whether the library exists.
+  app.get("/.well-known/oauth-protected-resource/libraries/:libraryId/mcp", (req, res) => {
+    const libraryId = req.params.libraryId;
+    if (!isLibraryId(libraryId)) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    sendResourceMetadata(res, new URL(libraryMcpBaseUrl(config.publicBaseUrl, libraryId.toLowerCase())));
+  });
 
   // Fingerprinted query strings bust Cloudflare/browser caches after deploys.
   // Keep a short max-age so a missed fingerprint still revalidates quickly.
@@ -227,20 +240,40 @@ export function createApp(input: {
     });
   });
 
-  // Tokenless library MCP URLs are retired — use Connect (includes the secret).
-  app.all("/libraries/:libraryId/mcp", (_req, res) => {
-    res.status(410).json({
-      error: "gone",
-      error_description:
-        "This Connect link is incomplete or was rotated. Copy the current link from the publisher (Open library → Connect).",
-    });
+  // Library MCP. The connect token comes in the path (the Connect link) or,
+  // for clients that can set headers, in X-Library-Token on /libraries/:id/mcp
+  // so it stays out of proxy access logs.
+  // Embedded tokens are bound to the URL the client connected to.
+  // Zitadel tokens are bound to the MCP audience; the access list scopes them.
+  // Per client address (req.ip, so TRUST_PROXY decides which address that is).
+  const mcpLimit =
+    mcpRateLimit(config.mcpRateLimitPerMinute ?? DEFAULT_MCP_RATE_LIMIT_PER_MINUTE) ??
+    ((_req: express.Request, _res: express.Response, next: express.NextFunction) => next());
+  app.all("/libraries/:libraryId/mcp", mcpLimit, async (req, res, next) => {
+    const header = req.headers["x-library-token"];
+    if (typeof header !== "string" || header === "") {
+      res.status(410).json({
+        error: "gone",
+        error_description:
+          "This Connect link is incomplete or was rotated. Copy the current link from the publisher (Open library → Connect), or send the token in X-Library-Token.",
+      });
+      return;
+    }
+    await serveLibraryMcp(req, res, next, header.trim(), "header").catch(next);
   });
 
-  // Per-library MCP. Embedded tokens are bound to this library URL.
-  // Zitadel tokens are bound to the project audience; the access list scopes them.
-  app.all("/libraries/:libraryId/mcp/:connectToken", async (req, res, next) => {
-    const libraryId = req.params.libraryId;
-    const connectToken = req.params.connectToken;
+  app.all("/libraries/:libraryId/mcp/:connectToken", mcpLimit, async (req, res, next) => {
+    await serveLibraryMcp(req, res, next, String(req.params.connectToken), "path").catch(next);
+  });
+
+  async function serveLibraryMcp(
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+    connectToken: string,
+    form: "path" | "header",
+  ): Promise<void> {
+    const libraryId = String(req.params.libraryId);
     if (!isLibraryId(libraryId) || !isConnectToken(connectToken)) {
       res.status(404).json({ error: "not_found", error_description: "Library not found." });
       return;
@@ -255,7 +288,9 @@ export function createApp(input: {
       return;
     }
     const resourceUrl = new URL(
-      libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken),
+      form === "path"
+        ? libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken)
+        : libraryMcpBaseUrl(config.publicBaseUrl, library.id),
     );
 
     // Reader key: one library, published items only. Handled before OAuth so a
@@ -350,7 +385,7 @@ export function createApp(input: {
         void nodeMcp(req, res, req.body);
       })().catch(next);
     });
-  });
+  }
 
   return app;
 }

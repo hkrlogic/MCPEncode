@@ -40,6 +40,30 @@ test("oidc mode binds every library token to the project audience", () => {
   assert.equal(libraryTokenAudience(config("oidc"), libraryUrl), projectAudience);
 });
 
+test("oidc mode uses AUTH_MCP_AUDIENCE when set, so web tokens cannot open MCP", async () => {
+  const mcpAudience = "987654321098765432";
+  const withMcp = { ...config("oidc"), authMcpAudience: mcpAudience };
+  assert.equal(libraryTokenAudience(withMcp, libraryUrl), mcpAudience);
+  // Embedded mode ignores it.
+  assert.equal(libraryTokenAudience({ ...config("embedded"), authMcpAudience: mcpAudience }, libraryUrl), libraryUrl);
+
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const sign = (aud: string) =>
+    new SignJWT({ sub: "editor-1", "urn:zitadel:iam:org:project:roles": { "mpos-editor": { "999": "x" } } })
+      .setProtectedHeader({ alg: "RS256" })
+      .setIssuer("http://127.0.0.1:8080")
+      .setAudience(aud)
+      .setExpirationTime("5m")
+      .sign(privateKey);
+  const verifier = createTokenVerifier({
+    issuer: "http://127.0.0.1:8080",
+    audience: libraryTokenAudience(withMcp, libraryUrl),
+    localKey: publicKey,
+  });
+  await verifier.verifyAccessToken(await sign(mcpAudience));
+  await assert.rejects(verifier.verifyAccessToken(await sign(projectAudience)));
+});
+
 test("a Zitadel role claim is accepted for the project audience", async () => {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   const token = await new SignJWT({

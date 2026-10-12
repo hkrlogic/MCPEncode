@@ -16,7 +16,7 @@ npm install
 npm start
 ```
 
-Open `http://127.0.0.1:3000/` and sign in. The first visit creates the account (username, password of at least 12 characters). Postgres listens on `127.0.0.1:5432`. Connection settings are in `.env` (see `.env.example`).
+Open `http://127.0.0.1:3000/` and sign in. The first visit creates the account: enter the setup code (`SETUP_TOKEN` in `.env`; `scripts/init-env.sh` wrote one), a username and a password of at least 12 characters. For a throwaway local database you can set `ALLOW_OPEN_SETUP=true` instead; never on an address others can reach. Postgres listens on `127.0.0.1:5432`. Connection settings are in `.env` (see `.env.example`).
 
 For a deploy (Docker image, environment variables, `/healthz`, TLS), see [deploy.md](deploy.md).
 
@@ -70,12 +70,16 @@ No publish, approve, write-mode, or revert tools. Those stay in the publisher UI
 - **Sign-out and password reset sign the account out everywhere.** Every refresh chain is deleted, and every session cookie and access token issued earlier is refused. MCP clients then sign in again.
 - **Refresh tokens rotate.** They are stored as SHA-256 hashes in `oauth_refresh_tokens`. A rotated token presented again revokes that whole sign-in (reuse detection). A token unused for 12 hours expires, and a sign-in ends `OAUTH_REFRESH_MAX_DAYS` (default 30) after it started.
 - **The signing key is kept in Postgres** (`oauth_signing_keys`), encrypted with a key derived from `SESSION_SECRET`, with a thumbprint `kid`. A restart keeps tokens valid. Changing `SESSION_SECRET` makes a new key, so everyone signs in again.
-- **First account on a public address needs a setup code.** If `PUBLIC_BASE_URL` or `BIND_HOST` is not loopback, the create-account page asks for `SETUP_TOKEN` (or a random code printed once to the server log). Wrong codes count toward the sign-in wait. Local-only instances need no code.
+- **The first account always needs a setup code.** The create-account page asks for `SETUP_TOKEN` (or a random code printed once to the server log), on every address: a reverse proxy on the same host makes every visitor look like loopback, so the address is no reason to skip it. Only `ALLOW_OPEN_SETUP=true` turns it off (with a warning on a public address). Wrong codes count toward the sign-in wait.
+- **Sign-in throttling.** An attempt is counted before its password is hashed, and at most `PASSWORD_HASH_CONCURRENCY` (default 2) scrypt hashes run at once (64 MiB each); past a queue of 64 the form answers "busy" at once. Misses back off exponentially (1 s, doubling, up to 15 minutes) per username from one address after 5, per address after 20, and per username across all addresses after 100. Nothing is ever hard-locked: someone guessing at the SA only slows down their own address, and a successful sign-in clears that username. Counts are per process; the client address is the socket peer unless `TRUST_PROXY` says which proxies to believe.
+- **Strict Content-Security-Policy.** `script-src 'self'`: no inline script or inline handlers. Page behaviour (confirm prompts via `data-confirm`, copy buttons, menus, sign-out) lives in `public/page.js`. A test fails if page markup gains an inline `<script>` or `on…=` attribute.
+- **Connect token.** The library MCP link carries the token in its path. Clients that can set headers can connect to `/libraries/<id>/mcp` and send it in `X-Library-Token` instead, which keeps it out of URLs and access logs. Tokens are stored in plain text, so the publisher can show the link again; migration 015 replaced the weak md5 tokens migration 007 gave older libraries.
+- **Sign-out is a POST** with the CSRF token (`GET /logout` shows a confirm form). CSRF tokens are compared in constant time; an upload's token must arrive before the file (header or the first form field), so a forged upload is never buffered. On HTTPS the session cookie is `__Host-mpos_session` (path-scoped cookies get `__Secure-`).
 - **MCP clients register, and get a consent page.** `/id/register` stores a random client id with its callbacks (`oauth_clients`). Authorize and token require one of those callbacks exactly (a loopback IP callback may change port, RFC 8252 §7.3), and the token endpoint checks `client_id`. By default only loopback and app-scheme callbacks register; a remote https host must be in `OAUTH_REDIRECT_HOSTS` (or `OAUTH_ALLOW_ANY_HTTPS_REDIRECT=true`). After the password, the consent page names the client, the callback host and the library; Allow/Deny posts back with a single-use id bound to a cookie. The publisher's own sign-in skips it. The old shared id `mpos-mcp` still works for loopback and app-scheme callbacks while `OAUTH_LEGACY_CLIENT` is on. Tokens can only be requested for this app's login or one of its library links.
 - The access token is never written to Postgres — only `sub` as actor fields.
 - Tool results label store content as **data**, not instructions.
 - Markdown preview does not execute raw HTML in item bodies.
-- UI session is an httpOnly cookie; forms carry CSRF.
+- UI session is an httpOnly cookie (`__Host-` prefixed on HTTPS); forms carry CSRF.
 - Default bind is `127.0.0.1`. Queries are parameterized. Remote Postgres requires `POSTGRES_SSL=required`.
 
 ## Layout

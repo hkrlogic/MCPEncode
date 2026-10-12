@@ -128,13 +128,72 @@ test("wrong setup codes count toward the sign-in wait", async () => {
   }
 });
 
-test("on a local-only instance the first account needs no setup code", async () => {
-  const idp = await startIdp({});
+test("a loopback instance still needs the setup code: a proxy can make anyone look local", async () => {
+  // No setupCodeRequired in the config: the IdP defaults to asking.
+  const idp = await startIdp({ setupToken: TOKEN });
+  try {
+    const page = await fetch(`${idp.base}/id/authorize?${new URLSearchParams(oauth)}`);
+    assert.match(await page.text(), /name="setup_code"/);
+    // This request comes from 127.0.0.1, and is still refused without the code.
+    const refused = await createAccount(idp.base, {});
+    assert.equal(refused.status, 200);
+    assert.match(await refused.text(), /setup code is not correct/);
+    assert.equal(await idp.accounts.count(), 0);
+  } finally {
+    idp.close();
+  }
+});
+
+test("with no SETUP_TOKEN a one-time code is printed to the log and works", async () => {
+  const logged: string[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => logged.push(args.join(" "));
+  let idp: Awaited<ReturnType<typeof startIdp>>;
+  try {
+    idp = await startIdp({ setupCodeRequired: true });
+  } finally {
+    console.log = original;
+  }
+  try {
+    const code = /setup code: (\S+)/.exec(logged.join("\n"))?.[1];
+    assert.ok(code);
+    assert.equal((await createAccount(idp.base, { setup_code: "wrong-wrong-wrong" })).status, 200);
+    const created = await createAccount(idp.base, { setup_code: code });
+    assert.equal(created.status, 302);
+    assert.equal(await idp.accounts.count(), 1);
+  } finally {
+    idp.close();
+  }
+});
+
+test("ALLOW_OPEN_SETUP=true is the only way to skip the setup code", async () => {
+  const idp = await startIdp({ setupCodeRequired: false });
   try {
     const page = await fetch(`${idp.base}/id/authorize?${new URLSearchParams(oauth)}`);
     assert.doesNotMatch(await page.text(), /name="setup_code"/);
     const created = await createAccount(idp.base, {});
     assert.equal(created.status, 302);
+    assert.equal(await idp.accounts.count(), 1);
+  } finally {
+    idp.close();
+  }
+});
+
+test("the account table, not the form's setup flag, decides whether a post is setup", async () => {
+  const idp = await startIdp({ setupCodeRequired: true, setupToken: TOKEN });
+  try {
+    // No accounts yet: a post without setup=1 still goes through setup and needs the code.
+    const noFlag = await createAccount(idp.base, { setup: "" });
+    assert.equal(noFlag.status, 200);
+    assert.match(await noFlag.text(), /setup code is not correct/);
+    assert.equal(await idp.accounts.count(), 0);
+
+    assert.equal((await createAccount(idp.base, { setup_code: TOKEN })).status, 302);
+
+    // An account exists: setup=1 is just a sign-in and cannot create another, even with the code.
+    const second = await createAccount(idp.base, { username: "eve", setup_code: TOKEN });
+    assert.equal(second.status, 200);
+    assert.match(await second.text(), /Unknown username or password/);
     assert.equal(await idp.accounts.count(), 1);
   } finally {
     idp.close();

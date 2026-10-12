@@ -94,11 +94,29 @@ test("sign-out revokes the account's refresh tokens and earlier sessions", async
       const locals = { locals: { accountGuard: createAccountGuard(s.accounts) } };
       assert.ok(await sessionAccess(sessionRequest(other, locals), config));
 
-      const res = await fetch(`${s.base}/logout`, {
-        headers: { cookie: `${SESSION_COOKIE}=${encodeURIComponent(session)}` },
+      const cookie = `${SESSION_COOKIE}=${encodeURIComponent(session)}`;
+      // A GET (a link, or an <img> on another site) only shows the confirm form.
+      const confirm = await fetch(`${s.base}/logout`, { headers: { cookie }, redirect: "manual" });
+      assert.equal(confirm.status, 200);
+      assert.match(await confirm.text(), /<form[^>]+method="post" action="\/logout"/);
+      // A POST without the CSRF token is refused and signs nobody out.
+      const forged = await fetch(`${s.base}/logout`, {
+        method: "POST",
+        headers: { cookie, "content-type": "application/x-www-form-urlencoded" },
+        body: "",
         redirect: "manual",
       });
-      assert.equal(res.status, 302);
+      assert.equal(forged.status, 403);
+      // Neither revoked anything.
+      assert.ok(await sessionAccess(sessionRequest(other, locals), config));
+
+      const res = await fetch(`${s.base}/logout`, {
+        method: "POST",
+        headers: { cookie, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ csrf }),
+        redirect: "manual",
+      });
+      assert.equal(res.status, 303);
       assert.equal((await s.store.claimRefresh(hashRefreshToken("ada-refresh"), Date.now())).status, "missing");
       // Another person's sign-in is untouched.
       assert.equal((await s.store.claimRefresh(hashRefreshToken("boss-refresh"), Date.now())).status, "ok");

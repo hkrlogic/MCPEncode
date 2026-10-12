@@ -1,7 +1,7 @@
 /** People who can sign in. Subjects from this list are granted on a library. */
 import type { Access } from "../../auth/rbac.ts";
 import type { Account } from "../../auth/accounts.ts";
-import { esc, layout, onConfirm, saGrantConfirm, type AppShell } from "./layout.ts";
+import { esc, layout, confirmText, saGrantConfirm, type AppShell } from "./layout.ts";
 
 function initial(username: string): string {
   const ch = username.trim().charAt(0);
@@ -64,7 +64,7 @@ export function accountsPage(input: {
              <span class="write-mode-toggle-knob" aria-hidden="true"></span>
            </button>`
         : `<form method="post" action="/accounts/${esc(account.id)}/sa" class="user-sa-form"
-                  onsubmit="${onConfirm(saConfirm)}">
+                  data-confirm="${confirmText(saConfirm)}">
               <input type="hidden" name="csrf" value="${esc(input.csrf)}">
               <input type="hidden" name="sa" value="${nextSa}">
               <button type="submit" class="write-mode-toggle-btn${isSa ? " is-on" : ""}" role="switch"
@@ -96,7 +96,7 @@ export function accountsPage(input: {
                      <button type="submit" class="btn secondary">Enable</button>
                    </form>`
                 : `<form method="post" action="/accounts/${esc(account.id)}/disable"
-                       onsubmit="${onConfirm(
+                       data-confirm="${confirmText(
                          self
                            ? "Disable your own account? You will be signed out."
                            : `Disable ${account.username}? They cannot sign in until enabled.`,
@@ -141,12 +141,12 @@ export function accountsPage(input: {
   const addOpen = Boolean(input.error || input.username);
   // Confirm only when creating with SA checked — normal accounts need no popup.
   const createSaWarn = saGrantConfirm("this user");
-  const createOnSubmit = `if (this.sa && this.sa.checked) { ${onConfirm(createSaWarn)} } return true;`;
   const addControl = input.local
     ? `
       <details class="users-add"${addOpen ? " open" : ""}>
         <summary class="btn">Add user</summary>
-        <form class="capture users-add-form" method="post" action="/accounts" onsubmit="${createOnSubmit}">
+        <form class="capture users-add-form" method="post" action="/accounts"
+              data-confirm="${confirmText(createSaWarn)}" data-confirm-if="sa">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
           <div class="users-add-grid">
             <label>Username

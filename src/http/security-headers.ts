@@ -7,10 +7,10 @@
  *   forms, relative links or plugins.
  * - Everything loads from this origin. Fonts and scripts come from our own files;
  *   no third party sees who opens a page.
- * - script-src still allows inline script, because a few pages carry small inline
- *   scripts and onsubmit confirm() handlers. The strict policy (self only) is sent
- *   as Content-Security-Policy-Report-Only beside it, so the browser console shows
- *   exactly what would break before that is tightened.
+ * - script-src is 'self' only: no inline script, no inline event handlers, no
+ *   eval. Page behaviour (confirm prompts, copy buttons, menus) lives in
+ *   public/page.js and reads data- attributes, so injected markup cannot run.
+ *   style-src still allows inline styles; they cannot run code.
  * - HSTS is sent only when the public address is HTTPS.
  */
 import type { NextFunction, Request, Response } from "express";
@@ -27,13 +27,11 @@ const BASE_DIRECTIVES = [
   "frame-ancestors 'none'",
 ];
 
-export const ENFORCED_CSP = [...BASE_DIRECTIVES, "script-src 'self' 'unsafe-inline'"].join("; ");
-export const STRICT_CSP_REPORT_ONLY = [...BASE_DIRECTIVES, "script-src 'self'"].join("; ");
+export const ENFORCED_CSP = [...BASE_DIRECTIVES, "script-src 'self'"].join("; ");
 
 export function securityHeaders(options: { https: boolean }) {
   return (_req: Request, res: Response, next: NextFunction): void => {
     res.setHeader("Content-Security-Policy", ENFORCED_CSP);
-    res.setHeader("Content-Security-Policy-Report-Only", STRICT_CSP_REPORT_ONLY);
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "no-referrer");

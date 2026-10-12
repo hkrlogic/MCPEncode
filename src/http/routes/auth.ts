@@ -4,8 +4,8 @@ import type { Role } from "../../auth/rbac.ts";
 import { loginScopes } from "../../auth/scopes.ts";
 import { readSession, signSession } from "../../auth/session.ts";
 import { cookieHeader, readCookie } from "../cookies.ts";
-import { OAUTH_COOKIE, SESSION_COOKIE, setCookies } from "../helpers.ts";
-import { errorPage } from "../pages.ts";
+import { OAUTH_COOKIE, SESSION_COOKIE, setCookies, tokensMatch, formString } from "../helpers.ts";
+import { errorPage, signOutPage } from "../pages.ts";
 import { newPkceVerifier, pkceChallenge, readHandshake, signHandshake } from "../pkce.ts";
 import type { AppRouteContext } from "./context.ts";
 
@@ -39,7 +39,7 @@ export function registerAuthRoutes(app: express.Express, ctx: AppRouteContext): 
   app.get("/callback", async (req, res) => {
     const code = typeof req.query.code === "string" ? req.query.code : "";
     const state = typeof req.query.state === "string" ? req.query.state : "";
-    const handshakeToken = readCookie(req.headers, OAUTH_COOKIE);
+    const handshakeToken = readCookie(req.headers, OAUTH_COOKIE, { secure });
     const handshake = handshakeToken
       ? await readHandshake(handshakeToken, config.sessionSecret)
       : undefined;
@@ -94,24 +94,44 @@ export function registerAuthRoutes(app: express.Express, ctx: AppRouteContext): 
     res.redirect("/");
   });
 
+  // Sign-out changes state, so it is a POST with the CSRF token. A plain link
+  // (or a GET some other site triggers) only shows a confirm form.
   app.get("/logout", async (req, res) => {
+    const token = readCookie(req.headers, SESSION_COOKIE, { secure });
+    const session = token ? await readSession(token, config.sessionSecret) : undefined;
+    if (!session) {
+      res.redirect("/");
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    res.send(signOutPage(session.csrf));
+  });
+
+  app.post("/logout", async (req, res) => {
     // Sign-out ends every sign-in of this account: other browser sessions,
     // MCP access tokens and refresh chains. A stolen copy stops working too.
-    const token = readCookie(req.headers, SESSION_COOKIE);
+    const token = readCookie(req.headers, SESSION_COOKIE, { secure });
     const session = token ? await readSession(token, config.sessionSecret) : undefined;
-    if (session && ctx.revokeAccount) {
-      await ctx.revokeAccount(session.sub).catch((error: unknown) => {
-        console.error("sign-out revocation failed", error);
-      });
+    if (session) {
+      const provided = formString(req.body, "csrf") || String(req.headers["x-csrf-token"] ?? "");
+      if (!tokensMatch(provided, session.csrf)) {
+        res.status(403).send(errorPage("Sign-out was not confirmed. Use the Sign out button."));
+        return;
+      }
+      if (ctx.revokeAccount) {
+        await ctx.revokeAccount(session.sub).catch((error: unknown) => {
+          console.error("sign-out revocation failed", error);
+        });
+      }
     }
     setCookies(res, [cookieHeader(SESSION_COOKIE, "", { clear: true, secure })]);
     if (authServer.endSessionEndpoint) {
       const logout = new URL(authServer.endSessionEndpoint);
       logout.searchParams.set("client_id", config.webClientId);
       logout.searchParams.set("post_logout_redirect_uri", config.publicBaseUrl);
-      res.redirect(logout.toString());
+      res.redirect(303, logout.toString());
       return;
     }
-    res.redirect("/");
+    res.redirect(303, "/");
   });
 }

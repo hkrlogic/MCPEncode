@@ -27,7 +27,8 @@ import {
 } from "./idp-store.ts";
 import { hashPassword, needsRehash, normalizeUsername, verifyPassword } from "./passwords.ts";
 import { newSetupCode, setupCodeMatches } from "./setup-code.ts";
-import { SIGN_IN_WAIT, SignInLimit } from "./signin-limit.ts";
+import { QueueFullError } from "./semaphore.ts";
+import { SIGN_IN_BUSY, SIGN_IN_WAIT, SignInLimit } from "./signin-limit.ts";
 import { callbackHost, callbackKind, callbackLabel, isAllowedCallback, redirectMatches } from "./redirect.ts";
 import type { Role } from "./rbac.ts";
 
@@ -122,7 +123,7 @@ function cleanClientName(value: unknown): string {
 }
 
 const LIBRARY_RESOURCE_PATH =
-  /^\/libraries\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/mcp\/[A-Za-z0-9_-]{32,64}$/i;
+  /^\/libraries\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/mcp(?:\/[A-Za-z0-9_-]{32,64})?$/i;
 
 /**
  * The token audience a client may ask for: this app's own login, or one of this
@@ -172,7 +173,7 @@ function loginPage(input: {
   const title = input.setup ? "Create account" : "Sign in";
   const lead = input.setup
     ? input.setupCodeRequired
-      ? "This is the first account. It is SA — it can manage people and every library. Enter the setup code from the server log (or the SETUP_TOKEN you set), then choose a username and a password of at least 12 characters."
+      ? "This is the first account. It is SA — it can manage people and every library. Enter the setup code: SETUP_TOKEN from your .env (scripts/init-env.sh made one), or the one-time code in the server log. Then choose a username and a password of at least 12 characters."
       : "This is the first account. It is SA — it can manage people and every library. Choose a username and a password of at least 12 characters."
     : "";
   return `<!DOCTYPE html>
@@ -196,7 +197,6 @@ function loginPage(input: {
       ${input.error ? `<p class="error" role="alert">${escapeHtml(input.error)}</p>` : ""}
       <form method="post" action="/id/authorize">
         ${fields}
-        ${input.setup ? `<input type="hidden" name="setup" value="1">` : ""}
         ${
           input.setup && input.setupCodeRequired
             ? `<label>Setup code <input name="setup_code" autocomplete="off" required maxlength="200"></label>`
@@ -288,9 +288,11 @@ export async function createEmbeddedIdp(
   const store = options?.store ?? memoryIdpStore();
   const refreshMaxMs = (config.refreshMaxLifetimeDays ?? DEFAULT_REFRESH_MAX_DAYS) * 24 * 60 * 60 * 1000;
   const secureCookies = config.publicBaseUrl.startsWith("https://");
-  // Public deployment: the first-account page needs a code only the operator has.
+  // The first-account page needs a code only the operator has, wherever the
+  // request seems to come from (a proxy on loopback makes everyone look local).
   // SETUP_TOKEN if set, otherwise a random one printed once to the log.
-  const setupCode = config.setupCodeRequired ? (config.setupToken ?? newSetupCode()) : undefined;
+  // Only ALLOW_OPEN_SETUP=true (setupCodeRequired false) skips it.
+  const setupCode = config.setupCodeRequired !== false ? (config.setupToken ?? newSetupCode()) : undefined;
   if (setupCode !== undefined && (await accounts.count()) === 0) {
     console.log(
       config.setupToken
@@ -595,67 +597,84 @@ export async function createEmbeddedIdp(
       showAuthorize(req, res).catch(next);
     });
 
-    app.post("/id/authorize", async (req, res) => {
-      const username = form(req, "username");
-      const password = form(req, "password");
-      const settingUp = form(req, "setup") === "1";
-      const attemptKey = normalizeUsername(username) || "(blank)";
-      const address = clientAddress(req);
-      if (signInLimit.blocked(attemptKey, address)) {
-        await showAuthorize(req, res, SIGN_IN_WAIT, username);
-        return;
-      }
-      let user: { sub: string; role: Role; realmRole: string; username: string } | undefined;
+    /**
+     * Create the first account or check a password. Sends the form again with
+     * an error and returns undefined when that fails; the attempt stays counted.
+     */
+    const checkSignIn = async (
+      req: Request,
+      res: Response,
+      input: { username: string; password: string },
+    ): Promise<{ sub: string; role: Role; realmRole: string; username: string } | undefined> => {
+      const { username, password } = input;
+      // Setup is decided by the account table, never by a form field. Once an
+      // account exists, a late setup post is checked as an ordinary sign-in.
+      const settingUp = (await accounts.count()) === 0;
       if (settingUp) {
         if (setupCode !== undefined && !setupCodeMatches(form(req, "setup_code"), setupCode)) {
-          signInLimit.recordFailure(attemptKey, address);
           await showAuthorize(req, res, "That setup code is not correct.", username);
-          return;
+          return undefined;
         }
         if (password !== form(req, "password_confirm")) {
-          signInLimit.recordFailure(attemptKey, address);
           await showAuthorize(req, res, "Those passwords do not match.", username);
-          return;
+          return undefined;
         }
         const created = await accounts.createFirst({ username, password });
         if (!created.ok) {
-          signInLimit.recordFailure(attemptKey, address);
           await showAuthorize(req, res, created.message, username);
-          return;
+          return undefined;
         }
-        user = {
+        return {
           sub: created.account.id,
           role: created.account.role,
           realmRole: realmRoleFor(created.account.role),
           username: created.account.username,
         };
-      } else {
-        const account = await accounts.findByUsername(username);
-        const hash = account?.passwordHash ?? dummyPasswordHash;
-        const match = await verifyPassword(password, hash);
-        if (!account || !match) {
-          signInLimit.recordFailure(attemptKey, address);
-          await showAuthorize(req, res, "Unknown username or password.", username);
-          return;
-        }
-        if (account.disabled) {
-          signInLimit.recordFailure(attemptKey, address);
-          await showAuthorize(req, res, "This account is disabled.", username);
-          return;
-        }
-        // Hashes made with an older, cheaper setting are upgraded now that the
-        // password is known. A failure here must not block sign-in.
-        if (needsRehash(account.passwordHash)) {
-          await accounts.setPassword(account.id, password).catch(() => undefined);
-        }
-        user = {
-          sub: account.id,
-          role: account.role,
-          realmRole: realmRoleFor(account.role),
-          username: account.username,
-        };
       }
-      signInLimit.recordSuccess(attemptKey, address);
+      const account = await accounts.findByUsername(username);
+      const hash = account?.passwordHash ?? dummyPasswordHash;
+      const match = await verifyPassword(password, hash);
+      if (!account || !match) {
+        await showAuthorize(req, res, "Unknown username or password.", username);
+        return undefined;
+      }
+      if (account.disabled) {
+        await showAuthorize(req, res, "This account is disabled.", username);
+        return undefined;
+      }
+      // Hashes made with an older, cheaper setting are upgraded now that the
+      // password is known. A failure here must not block sign-in.
+      if (needsRehash(account.passwordHash)) {
+        await accounts.setPassword(account.id, password).catch(() => undefined);
+      }
+      return {
+        sub: account.id,
+        role: account.role,
+        realmRole: realmRoleFor(account.role),
+        username: account.username,
+      };
+    };
+
+    app.post("/id/authorize", async (req, res) => {
+      const username = form(req, "username");
+      const password = form(req, "password");
+      const attemptKey = normalizeUsername(username) || "(blank)";
+      const address = clientAddress(req);
+      // Counted now, before any scrypt runs: parallel posts cannot slip under the limit.
+      if (!signInLimit.begin(attemptKey, address)) {
+        await showAuthorize(req, res, SIGN_IN_WAIT, username);
+        return;
+      }
+      let user: { sub: string; role: Role; realmRole: string; username: string } | undefined;
+      try {
+        user = await checkSignIn(req, res, { username, password });
+      } catch (error) {
+        if (!(error instanceof QueueFullError)) throw error;
+        await showAuthorize(req, res, SIGN_IN_BUSY, username);
+        return;
+      }
+      if (!user) return;
+      signInLimit.succeed(attemptKey, address);
       const request = await readAuthorize(req, res);
       if (!request) return;
       const { client, hidden } = request;
@@ -709,7 +728,7 @@ export async function createEmbeddedIdp(
       const consentId = form(req, "consent_id");
       const pending = consentId ? consents.get(consentId) : undefined;
       if (consentId) consents.delete(consentId);
-      const browserKey = readCookie(req.headers, CONSENT_COOKIE) ?? "";
+      const browserKey = readCookie(req.headers, CONSENT_COOKIE, { path: "/id", secure: secureCookies }) ?? "";
       res.setHeader(
         "Set-Cookie",
         cookieHeader(CONSENT_COOKIE, "", { path: "/id", clear: true, secure: secureCookies }),

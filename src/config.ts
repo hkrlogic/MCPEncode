@@ -32,13 +32,26 @@ export type AppConfig = {
   authJwksUrl: string;
   /** Audience for the web UI login token (not a library MCP link). */
   authAudience: string;
+  /**
+   * AUTH_MCP_AUDIENCE (oidc mode): the audience library MCP tokens must carry,
+   * kept apart from AUTH_AUDIENCE so a token for the web app cannot open MCP
+   * and the other way round. Unset: AUTH_AUDIENCE, with a warning.
+   * Embedded mode ignores it; each library link is its own audience.
+   */
+  authMcpAudience?: string;
   webClientId: string;
   sessionSecret: string;
   database: DatabaseConfig;
   /** Operator-chosen code for creating the first account (SETUP_TOKEN). */
   setupToken?: string;
-  /** True when the first-account page must ask for a setup code (anything but local-only). */
+  /**
+   * True when the first-account page must ask for a setup code. Always, unless
+   * ALLOW_OPEN_SETUP=true: a reverse proxy can make any request look like it
+   * comes from loopback, so the address is not a safe reason to skip it.
+   */
   setupCodeRequired?: boolean;
+  /** TRUST_PROXY, already parsed for Express "trust proxy". Undefined: trust no proxy. */
+  trustProxy?: number | string[];
   /** OAUTH_REDIRECT_HOSTS. Remote https hostnames an MCP client may register as its callback. */
   oauthRedirectHosts?: string[];
   /** OAUTH_ALLOW_ANY_HTTPS_REDIRECT. Accept a callback on any https host. Off by default. */
@@ -51,12 +64,70 @@ export type AppConfig = {
   oauthLegacyClient?: boolean;
   /** OAUTH_REFRESH_MAX_DAYS. A sign-in's refresh chain ends this many days after sign-in. */
   refreshMaxLifetimeDays?: number;
+  /** PASSWORD_HASH_CONCURRENCY: scrypt hashes run at once (64 MiB each). Default 2. */
+  passwordHashConcurrency?: number;
+  /** MCP_RATE_LIMIT_PER_MINUTE: library MCP requests per client address per minute. 0 turns it off. Default 300. */
+  mcpRateLimitPerMinute?: number;
 };
+
+/**
+ * TRUST_PROXY: which proxy hops Express may believe for the client address
+ * (X-Forwarded-For), which the sign-in throttle uses. Off unless set.
+ * - unset, "false" or "0": trust nothing; the socket address is the client.
+ * - a whole number N: trust N hops in front of the app.
+ * - a comma-separated list of addresses, CIDR ranges, or the names
+ *   loopback, linklocal, uniquelocal: trust proxies at those addresses.
+ * "true" (trust every hop) is refused: anyone could then pick their address.
+ */
+export function parseTrustProxy(raw: string | undefined): number | string[] | undefined {
+  const value = raw?.trim().toLowerCase();
+  if (!value || value === "false" || value === "0") return undefined;
+  if (value === "true") {
+    throw new Error(
+      "TRUST_PROXY=true would trust any X-Forwarded-For. Set the number of proxy hops (e.g. 1) or the proxy addresses (e.g. loopback,uniquelocal).",
+    );
+  }
+  if (/^\d+$/.test(value)) {
+    const hops = Number(value);
+    if (hops > 10) throw new Error("TRUST_PROXY hop count must be 0 to 10");
+    return hops;
+  }
+  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  for (const entry of entries) {
+    if (!/^(loopback|linklocal|uniquelocal|[0-9a-f.:]+(\/\d{1,3})?)$/.test(entry)) {
+      throw new Error(`TRUST_PROXY entry "${entry}" is not an address, a CIDR range, loopback, linklocal or uniquelocal`);
+    }
+  }
+  return entries;
+}
 
 /** Default for OAUTH_REFRESH_MAX_DAYS. */
 export const DEFAULT_REFRESH_MAX_DAYS = 30;
 
 /** OAUTH_REFRESH_MAX_DAYS: whole days, 1 to 365. */
+/** PASSWORD_HASH_CONCURRENCY: 1 to 16 scrypt hashes at once; default 2. */
+export function parseHashConcurrency(raw: string | undefined): number {
+  const value = raw?.trim();
+  if (!value) return 2;
+  if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 16) {
+    throw new Error("PASSWORD_HASH_CONCURRENCY must be a whole number from 1 to 16");
+  }
+  return Number(value);
+}
+
+/** Default for MCP_RATE_LIMIT_PER_MINUTE. */
+export const DEFAULT_MCP_RATE_LIMIT_PER_MINUTE = 300;
+
+/** MCP_RATE_LIMIT_PER_MINUTE: whole number, 0 (off) to 100000; default 300. */
+export function parseMcpRateLimit(raw: string | undefined): number {
+  const value = raw?.trim();
+  if (!value) return DEFAULT_MCP_RATE_LIMIT_PER_MINUTE;
+  if (!/^\d+$/.test(value) || Number(value) > 100_000) {
+    throw new Error("MCP_RATE_LIMIT_PER_MINUTE must be a whole number from 0 (off) to 100000");
+  }
+  return Number(value);
+}
+
 export function parseRefreshMaxDays(raw: string | undefined): number {
   if (raw === undefined || raw.trim() === "") return DEFAULT_REFRESH_MAX_DAYS;
   const days = Number(raw.trim());
@@ -292,6 +363,13 @@ export function loadConfig(): AppConfig {
   if (!authIssuer) {
     throw new Error("AUTH_ISSUER is required when AUTH_MODE=oidc");
   }
+  const authAudience = process.env.AUTH_AUDIENCE?.trim() || publicBaseUrl;
+  const authMcpAudience = authMode === "oidc" ? process.env.AUTH_MCP_AUDIENCE?.trim() || undefined : undefined;
+  if (authMode === "oidc" && !authMcpAudience) {
+    console.warn(
+      "AUTH_MCP_AUDIENCE is not set: library MCP accepts tokens for AUTH_AUDIENCE, the same audience as web sign-in. Give MCP its own audience (docs/deploy.md).",
+    );
+  }
   const sessionSecret = assertSessionSecret(required("SESSION_SECRET"));
   const setupToken = envValue("SETUP_TOKEN");
   if (setupToken && setupToken.length < SETUP_TOKEN_MIN_LENGTH) {
@@ -301,6 +379,12 @@ export function loadConfig(): AppConfig {
   }
   // Containers set BIND_HOST=0.0.0.0 (the Dockerfile does). Everything else stays on loopback.
   const bindHost = process.env.BIND_HOST?.trim() || "127.0.0.1";
+  const allowOpenSetup = parseBooleanEnv("ALLOW_OPEN_SETUP", process.env.ALLOW_OPEN_SETUP, false);
+  if (allowOpenSetup && isPublicDeployment(bindHost, publicBaseUrl)) {
+    console.warn(
+      "ALLOW_OPEN_SETUP=true on an address others can reach: whoever opens the page first becomes SA. Remove it once the first account exists.",
+    );
+  }
 
   return {
     port: Number(process.env.PORT ?? "3000"),
@@ -314,12 +398,14 @@ export function loadConfig(): AppConfig {
       (authMode === "embedded"
         ? `${authIssuer}/jwks`
         : `${authIssuer}/protocol/openid-connect/certs`),
-    authAudience: process.env.AUTH_AUDIENCE?.trim() || publicBaseUrl,
+    authAudience,
+    authMcpAudience,
     webClientId: process.env.WEB_CLIENT_ID ?? "mpos-web",
     sessionSecret,
     database: loadDatabaseConfig(),
     setupToken,
-    setupCodeRequired: isPublicDeployment(bindHost, publicBaseUrl),
+    setupCodeRequired: !allowOpenSetup,
+    trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
     oauthRedirectHosts: parseAllowedHosts(process.env.OAUTH_REDIRECT_HOSTS),
     oauthAllowAnyHttpsRedirect: parseBooleanEnv(
       "OAUTH_ALLOW_ANY_HTTPS_REDIRECT",
@@ -328,6 +414,8 @@ export function loadConfig(): AppConfig {
     ),
     oauthLegacyClient: parseBooleanEnv("OAUTH_LEGACY_CLIENT", process.env.OAUTH_LEGACY_CLIENT, true),
     refreshMaxLifetimeDays: parseRefreshMaxDays(process.env.OAUTH_REFRESH_MAX_DAYS),
+    passwordHashConcurrency: parseHashConcurrency(process.env.PASSWORD_HASH_CONCURRENCY),
+    mcpRateLimitPerMinute: parseMcpRateLimit(process.env.MCP_RATE_LIMIT_PER_MINUTE),
   };
 }
 

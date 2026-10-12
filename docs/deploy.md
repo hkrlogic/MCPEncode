@@ -2,7 +2,7 @@
 
 MCPEncode ships as a container image built from the [`Dockerfile`](../Dockerfile). It runs on any host that runs containers (a VM with Docker Compose, Kubernetes, or a container platform) next to a PostgreSQL database. There is nothing provider-specific in the app: all configuration comes from the environment variables below.
 
-> **Every public deploy must set `SETUP_TOKEN`.** On a non-local address the first visitor creates the first account (an SA). Without `SETUP_TOKEN` the page falls back to a one-time code printed in the server log, which anyone with log access can read. `scripts/init-env.sh` generates one in `.env` (and adds one to an existing `.env` that has none, without touching other values). Otherwise set a 16+ character value (`openssl rand -base64 18`) before the app is reachable, and keep it secret.
+> **Every deploy should set `SETUP_TOKEN`.** The first account is an SA, and the create-account page always asks for a setup code, local or public (a proxy on the same host makes every visitor look local). Without `SETUP_TOKEN` the page falls back to a one-time code printed in the server log, which anyone with log access can read. `ALLOW_OPEN_SETUP=true` skips the code; use it only on a throwaway local instance. `scripts/init-env.sh` generates one in `.env` (and adds one to an existing `.env` that has none, without touching other values). Otherwise set a 16+ character value (`openssl rand -base64 18`) before the app is reachable, and keep it secret.
 
 ## Quick start with Docker Compose
 
@@ -36,7 +36,12 @@ The image runs as the unprivileged `node` user, listens on `0.0.0.0:$PORT` (defa
 | --- | --- | --- |
 | `PUBLIC_BASE_URL` | yes (public) | The address people open, e.g. `https://library.example.org`. Used for OAuth issuer, token audience and Connect links. Default `http://127.0.0.1:3000`. |
 | `SESSION_SECRET` | yes | 32+ random characters (`openssl rand -base64 48`). |
-| `SETUP_TOKEN` | yes (public) | Code needed to create the first account. 16+ characters. |
+| `SETUP_TOKEN` | yes | Code needed to create the first account. 16+ characters. Without it a one-time code is printed to the log. |
+| `ALLOW_OPEN_SETUP` | no | `true` lets the first visitor create the SA with no code. Default `false`. Local throwaway instances only. |
+| `TRUST_PROXY` | behind a proxy | Which proxies may set the client address (`X-Forwarded-For`) for the sign-in throttle. Default off (the socket peer is the client). A hop count (`1`) or a list of addresses, CIDR ranges and `loopback`, `linklocal`, `uniquelocal`. `true` is refused. Compose sets `uniquelocal`. See [TLS and reverse proxy](#tls-and-reverse-proxy). |
+| `PASSWORD_HASH_CONCURRENCY` | no | scrypt hashes run at once (64 MiB each). Default 2, 1–16. |
+| `MCP_RATE_LIMIT_PER_MINUTE` | no | Library MCP requests (`/libraries/<id>/mcp` and `/libraries/<id>/mcp/<token>`) per client address per minute. Default 300, 0 turns it off, at most 100000. The address follows `TRUST_PROXY`. See [MCP rate limit](#mcp-rate-limit). |
+| `AUTH_MCP_AUDIENCE` | oidc mode | The audience library MCP tokens must carry, separate from `AUTH_AUDIENCE` (web sign-in). Unset: falls back to `AUTH_AUDIENCE` with a startup warning. Ignored with built-in sign-in, where each library link is its own audience. |
 | `PORT` | no | Listen port. Default 3000. |
 | `BIND_HOST` | no | Listen address. Default `127.0.0.1`; the image sets `0.0.0.0`. |
 | `DATABASE_URL` | one of | `postgresql://user:password@host:port/database[?sslmode=require]` |
@@ -100,8 +105,21 @@ The image has a Docker `HEALTHCHECK` on it. Point your load balancer or orchestr
 The built-in sign-in sends passwords and session cookies, so a public address must use HTTPS. Terminate TLS in a reverse proxy (Caddy, nginx, Traefik, or your platform's load balancer) and forward to the container:
 
 - Set `PUBLIC_BASE_URL` to the `https://` address. The Host header the proxy forwards must match that hostname (or one in `ALLOWED_HOSTS`); other hosts get 403.
-- With a non-loopback bind the app trusts one proxy hop for the client address (`X-Forwarded-For`), which the sign-in rate limit uses. Do not expose the container port directly to the internet alongside the proxy.
+- Set `TRUST_PROXY` so the sign-in throttle sees the browser's address, not the proxy's. It is off by default: without it every visitor shares the proxy's address. `1` trusts one hop; a list (`127.0.0.1`, `10.0.0.0/8`, `loopback,uniquelocal`) trusts only proxies at those addresses, which is safer. [`docker-compose.yml`](../docker-compose.yml) sets `uniquelocal`, because a proxy on the host reaches the container from the Docker bridge (a private address); override it in `.env`. The proxy must set `X-Forwarded-For` itself (Caddy and Traefik do; in nginx, `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`). Do not expose the container port directly to the internet alongside the proxy, or anyone could choose their own address.
+- Limit sign-in at the proxy as well: the app's counters live in one process and cannot see a flood before it arrives. For example, in nginx `limit_req_zone $binary_remote_addr zone=signin:10m rate=10r/m;` with `limit_req zone=signin burst=10 nodelay;` on `location = /id/authorize` (POST) and `/id/token`; in Caddy, a rate-limit plugin or your platform's WAF.
+- Set `TRUST_PROXY` for the MCP rate limit too (below): without it every client behind the proxy shares one count.
+- Keep Connect tokens out of access logs. A Connect link carries its token in the path (`/libraries/<id>/mcp/<token>`). Either connect clients that can set headers to `/libraries/<id>/mcp` with `X-Library-Token: <token>`, or drop the path from proxy logs, e.g. in nginx `map $request_uri $loggable { ~^/libraries/[^/]+/mcp/ 0; default 1; }` with `access_log … if=$loggable;`, or log a rewritten `$uri` with the last segment removed. The same applies to the RFC 9728 metadata path `/.well-known/oauth-protected-resource/libraries/<id>/mcp/<token>`.
+- Libraries created before migration 007 had md5-derived Connect tokens. Migration 015 replaces them once with random ones; agents using one of those old links must copy the new link from **Connect**.
 - Keep Postgres off the public internet. If it is remote, use `POSTGRES_SSL=required`.
+
+## MCP rate limit
+
+Both library MCP routes, the Connect link (`/libraries/<id>/mcp/<token>`) and the `X-Library-Token` form (`/libraries/<id>/mcp`), share one limit of `MCP_RATE_LIMIT_PER_MINUTE` requests per client address per minute (default 300). Every MCP message is one request, so 300 is several busy agents' worth from one address; raise it if many agents share an address (a NAT, a kiosk host), or set `0` to turn it off and limit at the proxy instead.
+
+- The client address is Express's `req.ip`, so it follows `TRUST_PROXY`. Off (the default), it is the socket peer and `X-Forwarded-For` is ignored, so a client cannot pick a fresh address per request. Behind a trusted proxy it is the browser or agent's address from `X-Forwarded-For`. IPv6 clients are counted per /56; IPv4-mapped IPv6 addresses count as their IPv4 address.
+- Responses carry the IETF `RateLimit-Policy` and `RateLimit` headers (draft 8). Over the limit the app answers `429` with `Retry-After` and a JSON-RPC error body: `{"jsonrpc":"2.0","error":{"code":-32000,"message":"Too many requests …"},"id":null}`.
+- CORS preflights (`OPTIONS`) are not counted.
+- Counts live in memory in one process and reset on restart. With several app replicas, each counts on its own; limit at the proxy or load balancer as well.
 
 ## Postgres version
 

@@ -31,7 +31,37 @@ test("pages cannot be framed and load nothing from other sites", async () => {
   assert.equal(headers.get("x-frame-options"), "DENY");
   assert.equal(headers.get("x-content-type-options"), "nosniff");
   assert.equal(headers.get("referrer-policy"), "no-referrer");
-  assert.match(headers.get("content-security-policy-report-only") ?? "", /script-src 'self'$/);
+  // Enforced: no inline script and no report-only twin any more.
+  assert.match(csp, /script-src 'self'$/);
+  assert.equal(csp.includes("'unsafe-inline'; script") || /script-src[^;]*unsafe/.test(csp), false);
+  assert.equal(headers.get("content-security-policy-report-only"), null);
+});
+
+test("no page markup carries inline script or inline event handlers", async () => {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const path = await import("node:path");
+  const root = path.resolve(import.meta.dirname, "../src");
+  const files = (await readdir(root, { recursive: true })).filter((file) => file.endsWith(".ts"));
+  const offenders: string[] = [];
+  for (const file of files) {
+    const source = await readFile(path.join(root, file), "utf8");
+    source.split("\n").forEach((line, index) => {
+      // <script> without src, on*="…" handlers and javascript: URLs all need 'unsafe-inline'.
+      if (/<script(?![^>]*\bsrc=)[^>]*>/i.test(line) || /\son[a-z]+="/i.test(line) || /javascript:/i.test(line)) {
+        offenders.push(`${file}:${index + 1}: ${line.trim()}`);
+      }
+    });
+  }
+  assert.deepEqual(offenders, []);
+});
+
+test("confirm prompts are data attributes that public/page.js asks", async () => {
+  const { confirmText } = await import("../src/http/pages/layout.ts");
+  assert.equal(confirmText(`Delete “a” <b> & "c"?\r`), "Delete “a” &lt;b&gt; &amp; &quot;c&quot;?");
+  const { readFile } = await import("node:fs/promises");
+  const script = await readFile(new URL("../public/page.js", import.meta.url), "utf8");
+  assert.match(script, /dataset\.confirm/);
+  assert.match(script, /window\.confirm\(/);
 });
 
 test("HSTS is sent only on an HTTPS public address", async () => {
