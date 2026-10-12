@@ -63,7 +63,10 @@ test("a generated Reader key matches only its own hash", () => {
   const hash = hashReaderKey(key);
   assert.notEqual(hash, key);
   assert.equal(readerKeyMatches(key, hash), true);
-  assert.equal(readerKeyMatches(`${key.slice(0, -1)}A`, hash), false);
+  // Change the last character to one it is not; a fixed "A" was the same key 1 time in 16.
+  const altered = `${key.slice(0, -1)}${key.endsWith("A") ? "E" : "A"}`;
+  assert.notEqual(altered, key);
+  assert.equal(readerKeyMatches(altered, hash), false);
   assert.equal(readerKeyMatches(key, null), false);
   assert.equal(readerKeyMatches(key, "not-hex"), false);
   assert.equal(bearerFromAuthorization(`Bearer ${"a".repeat(200)}`), undefined);
