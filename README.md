@@ -58,7 +58,7 @@ To work on the code, run only Postgres in Docker and the app with Node: `docker 
 
 Use the [`Dockerfile`](Dockerfile) on any container host, with a TLS reverse proxy in front. [docs/deploy.md](docs/deploy.md) lists the environment variables, the `/healthz` check and proxy notes.
 
-> **Every public deploy must set `SETUP_TOKEN`**, so a stranger cannot create the first account. `scripts/init-env.sh` generates one, and re-running it adds one to an existing `.env` without changing other values.
+> **The first account always needs `SETUP_TOKEN`** (or the one-time code in the server log), so a stranger cannot create it. `scripts/init-env.sh` generates one, and re-running it adds one to an existing `.env` without changing other values. Behind a reverse proxy, set `TRUST_PROXY` (see [docs/deploy.md](docs/deploy.md)).
 
 ### Connect an MCP client
 
@@ -118,11 +118,11 @@ Every item has a summary: the short text `list_items` and `search_shelf` return 
 - Disabling or demoting an account takes effect immediately: sessions, tokens and refreshes are re-checked on every request, and an MCP connection's tools come from the re-checked role, not the token.
 - Sign-out and a password reset sign the account out everywhere: every session, access token and refresh token. Refresh tokens rotate, a reused one revokes its sign-in, and a sign-in lasts at most `OAUTH_REFRESH_MAX_DAYS` (30).
 - A Connect link reaches its own library only, for every role including SA. The audit log on a link shows that library only, to publishers and SA.
-- On a public address, creating the first account takes a setup code, so a stranger cannot claim a new instance.
+- Creating the first account takes a setup code, so a stranger cannot claim a new instance. Sign-in misses back off per username and address instead of locking accounts.
 - MCP clients register their own client id and callbacks. By default only loopback and app-scheme callbacks are accepted; remote https hosts must be listed in `OAUTH_REDIRECT_HOSTS`. Every MCP sign-in ends on a consent page. Tokens can only be requested for this app's own libraries.
 - Tokens are checked for signature, issuer, expiry and audience. Access tokens are never stored.
 - Reader keys are stored as SHA-256 hashes and can only read published items.
-- Item Markdown never executes raw HTML. Forms carry CSRF; sessions are httpOnly cookies.
+- Item Markdown never executes raw HTML, and the Content-Security-Policy refuses inline script. Forms carry CSRF; sessions are httpOnly cookies (`__Host-` on HTTPS); sign-out is a POST.
 
 Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 

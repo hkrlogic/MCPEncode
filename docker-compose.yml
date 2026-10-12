@@ -37,6 +37,10 @@ services:
       POSTGRES_SSL: disable
       BIND_HOST: 0.0.0.0
       PORT: "3000"
+      # A reverse proxy on the host reaches the container from the Docker bridge
+      # (a private address), so trust X-Forwarded-For from private addresses only.
+      # Set TRUST_PROXY in .env to change it (e.g. false with no proxy in front).
+      TRUST_PROXY: ${TRUST_PROXY:-uniquelocal}
     ports:
       - "127.0.0.1:3000:3000"
     restart: unless-stopped
