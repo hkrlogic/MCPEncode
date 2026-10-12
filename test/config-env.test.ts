@@ -38,6 +38,12 @@ const KEYS = [
   "AUTH_ISSUER",
   "AUTH_AUDIENCE",
   "AUTH_MCP_AUDIENCE",
+  "AUTH_MCP_AUDIENCE_SHARED",
+  "ALLOW_INSECURE_HTTP",
+  "OAUTH_ALLOWED_SCHEMES",
+  "OAUTH_REGISTER_RATE_LIMIT",
+  "OAUTH_AUTHORIZE_RATE_LIMIT",
+  "OAUTH_MAX_PENDING_CLIENTS",
 ];
 
 /** Run fn with only the given variables set (from the list above). Restores the rest. */
@@ -190,7 +196,7 @@ test("PASSWORD_HASH_CONCURRENCY defaults to 2 and must be small", () => {
   }
 });
 
-test("AUTH_MCP_AUDIENCE: used in oidc mode, falls back to AUTH_AUDIENCE with a warning", () => {
+test("AUTH_MCP_AUDIENCE: required in oidc mode unless AUTH_MCP_AUDIENCE_SHARED=true", () => {
   const oidc = { ...BASE, AUTH_MODE: "oidc", AUTH_ISSUER: "https://idp.example.org", AUTH_AUDIENCE: "web-project" };
   const warnings: string[] = [];
   const original = console.warn;
@@ -202,12 +208,47 @@ test("AUTH_MCP_AUDIENCE: used in oidc mode, falls back to AUTH_AUDIENCE with a w
       assert.equal(config.authMcpAudience, "mcp-project");
     });
     assert.equal(warnings.some((line) => line.includes("AUTH_MCP_AUDIENCE")), false);
-    withEnv(oidc, () => assert.equal(loadConfig().authMcpAudience, undefined));
-    assert.equal(warnings.some((line) => line.includes("AUTH_MCP_AUDIENCE")), true);
+    withEnv(oidc, () => assert.throws(() => loadConfig(), /AUTH_MCP_AUDIENCE is required/));
+    withEnv({ ...oidc, AUTH_MCP_AUDIENCE_SHARED: "true" }, () => assert.equal(loadConfig().authMcpAudience, undefined));
+    assert.equal(warnings.some((line) => line.includes("AUTH_MCP_AUDIENCE_SHARED")), true);
     warnings.length = 0;
     withEnv({ ...BASE, AUTH_MCP_AUDIENCE: "ignored" }, () => assert.equal(loadConfig().authMcpAudience, undefined));
     assert.equal(warnings.length, 0);
   } finally {
     console.warn = original;
   }
+});
+
+test("PUBLIC_BASE_URL: plain http only on loopback unless ALLOW_INSECURE_HTTP=true", () => {
+  for (const ok of ["http://127.0.0.1:3000", "http://localhost:3000", "http://[::1]:3000", "https://library.example.org"]) {
+    withEnv({ ...BASE, PUBLIC_BASE_URL: ok }, () => assert.equal(loadConfig().publicBaseUrl, ok));
+  }
+  for (const bad of ["http://library.example.org", "http://10.0.0.5:3000", "http://192.168.1.10"]) {
+    withEnv({ ...BASE, PUBLIC_BASE_URL: bad }, () => assert.throws(() => loadConfig(), /ALLOW_INSECURE_HTTP/));
+    withEnv({ ...BASE, PUBLIC_BASE_URL: bad, ALLOW_INSECURE_HTTP: "true" }, () =>
+      assert.equal(loadConfig().publicBaseUrl, bad),
+    );
+  }
+  withEnv({ ...BASE, PUBLIC_BASE_URL: "ftp://library.example.org" }, () => assert.throws(() => loadConfig()));
+});
+
+test("OAuth limits and extra app schemes have defaults and are checked", () => {
+  withEnv(BASE, () => {
+    const config = loadConfig();
+    assert.equal(config.oauthRegisterRateLimit, 20);
+    assert.equal(config.oauthAuthorizeRateLimit, 60);
+    assert.equal(config.oauthMaxPendingClients, 1000);
+    assert.deepEqual(config.oauthAllowedSchemes, ["cursor", "vscode", "vscode-insiders", "claude"]);
+  });
+  withEnv({ ...BASE, OAUTH_ALLOWED_SCHEMES: "windsurf, zed:" }, () =>
+    assert.deepEqual(loadConfig().oauthAllowedSchemes?.slice(-2), ["windsurf", "zed"]),
+  );
+  for (const bad of ["microsoft-edge", "x-safari-https", "https", "not a scheme"]) {
+    withEnv({ ...BASE, OAUTH_ALLOWED_SCHEMES: bad }, () => assert.throws(() => loadConfig(), /OAUTH_ALLOWED_SCHEMES/));
+  }
+  withEnv({ ...BASE, OAUTH_REGISTER_RATE_LIMIT: "0", OAUTH_MAX_PENDING_CLIENTS: "5" }, () => {
+    assert.equal(loadConfig().oauthRegisterRateLimit, 0);
+    assert.equal(loadConfig().oauthMaxPendingClients, 5);
+  });
+  withEnv({ ...BASE, OAUTH_MAX_PENDING_CLIENTS: "0" }, () => assert.throws(() => loadConfig(), /OAUTH_MAX_PENDING_CLIENTS/));
 });

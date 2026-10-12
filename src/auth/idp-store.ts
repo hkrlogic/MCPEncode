@@ -50,6 +50,8 @@ export type IdpStore = {
   findClient(clientId: string): Promise<OAuthClient | undefined>;
   /** Drop registrations that never got a refresh token and are older than `before`. */
   pruneClients(before: number): Promise<void>;
+  /** Registrations made at or after `since` that have not yet got a refresh token (pending sign-in). */
+  countPendingClients(since: number): Promise<number>;
   insertRefresh(record: RefreshRecord): Promise<void>;
   /** Atomically mark an active token used. Reuse of a used token revokes its chain. */
   claimRefresh(tokenHash: string, now: number): Promise<RefreshClaim>;
@@ -91,6 +93,12 @@ export function memoryIdpStore(): IdpStore {
       for (const [id, client] of clients) {
         if (client.createdAt < before && !used.has(id)) clients.delete(id);
       }
+    },
+    async countPendingClients(since) {
+      const used = new Set([...tokens.values()].map((row) => row.clientId));
+      let count = 0;
+      for (const [id, client] of clients) if (client.createdAt >= since && !used.has(id)) count += 1;
+      return count;
     },
     async insertRefresh(record) {
       tokens.set(record.tokenHash, { ...record });

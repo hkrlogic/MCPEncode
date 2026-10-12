@@ -2,7 +2,7 @@
  * Setup code for the first account.
  *
  * The first account is SA: it manages people and every library. On a machine
- * only you can reach, "first visit creates the account" is fine. On a public
+ * only you can reach, an open first-account page would be fine. On a public
  * address, whoever opens the page first would own the instance, so the page
  * asks for a code that only the operator has: SETUP_TOKEN if set, otherwise a
  * random one printed once to the server log at startup.
