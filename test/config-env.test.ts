@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { loadConfig, loadDatabaseConfig } from "../src/config.ts";
+import { loadConfig, loadDatabaseConfig, parseTrustProxy } from "../src/config.ts";
 
 const KEYS = [
   "PUBLIC_BASE_URL",
@@ -32,6 +32,9 @@ const KEYS = [
   "OAUTH_ALLOW_ANY_HTTPS_REDIRECT",
   "OAUTH_LEGACY_CLIENT",
   "OAUTH_REFRESH_MAX_DAYS",
+  "ALLOW_OPEN_SETUP",
+  "TRUST_PROXY",
+  "PASSWORD_HASH_CONCURRENCY",
 ];
 
 /** Run fn with only the given variables set (from the list above). Restores the rest. */
@@ -62,7 +65,9 @@ test("defaults stay local: loopback bind, local origin, local database", () => {
     assert.equal(config.port, 3000);
     assert.equal(config.database.host, "127.0.0.1");
     assert.equal(config.database.database, "mpos");
-    assert.equal(config.setupCodeRequired, false);
+    // Even on loopback, the first account needs the setup code.
+    assert.equal(config.setupCodeRequired, true);
+    assert.equal(config.trustProxy, undefined);
   });
 });
 
@@ -147,5 +152,37 @@ test("OAuth callback and refresh settings default to the safe choice", () => {
   ];
   for (const values of bad) {
     withEnv({ ...BASE, ...values }, () => assert.throws(() => loadConfig()));
+  }
+});
+
+test("ALLOW_OPEN_SETUP=true is the only way to skip the setup code", () => {
+  withEnv({ ...BASE, ALLOW_OPEN_SETUP: "true" }, () => assert.equal(loadConfig().setupCodeRequired, false));
+  withEnv({ ...BASE, ALLOW_OPEN_SETUP: "false" }, () => assert.equal(loadConfig().setupCodeRequired, true));
+  withEnv({ ...BASE, PUBLIC_BASE_URL: "https://library.example.org" }, () =>
+    assert.equal(loadConfig().setupCodeRequired, true),
+  );
+});
+
+test("TRUST_PROXY is off unless set, and never trusts every hop", () => {
+  assert.equal(parseTrustProxy(undefined), undefined);
+  assert.equal(parseTrustProxy(""), undefined);
+  assert.equal(parseTrustProxy("false"), undefined);
+  assert.equal(parseTrustProxy("0"), undefined);
+  assert.equal(parseTrustProxy("1"), 1);
+  assert.deepEqual(parseTrustProxy("loopback, uniquelocal"), ["loopback", "uniquelocal"]);
+  assert.deepEqual(parseTrustProxy("10.0.0.0/8,::1"), ["10.0.0.0/8", "::1"]);
+  assert.throws(() => parseTrustProxy("true"), /hop/);
+  assert.throws(() => parseTrustProxy("everyone"));
+  assert.throws(() => parseTrustProxy("99"));
+  // A public bind alone no longer turns it on.
+  withEnv({ ...BASE, BIND_HOST: "0.0.0.0" }, () => assert.equal(loadConfig().trustProxy, undefined));
+  withEnv({ ...BASE, TRUST_PROXY: "1" }, () => assert.equal(loadConfig().trustProxy, 1));
+});
+
+test("PASSWORD_HASH_CONCURRENCY defaults to 2 and must be small", () => {
+  withEnv(BASE, () => assert.equal(loadConfig().passwordHashConcurrency, 2));
+  withEnv({ ...BASE, PASSWORD_HASH_CONCURRENCY: "4" }, () => assert.equal(loadConfig().passwordHashConcurrency, 4));
+  for (const bad of ["0", "17", "two", "1.5"]) {
+    withEnv({ ...BASE, PASSWORD_HASH_CONCURRENCY: bad }, () => assert.throws(() => loadConfig(), /PASSWORD_HASH_CONCURRENCY/));
   }
 });

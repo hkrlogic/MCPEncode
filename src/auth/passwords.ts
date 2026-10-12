@@ -1,6 +1,7 @@
 /** Password hashing for accounts stored in this app. */
 import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
+import { Semaphore } from "./semaphore.ts";
 
 type ScryptCost = { N: number; r: number; p: number; maxmem: number };
 const scryptAsync = promisify(scrypt) as unknown as (
@@ -24,6 +25,22 @@ const SCRYPT_P = 2;
 const SCRYPT_MAXMEM = 128 * 1024 * 1024;
 const KEY_LENGTH = 32;
 
+/** Default for PASSWORD_HASH_CONCURRENCY: scrypt runs at once (64 MiB each). */
+export const DEFAULT_HASH_CONCURRENCY = 2;
+/** Hashes allowed to wait for a slot. Past this a sign-in is refused at once as busy. */
+const HASH_QUEUE = 64;
+const hashGate = new Semaphore(DEFAULT_HASH_CONCURRENCY, HASH_QUEUE);
+
+/** PASSWORD_HASH_CONCURRENCY. Called once at startup. */
+export function setHashConcurrency(limit: number): void {
+  hashGate.setLimit(limit);
+}
+
+/** Every scrypt call goes through the gate, so a flood of sign-ins cannot run them all at once. */
+function gatedScrypt(password: string, salt: Buffer, keylen: number, options: ScryptCost): Promise<Buffer> {
+  return hashGate.run(() => scryptAsync(password, salt, keylen, options));
+}
+
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 export function normalizeUsername(raw: string): string {
@@ -46,7 +63,7 @@ export function passwordError(password: string): string | undefined {
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = (await scryptAsync(password, salt, KEY_LENGTH, {
+  const hash = (await gatedScrypt(password, salt, KEY_LENGTH, {
     N: SCRYPT_N,
     r: SCRYPT_R,
     p: SCRYPT_P,
@@ -71,7 +88,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const salt = decode(parts[4] ?? "");
   const expected = decode(parts[5] ?? "");
   if (!salt || !expected || salt.length < 8 || expected.length !== KEY_LENGTH) return false;
-  const actual = (await scryptAsync(password, salt, expected.length, { N: n, r, p, maxmem: SCRYPT_MAXMEM }));
+  const actual = (await gatedScrypt(password, salt, expected.length, { N: n, r, p, maxmem: SCRYPT_MAXMEM }));
   return timingSafeEqual(actual, expected);
 }
 

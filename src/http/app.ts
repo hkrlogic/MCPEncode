@@ -88,7 +88,6 @@ export function createApp(input: {
       ].filter((name) => name.length > 0),
     ),
   ];
-  const loopbackBind = ["127.0.0.1", "localhost", "::1"].includes(config.bindHost);
   // Same middleware as the SDK's createMcpExpressApp({ host: "0.0.0.0", allowedHosts }),
   // built by hand so /healthz can sit in front of the Host check: platform health
   // probes often send an internal Host name. The SDK's own Origin check rejects the
@@ -127,8 +126,9 @@ export function createApp(input: {
   app.disable("x-powered-by");
   app.use(securityHeaders({ https: config.publicBaseUrl.startsWith("https://") }));
   if (input.accounts) app.locals.accountGuard = createAccountGuard(input.accounts);
-  // One reverse proxy on a public bind, so the sign-in limit sees the browser address.
-  if (!loopbackBind) app.set("trust proxy", 1);
+  // Only when the operator says a proxy is in front (TRUST_PROXY). Otherwise a
+  // client could choose its own address for the sign-in throttle.
+  if (config.trustProxy !== undefined) app.set("trust proxy", config.trustProxy);
   app.use(express.urlencoded({ extended: false }));
 
   // Authorization Server metadata (RFC 8414) at the publisher origin.
