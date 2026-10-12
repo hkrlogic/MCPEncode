@@ -140,7 +140,12 @@ test("OAuth callback and refresh settings default to the safe choice", () => {
       assert.equal(config.refreshMaxLifetimeDays, 7);
     },
   );
-  for (const bad of [{ OAUTH_REFRESH_MAX_DAYS: "0" }, { OAUTH_REFRESH_MAX_DAYS: "1.5" }, { OAUTH_LEGACY_CLIENT: "maybe" }]) {
-    withEnv({ ...BASE, ...bad }, () => assert.throws(() => loadConfig()));
+  const bad: Record<string, string>[] = [
+    { OAUTH_REFRESH_MAX_DAYS: "0" },
+    { OAUTH_REFRESH_MAX_DAYS: "1.5" },
+    { OAUTH_LEGACY_CLIENT: "maybe" },
+  ];
+  for (const values of bad) {
+    withEnv({ ...BASE, ...values }, () => assert.throws(() => loadConfig()));
   }
 });
