@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { parseAllowedSchemes } from "./auth/redirect.ts";
 import { SETUP_TOKEN_MIN_LENGTH } from "./auth/setup-code.ts";
 
 /**
@@ -35,7 +36,8 @@ export type AppConfig = {
   /**
    * AUTH_MCP_AUDIENCE (oidc mode): the audience library MCP tokens must carry,
    * kept apart from AUTH_AUDIENCE so a token for the web app cannot open MCP
-   * and the other way round. Unset: AUTH_AUDIENCE, with a warning.
+   * and the other way round. Required in oidc mode unless
+   * AUTH_MCP_AUDIENCE_SHARED=true, which reuses AUTH_AUDIENCE (with a warning).
    * Embedded mode ignores it; each library link is its own audience.
    */
   authMcpAudience?: string;
@@ -66,6 +68,14 @@ export type AppConfig = {
   refreshMaxLifetimeDays?: number;
   /** PASSWORD_HASH_CONCURRENCY: scrypt hashes run at once (64 MiB each). Default 2. */
   passwordHashConcurrency?: number;
+  /** OAUTH_ALLOWED_SCHEMES plus the defaults: single-word app schemes a client may register. */
+  oauthAllowedSchemes?: string[];
+  /** OAUTH_REGISTER_RATE_LIMIT: client registrations per address per hour. 0 turns it off. Default 20. */
+  oauthRegisterRateLimit?: number;
+  /** OAUTH_AUTHORIZE_RATE_LIMIT: /id/authorize requests per address per minute. 0 turns it off. Default 60. */
+  oauthAuthorizeRateLimit?: number;
+  /** OAUTH_MAX_PENDING_CLIENTS: registrations not yet used for a sign-in, kept at once. Default 1000. */
+  oauthMaxPendingClients?: number;
   /** MCP_RATE_LIMIT_PER_MINUTE: library MCP requests per client address per minute. 0 turns it off. Default 300. */
   mcpRateLimitPerMinute?: number;
 };
@@ -126,6 +136,37 @@ export function parseMcpRateLimit(raw: string | undefined): number {
     throw new Error("MCP_RATE_LIMIT_PER_MINUTE must be a whole number from 0 (off) to 100000");
   }
   return Number(value);
+}
+
+/** Whole number env value from 0 to max, with a default. */
+export function parseWholeNumber(name: string, raw: string | undefined, fallback: number, min: number, max: number): number {
+  const value = raw?.trim();
+  if (!value) return fallback;
+  if (!/^\d+$/.test(value) || Number(value) < min || Number(value) > max) {
+    throw new Error(`${name} must be a whole number from ${min} to ${max}`);
+  }
+  return Number(value);
+}
+
+/**
+ * PUBLIC_BASE_URL must be https unless it is loopback (local development).
+ * Plain http to a real host sends passwords, session cookies and OAuth codes
+ * in clear text; ALLOW_INSECURE_HTTP=true accepts that on purpose (for example
+ * a closed lab network).
+ */
+export function assertSecureBaseUrl(publicBaseUrl: string, allowInsecureHttp: boolean): void {
+  let url: URL;
+  try {
+    url = new URL(publicBaseUrl);
+  } catch {
+    throw new Error(`PUBLIC_BASE_URL "${publicBaseUrl}" is not a valid URL, e.g. https://library.example.org`);
+  }
+  if (url.protocol === "https:") return;
+  if (url.protocol !== "http:") throw new Error("PUBLIC_BASE_URL must start with https:// (or http:// for loopback)");
+  if (isLoopbackHost(url.hostname.replace(/^\[|\]$/g, "")) || allowInsecureHttp) return;
+  throw new Error(
+    `PUBLIC_BASE_URL is plain http on a non-loopback host (${url.host}). Passwords, cookies and sign-in codes would travel unencrypted. Put a TLS proxy in front and use https://, or set ALLOW_INSECURE_HTTP=true to accept the risk (docs/deploy.md).`,
+  );
 }
 
 export function parseRefreshMaxDays(raw: string | undefined): number {
@@ -366,10 +407,16 @@ export function loadConfig(): AppConfig {
   const authAudience = process.env.AUTH_AUDIENCE?.trim() || publicBaseUrl;
   const authMcpAudience = authMode === "oidc" ? process.env.AUTH_MCP_AUDIENCE?.trim() || undefined : undefined;
   if (authMode === "oidc" && !authMcpAudience) {
+    if (!parseBooleanEnv("AUTH_MCP_AUDIENCE_SHARED", process.env.AUTH_MCP_AUDIENCE_SHARED, false)) {
+      throw new Error(
+        "AUTH_MCP_AUDIENCE is required when AUTH_MODE=oidc: give library MCP tokens their own audience, apart from AUTH_AUDIENCE (docs/deploy.md). To keep sharing AUTH_AUDIENCE, set AUTH_MCP_AUDIENCE_SHARED=true.",
+      );
+    }
     console.warn(
-      "AUTH_MCP_AUDIENCE is not set: library MCP accepts tokens for AUTH_AUDIENCE, the same audience as web sign-in. Give MCP its own audience (docs/deploy.md).",
+      "AUTH_MCP_AUDIENCE_SHARED=true: library MCP accepts tokens for AUTH_AUDIENCE, the same audience as web sign-in. Give MCP its own audience (docs/deploy.md).",
     );
   }
+  assertSecureBaseUrl(publicBaseUrl, parseBooleanEnv("ALLOW_INSECURE_HTTP", process.env.ALLOW_INSECURE_HTTP, false));
   const sessionSecret = assertSessionSecret(required("SESSION_SECRET"));
   const setupToken = envValue("SETUP_TOKEN");
   if (setupToken && setupToken.length < SETUP_TOKEN_MIN_LENGTH) {
@@ -416,6 +463,10 @@ export function loadConfig(): AppConfig {
     refreshMaxLifetimeDays: parseRefreshMaxDays(process.env.OAUTH_REFRESH_MAX_DAYS),
     passwordHashConcurrency: parseHashConcurrency(process.env.PASSWORD_HASH_CONCURRENCY),
     mcpRateLimitPerMinute: parseMcpRateLimit(process.env.MCP_RATE_LIMIT_PER_MINUTE),
+    oauthAllowedSchemes: parseAllowedSchemes(process.env.OAUTH_ALLOWED_SCHEMES),
+    oauthRegisterRateLimit: parseWholeNumber("OAUTH_REGISTER_RATE_LIMIT", process.env.OAUTH_REGISTER_RATE_LIMIT, 20, 0, 100_000),
+    oauthAuthorizeRateLimit: parseWholeNumber("OAUTH_AUTHORIZE_RATE_LIMIT", process.env.OAUTH_AUTHORIZE_RATE_LIMIT, 60, 0, 100_000),
+    oauthMaxPendingClients: parseWholeNumber("OAUTH_MAX_PENDING_CLIENTS", process.env.OAUTH_MAX_PENDING_CLIENTS, 1000, 1, 1_000_000),
   };
 }
 

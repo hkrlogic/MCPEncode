@@ -95,6 +95,16 @@ export function postgresIdpStore(db: Database, sessionSecret: string): IdpStore 
         before,
       );
     },
+    async countPendingClients(since) {
+      const row = await getRow<{ n: string | number }>(
+        db,
+        `SELECT COUNT(*) AS n FROM oauth_clients AS c
+         WHERE c.created_at >= ?
+           AND NOT EXISTS (SELECT 1 FROM oauth_refresh_tokens AS r WHERE r.client_id = c.client_id)`,
+        since,
+      );
+      return Number(row?.n ?? 0);
+    },
     async insertRefresh(record) {
       await runSql(
         db,

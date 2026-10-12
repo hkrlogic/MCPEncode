@@ -9,7 +9,8 @@
  * signing key live in the IdpStore (Postgres in production).
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import express, { type Express, type Request, type Response } from "express";
+import express, { type Express, type Request, type RequestHandler, type Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { calculateJwkThumbprint, exportJWK, generateKeyPair, importJWK, SignJWT, type JWK } from "jose";
 import { DEFAULT_REFRESH_MAX_DAYS, type AppConfig } from "../config.ts";
 import type { AuthServerEndpoints } from "../http/discovery.ts";
@@ -29,7 +30,14 @@ import { hashPassword, needsRehash, normalizeUsername, verifyPassword } from "./
 import { newSetupCode, setupCodeMatches } from "./setup-code.ts";
 import { QueueFullError } from "./semaphore.ts";
 import { SIGN_IN_BUSY, SIGN_IN_WAIT, SignInLimit } from "./signin-limit.ts";
-import { callbackHost, callbackKind, callbackLabel, isAllowedCallback, redirectMatches } from "./redirect.ts";
+import {
+  callbackHost,
+  callbackKind,
+  callbackLabel,
+  DEFAULT_ALLOWED_SCHEMES,
+  isAllowedCallback,
+  redirectMatches,
+} from "./redirect.ts";
 import type { Role } from "./rbac.ts";
 
 type AuthCode = {
@@ -62,7 +70,10 @@ const CONSENT_TTL_MS = 10 * 60 * 1000;
 /** Registrations that never completed a sign-in are dropped after a day. */
 const UNUSED_CLIENT_TTL_MS = 24 * 60 * 60 * 1000;
 const CONSENT_COOKIE = "mpos_consent";
-const MAX_REDIRECT_URIS = 10;
+const MAX_REDIRECT_URIS = 8;
+const REGISTER_BODY_LIMIT = "8kb";
+/** How often unused registrations are swept, besides on each registration. */
+const CLIENT_SWEEP_MS = 60 * 60 * 1000;
 
 function scopeFor(realmRole: string): string {
   return realmRole === "mpos-editor" ? "openid mpos:edit mpos:sa" : "openid mpos:readonly";
@@ -92,7 +103,7 @@ export type EmbeddedIdpOptions = {
 type ResolvedClient =
   | { kind: "web"; clientId: string; name: string }
   | { kind: "legacy"; clientId: string; name: string }
-  | { kind: "registered"; clientId: string; name: string; redirectUris: string[] };
+  | { kind: "registered"; clientId: string; name: string; selfDeclared: boolean; redirectUris: string[] };
 
 function q(req: Request, key: string): string {
   const value = req.query[key];
@@ -221,6 +232,8 @@ function loginPage(input: {
 function consentPage(input: {
   consentId: string;
   clientName: string;
+  /** The name came from the client's own registration and nobody checked it. */
+  selfDeclared: boolean;
   clientId: string;
   legacy: boolean;
   callbackHost: string;
@@ -240,9 +253,13 @@ function consentPage(input: {
   <main class="sign-in">
     <section class="panel">
       <h1>Allow access?</h1>
-      <p><strong>${escapeHtml(input.clientName)}</strong> wants to use your account <strong>${escapeHtml(input.username)}</strong> for <strong>${escapeHtml(input.library)}</strong>.</p>
+      <p>${
+        input.selfDeclared
+          ? `An app that says it is <strong>${escapeHtml(input.clientName)}</strong> (unverified: the app chose this name itself)`
+          : `<strong>${escapeHtml(input.clientName)}</strong>`
+      } wants to use your account <strong>${escapeHtml(input.username)}</strong> for <strong>${escapeHtml(input.library)}</strong>.</p>
       <p>If you allow it, the sign-in is sent to <strong>${escapeHtml(input.callbackHost)}</strong>.</p>
-      <p class="hint">Callback: ${escapeHtml(input.callback)}<br>Client id: ${escapeHtml(input.clientId)}</p>
+      <p class="hint">Full callback: <code>${escapeHtml(input.callback)}</code><br>Client id: ${escapeHtml(input.clientId)}</p>
       ${
         input.legacy
           ? `<p class="hint">This app connected before apps registered their own client id. Reconnect it to register; this shared id will be retired.</p>`
@@ -337,7 +354,9 @@ export async function createEmbeddedIdp(
   const policy = {
     allowedHosts: config.oauthRedirectHosts,
     allowAnyHttps: config.oauthAllowAnyHttpsRedirect === true,
+    allowedSchemes: config.oauthAllowedSchemes ?? DEFAULT_ALLOWED_SCHEMES,
   };
+  const maxPendingClients = config.oauthMaxPendingClients ?? 1000;
 
   async function resolveClient(clientId: string): Promise<ResolvedClient | undefined> {
     if (!clientId) return undefined;
@@ -353,6 +372,7 @@ export async function createEmbeddedIdp(
       kind: "registered",
       clientId,
       name: found.clientName || "Unnamed MCP client",
+      selfDeclared: Boolean(found.clientName),
       redirectUris: found.redirectUris,
     };
   }
@@ -367,10 +387,15 @@ export async function createEmbeddedIdp(
       });
     }
     if (client.kind === "legacy") {
-      // Never registered a callback, so only callbacks that stay on the person's
-      // machine (or an operator-listed host). Never the any-https opt-in.
-      const kind = callbackKind(uri, { allowedHosts: policy.allowedHosts });
-      return kind === "loopback" || kind === "custom-scheme" || kind === "listed-host";
+      // Never registered a callback, so anyone can use this id with any
+      // callback the policy accepts. Keep it to loopback, an operator-listed
+      // host, or a known app's own single-word scheme (cursor:, vscode:, ...),
+      // which only that app receives. No reverse-DNS schemes, never any-https.
+      const kind = callbackKind(uri, { allowedHosts: policy.allowedHosts, allowedSchemes: policy.allowedSchemes });
+      if (kind === "loopback" || kind === "listed-host") return true;
+      if (kind !== "custom-scheme") return false;
+      const scheme = new URL(uri).protocol.slice(0, -1).toLowerCase();
+      return policy.allowedSchemes.includes(scheme);
     }
     return redirectMatches(uri, client.redirectUris) && callbackKind(uri, policy) !== undefined;
   }
@@ -463,6 +488,47 @@ export async function createEmbeddedIdp(
     return name ? `the library “${name}”` : `library ${libraryId}`;
   }
 
+  // Registrations nobody used are swept every hour, not only when the next one arrives.
+  const sweep = setInterval(() => {
+    store.pruneClients(Date.now() - UNUSED_CLIENT_TTL_MS).catch((error: unknown) => {
+      console.warn("Could not prune unused OAuth registrations:", error instanceof Error ? error.message : error);
+    });
+  }, CLIENT_SWEEP_MS);
+  sweep.unref();
+
+  /** Per-address limit for the unauthenticated OAuth endpoints. Undefined when turned off (0). */
+  function addressLimit(
+    limit: number | undefined,
+    windowMs: number,
+    identifier: string,
+    send: (res: Response) => void,
+  ): RequestHandler | undefined {
+    if (!limit || limit <= 0) return undefined;
+    return rateLimit({
+      windowMs,
+      limit,
+      standardHeaders: "draft-8",
+      legacyHeaders: false,
+      identifier,
+      // IPv6 grouped per /64 (one customer's prefix), IPv4 per address.
+      ipv6Subnet: 64,
+      validate: { xForwardedForHeader: false, forwardedHeader: false },
+      handler: (_req, res, _next, options) => {
+        res.status(options.statusCode);
+        send(res);
+      },
+    });
+  }
+  const pass: RequestHandler = (_req, _res, next) => next();
+  const registerLimit =
+    addressLimit(config.oauthRegisterRateLimit ?? 20, 60 * 60 * 1000, "oauth-register", (res) => {
+      res.json({ error: "too_many_requests", error_description: "Too many client registrations from this address. Wait and retry (see Retry-After)." });
+    }) ?? pass;
+  const authorizeLimit =
+    addressLimit(config.oauthAuthorizeRateLimit ?? 60, 60 * 1000, "oauth-authorize", (res) => {
+      res.type("text/plain").send("Too many sign-in requests from this address. Wait a minute and try again.");
+    }) ?? pass;
+
   function mount(app: Express): void {
     app.get("/id/.well-known/openid-configuration", (_req, res) => {
       res.json(endpoints.metadata);
@@ -475,7 +541,7 @@ export async function createEmbeddedIdp(
     });
 
     // Dynamic client registration (RFC 7591). Public clients only: PKCE, no secret.
-    app.post("/id/register", express.json({ limit: "16kb" }), async (req, res) => {
+    app.post("/id/register", registerLimit, express.json({ limit: REGISTER_BODY_LIMIT }), async (req, res) => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const requested = body.redirect_uris;
       if (!Array.isArray(requested) || requested.length === 0 || requested.length > MAX_REDIRECT_URIS) {
@@ -491,7 +557,7 @@ export async function createEmbeddedIdp(
           res.status(400).json({
             error: "invalid_redirect_uri",
             error_description:
-              "Callbacks must be loopback (http://127.0.0.1, http://[::1], http://localhost) or an app scheme. A remote https host must be listed in OAUTH_REDIRECT_HOSTS.",
+              "Callbacks must be loopback (http://127.0.0.1, http://[::1], http://localhost), a reverse-DNS app scheme (com.example.app:/callback) or a known app scheme (cursor, vscode, claude, or OAUTH_ALLOWED_SCHEMES). Browser-launcher schemes are refused. A remote https host must be listed in OAUTH_REDIRECT_HOSTS.",
           });
           return;
         }
@@ -516,6 +582,14 @@ export async function createEmbeddedIdp(
       }
       const now = Date.now();
       await store.pruneClients(now - UNUSED_CLIENT_TTL_MS);
+      if ((await store.countPendingClients(now - UNUSED_CLIENT_TTL_MS)) >= maxPendingClients) {
+        console.warn("OAuth registration refused: the OAUTH_MAX_PENDING_CLIENTS limit of unused registrations is reached.");
+        res.status(503).setHeader("Retry-After", "3600").json({
+          error: "temporarily_unavailable",
+          error_description: "Too many pending client registrations. Try again later.",
+        });
+        return;
+      }
       const client = {
         clientId: newClientId(),
         clientName: cleanClientName(body.client_name),
@@ -593,6 +667,7 @@ export async function createEmbeddedIdp(
       );
     };
 
+    app.use("/id/authorize", authorizeLimit);
     app.get("/id/authorize", (req, res, next) => {
       showAuthorize(req, res).catch(next);
     });
@@ -711,10 +786,11 @@ export async function createEmbeddedIdp(
         consentPage({
           consentId,
           clientName: client.name,
+          selfDeclared: client.kind === "registered" && client.selfDeclared,
           clientId: client.clientId,
           legacy: client.kind === "legacy",
           callbackHost: callbackHost(hidden.redirect_uri),
-          callback: callbackLabel(hidden.redirect_uri),
+          callback: hidden.redirect_uri,
           library: await libraryLabel(hidden.resource),
           username: user.username,
         }),

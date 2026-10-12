@@ -11,7 +11,14 @@
  * Someone guessing at the SA from their own address only slows themselves
  * down; the SA signing in from elsewhere is not affected until a hundred
  * misses arrive from many addresses, and even then it is a short wait, not a
- * lock. Nothing is ever locked until an admin acts.
+ * lock. An address this username signed in from successfully in the last 30
+ * days skips the username-wide counter entirely, so a distributed guess cannot
+ * keep the SA out of their usual place. Nothing is ever locked until an admin
+ * acts.
+ *
+ * IPv6 addresses are counted per /64 (one household or customer), so an
+ * attacker cannot step through a prefix to get fresh counters. Every map is
+ * bounded: past MAX_ENTRIES, expired entries go first, then the oldest.
  *
  * An attempt is counted when it starts, before the password is hashed, so a
  * burst of parallel posts cannot all slip in under the limit. A successful
@@ -35,7 +42,21 @@ export type SignInLimitOptions = {
   windowMs?: number;
 };
 
+import { isIP } from "node:net";
+import { ipKeyGenerator } from "express-rate-limit";
+
 type Bucket = { count: number; last: number };
+
+/** Most keys any one map holds. */
+export const MAX_ENTRIES = 10_000;
+/** How long a successful sign-in keeps that address known-good for the username. */
+const KNOWN_GOOD_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** The counting key for an address: IPv4 as is, IPv6 by its /64 prefix. */
+export function addressKey(address: string): string {
+  const plain = address.replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, "");
+  return isIP(plain) ? ipKeyGenerator(plain, 64) : plain;
+}
 
 const DEFAULTS = {
   pairAllowance: 5,
@@ -52,6 +73,8 @@ export class SignInLimit {
   private readonly pairs = new Map<string, Bucket>();
   private readonly addresses = new Map<string, Bucket>();
   private readonly usernames = new Map<string, Bucket>();
+  /** username + address key -> last successful sign-in. */
+  private readonly knownGood = new Map<string, number>();
 
   constructor(options: SignInLimitOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -59,12 +82,14 @@ export class SignInLimit {
   }
 
   /** True when this username or address must wait. Does not count anything. */
-  blocked(username: string, address: string): boolean {
+  blocked(username: string, rawAddress: string): boolean {
+    const address = addressKey(rawAddress);
     const now = this.now();
     return (
       this.waiting(this.pairs, pairKey(username, address), this.settings.pairAllowance, now) ||
       this.waiting(this.addresses, address, this.settings.addressAllowance, now) ||
-      this.waiting(this.usernames, username, this.settings.usernameAllowance, now)
+      (!this.isKnownGood(username, address, now) &&
+        this.waiting(this.usernames, username, this.settings.usernameAllowance, now))
     );
   }
 
@@ -73,8 +98,9 @@ export class SignInLimit {
    * the caller must wait; otherwise counts the attempt as a miss until
    * succeed() takes it back.
    */
-  begin(username: string, address: string): boolean {
-    if (this.blocked(username, address)) return false;
+  begin(username: string, rawAddress: string): boolean {
+    if (this.blocked(username, rawAddress)) return false;
+    const address = addressKey(rawAddress);
     const now = this.now();
     this.add(this.pairs, pairKey(username, address), now);
     this.add(this.addresses, address, now);
@@ -83,13 +109,33 @@ export class SignInLimit {
   }
 
   /** The attempt begun for this username and address signed in. */
-  succeed(username: string, address: string): void {
-    this.pairs.delete(pairKey(username, address));
+  succeed(username: string, rawAddress: string): void {
+    const address = addressKey(rawAddress);
+    const key = pairKey(username, address);
+    this.pairs.delete(key);
+    this.knownGood.delete(key);
+    this.knownGood.set(key, this.now());
+    this.bound(this.knownGood, (last) => this.now() - last >= KNOWN_GOOD_MS);
     this.usernames.delete(username);
     const bucket = this.addresses.get(address);
     if (bucket) {
       bucket.count -= 1;
       if (bucket.count <= 0) this.addresses.delete(address);
+    }
+  }
+
+  private isKnownGood(username: string, address: string, now: number): boolean {
+    const last = this.knownGood.get(pairKey(username, address));
+    return last !== undefined && now - last < KNOWN_GOOD_MS;
+  }
+
+  /** Keep a map under MAX_ENTRIES: expired entries first, then the oldest (insertion order). */
+  private bound<V>(map: Map<string, V>, expired: (value: V) => boolean): void {
+    if (map.size <= MAX_ENTRIES) return;
+    for (const [key, value] of map) if (expired(value)) map.delete(key);
+    for (const key of map.keys()) {
+      if (map.size <= MAX_ENTRIES) break;
+      map.delete(key);
     }
   }
 
@@ -107,20 +153,25 @@ export class SignInLimit {
   }
 
   private add(map: Map<string, Bucket>, key: string, now: number): void {
-    if (map.size > 10_000) this.dropExpired(map, now);
     const bucket = map.get(key);
+    // Re-insert so insertion order is last-touched order for eviction.
+    map.delete(key);
     if (!bucket || now - bucket.last >= this.settings.windowMs) {
       map.set(key, { count: 1, last: now });
-      return;
+    } else {
+      map.set(key, { count: bucket.count + 1, last: now });
     }
-    bucket.count += 1;
-    bucket.last = now;
+    this.bound(map, (entry) => now - entry.last >= this.settings.windowMs);
   }
 
-  private dropExpired(map: Map<string, Bucket>, now: number): void {
-    for (const [key, bucket] of map) {
-      if (now - bucket.last >= this.settings.windowMs) map.delete(key);
-    }
+  /** Entries held, for tests. */
+  size(): { pairs: number; addresses: number; usernames: number; knownGood: number } {
+    return {
+      pairs: this.pairs.size,
+      addresses: this.addresses.size,
+      usernames: this.usernames.size,
+      knownGood: this.knownGood.size,
+    };
   }
 }
 

@@ -7,7 +7,14 @@
  *
  * - loopback http(s): http://127.0.0.1:<port>/..., http://[::1]:<port>/...,
  *   http://localhost:<port>/... (Claude Code, MCP Inspector, mcp-remote, VS Code)
- * - private-use or custom schemes: cursor://..., com.example.app:/...
+ * - private-use schemes (RFC 8252 section 7.1): a reverse-DNS scheme with a
+ *   dot, such as com.example.app:/callback, or one of the known single-word
+ *   client schemes (cursor, vscode, vscode-insiders, claude, plus any listed in
+ *   OAUTH_ALLOWED_SCHEMES). Browser launchers (microsoft-edge:, x-safari-https:,
+ *   googlechromes:, firefox:, ...) and OS handlers (ms-*, search-ms:, shell:)
+ *   are refused: they would open a web page at an address the client chose,
+ *   carrying the code. A custom callback whose path holds another URL
+ *   (foo:https://evil.example/) is refused for the same reason.
  *
  * A remote https callback (a hosted client such as claude.ai) must be on the
  * operator's OAUTH_REDIRECT_HOSTS list, or the operator must opt in to any
@@ -33,6 +40,54 @@ const BLOCKED_SCHEMES = new Set([
   "intent",
 ]);
 
+/** Single-word app schemes accepted without a dot. OAUTH_ALLOWED_SCHEMES adds more. */
+export const DEFAULT_ALLOWED_SCHEMES = ["cursor", "vscode", "vscode-insiders", "claude"];
+
+/**
+ * Schemes that hand the address to a browser or the OS shell. Refused even when
+ * listed in OAUTH_ALLOWED_SCHEMES or written with a dot.
+ */
+const LAUNCHER_SCHEMES = new Set([
+  "microsoft-edge",
+  "microsoft-edge-holographic",
+  "googlechrome",
+  "googlechromes",
+  "firefox",
+  "firefox-private",
+  "brave",
+  "opera",
+  "operas",
+  "opera-http",
+  "opera-https",
+  "vivaldi",
+  "duckduckgo",
+  "search-ms",
+  "search",
+  "shell",
+  "explorer",
+  "res",
+  "its",
+  "mk",
+  "jar",
+  "view-source",
+  "chrome",
+  "chrome-extension",
+  "moz-extension",
+  "edge",
+  "read",
+  "http+unix",
+]);
+
+/** Scheme prefixes that belong to browsers or OS handlers. */
+const LAUNCHER_PREFIXES = ["x-safari-", "ms-", "opera", "googlechrome", "microsoft-", "firefox", "brave", "chrome-", "edge-"];
+
+/** True for a browser-launcher or OS-handler scheme. */
+export function isLauncherScheme(scheme: string): boolean {
+  const lower = scheme.toLowerCase();
+  if (BLOCKED_SCHEMES.has(lower) || LAUNCHER_SCHEMES.has(lower)) return true;
+  return LAUNCHER_PREFIXES.some((prefix) => lower.startsWith(prefix));
+}
+
 export type CallbackCheck = {
   clientId: string;
   webClientId: string;
@@ -41,6 +96,8 @@ export type CallbackCheck = {
   allowedHosts?: string[];
   /** OAUTH_ALLOW_ANY_HTTPS_REDIRECT: accept any https host. Off by default. */
   allowAnyHttps?: boolean;
+  /** Single-word app schemes to accept. Defaults to DEFAULT_ALLOWED_SCHEMES. */
+  allowedSchemes?: readonly string[];
 };
 
 export type CallbackKind = "loopback" | "custom-scheme" | "listed-host" | "any-https";
@@ -59,13 +116,29 @@ export function callbackKind(uri: string, check: Omit<CallbackCheck, "clientId" 
   const parsed = safeCallback(uri);
   if (!parsed) return undefined;
   const scheme = parsed.protocol.slice(0, -1).toLowerCase();
-  if (scheme !== "http" && scheme !== "https") return "custom-scheme";
+  if (scheme !== "http" && scheme !== "https") {
+    return customSchemeAllowed(parsed, scheme, check.allowedSchemes ?? DEFAULT_ALLOWED_SCHEMES) ? "custom-scheme" : undefined;
+  }
   if (isLoopbackCallbackHost(parsed.hostname)) return "loopback";
   if (scheme !== "https") return undefined;
   const host = parsed.hostname.toLowerCase();
   if (check.allowedHosts?.includes(host)) return "listed-host";
   if (check.allowAnyHttps === true) return "any-https";
   return undefined;
+}
+
+function customSchemeAllowed(parsed: URL, scheme: string, allowedSchemes: readonly string[]): boolean {
+  if (isLauncherScheme(scheme)) return false;
+  if (!scheme.includes(".") && !allowedSchemes.includes(scheme)) return false;
+  // microsoft-edge:https://evil/ style: another URL tucked into the path.
+  let path = parsed.pathname;
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    return false;
+  }
+  if (path.includes("://")) return false;
+  return true;
 }
 
 /** True when this client may be sent back to uri after sign-in, under the redirect policy. */
@@ -106,15 +179,26 @@ function isLoopbackIp(hostname: string): boolean {
   return host === "127.0.0.1" || host === "::1";
 }
 
-/** Address shown on the sign-in and consent pages so the return site is visible. */
+/** Full callback address shown on the sign-in and consent pages, so nothing about the return site is hidden. */
 export function callbackLabel(uri: string): string {
-  const parsed = new URL(uri);
-  const scheme = parsed.protocol.slice(0, -1).toLowerCase();
-  if (scheme === "http" || scheme === "https") {
-    return `${parsed.origin}${parsed.pathname}`;
+  return new URL(uri).toString();
+}
+
+/** OAUTH_ALLOWED_SCHEMES: comma-separated extra single-word app schemes. */
+export function parseAllowedSchemes(raw: string | undefined): string[] {
+  const extra = (raw ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase().replace(/:$/, ""))
+    .filter(Boolean);
+  for (const scheme of extra) {
+    if (!/^[a-z][a-z0-9+.-]*$/.test(scheme)) {
+      throw new Error("OAUTH_ALLOWED_SCHEMES has an entry that is not a URI scheme (letters, digits, +, - and . only)");
+    }
+    if (scheme === "http" || scheme === "https" || isLauncherScheme(scheme)) {
+      throw new Error("OAUTH_ALLOWED_SCHEMES lists http, https or a browser-launcher / OS-handler scheme, which cannot be allowed");
+    }
   }
-  const host = parsed.host ? `//${parsed.host}` : "";
-  return `${parsed.protocol}${host}${parsed.pathname}`;
+  return [...new Set([...DEFAULT_ALLOWED_SCHEMES, ...extra])];
 }
 
 /** The host (or scheme, for an app callback) a code is sent to. Shown on the consent page. */
