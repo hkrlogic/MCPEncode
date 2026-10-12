@@ -44,9 +44,41 @@ The image runs as the unprivileged `node` user, listens on `0.0.0.0:$PORT` (defa
 | `POSTGRES_CONNECT_TIMEOUT_SECONDS` | no | How long startup keeps retrying while Postgres is unreachable. Default 60; `0` tries once. See [Startup and the database](#startup-and-the-database). |
 | `POSTGRES_SSL` | for a remote database | `required` (verify TLS, preferred) or `disable` (trusted private network only). Not needed for `127.0.0.1`. |
 | `ALLOWED_HOSTS` | no | Extra hostnames (comma-separated) beyond the one in `PUBLIC_BASE_URL`, e.g. `www.` |
-| `OAUTH_REDIRECT_HOSTS` | no | Pin remote MCP client callbacks to these hostnames. |
+| `OAUTH_REDIRECT_HOSTS` | no | Remote `https` hostnames (comma-separated) an MCP client may use as its sign-in callback, e.g. `claude.ai`. Loopback and app-scheme callbacks need no entry. See [MCP client sign-in](#mcp-client-sign-in). |
+| `OAUTH_ALLOW_ANY_HTTPS_REDIRECT` | no | `true` accepts a callback on any `https` host. Default `false`. Only for a deploy where everyone who can sign in is trusted to judge the consent page. |
+| `OAUTH_LEGACY_CLIENT` | no | Default `true`: the old shared client id `mpos-mcp` still signs in with loopback and app-scheme callbacks (and listed hosts). Set `false` once every client has reconnected. |
+| `OAUTH_REFRESH_MAX_DAYS` | no | A sign-in's refresh tokens stop working this many days after sign-in, however often they are used. Default 30, 1–365. |
 
 The database role needs to own its database (it creates tables on migration). It does not need `CREATEDB`.
+
+## MCP client sign-in
+
+With built-in sign-in, each MCP client registers itself (`/id/register`) and gets its own client id, tied to the callbacks it registered. After the password, the person sees a consent page naming the client, the host the sign-in is sent to, and the library, and chooses **Allow** or **Deny**.
+
+Which callbacks a client may register:
+
+| Callback | Accepted | Typical clients |
+| --- | --- | --- |
+| `http://127.0.0.1:<port>/…`, `http://[::1]:<port>/…`, `http://localhost:<port>/…` | always | Claude Code, Claude Desktop via `mcp-remote`, MCP Inspector, VS Code, Cursor |
+| App scheme, e.g. `cursor://…`, `com.example.app:/…` | always | Cursor, native apps |
+| `https://<host>/…` | only if `<host>` is in `OAUTH_REDIRECT_HOSTS`, or `OAUTH_ALLOW_ANY_HTTPS_REDIRECT=true` | Claude custom connectors (`claude.ai`), Perplexity (`www.perplexity.ai`) |
+| `http://<remote host>/…` | never | |
+
+These are the native-app rules of RFC 8252: a loopback or app-scheme callback can only be received on the person's own machine. A remote `https` callback could belong to anyone, which is why it is opt-in per host. A loopback IP callback may come back on a different port than it registered (RFC 8252 §7.3); everything else must match exactly.
+
+**Upgrading from a release before client registration was stored:** every client used the fixed id `mpos-mcp` and any callback was accepted. After the upgrade:
+
+- Everyone signs in once more (refresh tokens used to live in memory, and the signing key is new).
+- Clients on loopback or app-scheme callbacks keep working with `mpos-mcp` while `OAUTH_LEGACY_CLIENT` is on (the default), now with the consent page. Reconnecting a client makes it register its own id.
+- A client on a remote `https` callback stops working until its host is in `OAUTH_REDIRECT_HOSTS`; then reconnect it.
+
+### Sign-in lifetime
+
+Access tokens last 15 minutes. Refresh tokens rotate on every use and are stored hashed in Postgres, so a restart or a redeploy keeps people signed in. A refresh token not used for 12 hours expires, and a sign-in ends `OAUTH_REFRESH_MAX_DAYS` (default 30) after it started. If a refresh token that was already used comes back, the whole sign-in is revoked: either the client or someone who copied the token holds it, and both must sign in again.
+
+Sign-out and an SA password reset sign that account out everywhere: other browser sessions, MCP access tokens and refresh tokens.
+
+The token signing key is stored in Postgres, encrypted with a key derived from `SESSION_SECRET`. Changing `SESSION_SECRET` creates a new signing key, so everyone signs in again.
 
 ## Startup and the database
 
