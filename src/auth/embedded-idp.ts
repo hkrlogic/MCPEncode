@@ -422,7 +422,9 @@ export async function createEmbeddedIdp(
       .setProtectedHeader({ alg: "RS256", kid })
       .setIssuer(issuer)
       .setAudience(input.resource || config.authAudience)
-      .setIssuedAt()
+      // Millisecond precision: sign-out compares iat with sessions_revoked_at
+      // (ms), so a sign-in in the same second as a sign-out still counts as after it.
+      .setIssuedAt(Date.now() / 1000)
       .setExpirationTime("15m")
       .sign(privateKey);
   }

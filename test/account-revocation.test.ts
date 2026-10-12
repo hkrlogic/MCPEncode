@@ -80,6 +80,20 @@ test("a session takes the account's current role, not the one in the cookie", as
   assert.equal(access?.permissions.includes("accounts.manage"), false);
 });
 
+test("a sign-in in the same second as a sign-out still counts as after it", async () => {
+  const { accounts, ada } = await twoSas();
+  const guard = createAccountGuard(accounts);
+  const config = { sessionSecret: SECRET } as AppConfig;
+  const before = await signSession({ sub: ada.id, clientId: "mpos-web", role: "sa", csrf: "c" }, SECRET);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await accounts.revokeSessions(ada.id);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const after = await signSession({ sub: ada.id, clientId: "mpos-web", role: "sa", csrf: "c" }, SECRET);
+  // Whole-second iat would put both in the same second; the guard must still tell them apart.
+  assert.equal(await sessionAccess(requestWithSession(before, guard), config), undefined);
+  assert.ok(await sessionAccess(requestWithSession(after, guard), config));
+});
+
 test("without a guard (external identity provider) the session is read as before", async () => {
   const config = { sessionSecret: SECRET } as AppConfig;
   const token = await signSession({ sub: "idp-user", clientId: "web", role: "readonly", csrf: "c" }, SECRET);

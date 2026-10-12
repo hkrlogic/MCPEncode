@@ -26,7 +26,8 @@ export async function signSession(
     csrf: session.csrf,
   })
     .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
+    // Fractional seconds, so a sign-in right after a sign-out is not mistaken for an earlier one.
+    .setIssuedAt(Date.now() / 1000)
     .setExpirationTime(`${ttlSeconds}s`)
     .sign(secretKey(secret));
 }
