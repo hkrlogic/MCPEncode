@@ -50,7 +50,7 @@ scripts/init-env.sh         # creates .env with fresh random secrets (incl. SETU
 docker compose up -d --build
 ```
 
-Open <http://127.0.0.1:3000/>. The first visit creates your account. Add a library, add an item, Publish.
+Open <http://127.0.0.1:3000/> and create the first account (it is the SA). The page asks for a setup code: `SETUP_TOKEN` from your `.env` (`scripts/init-env.sh` generated it), or, if `SETUP_TOKEN` is unset, the one-time code printed in the server log (`docker compose logs app`). Then add a library, add an item, Publish.
 
 To work on the code, run only Postgres in Docker and the app with Node: `docker compose up -d postgres`, `npm install`, `npm start` (see [docs/develop.md](docs/develop.md)).
 
@@ -64,7 +64,7 @@ Use the [`Dockerfile`](Dockerfile) on any container host, with a TLS reverse pro
 
 Open a library → **Connect** → copy the MCP link into your client (Cursor, Claude, LibreChat, …). Sign in when prompted, then **Allow** on the consent page, which names the app, where the sign-in is sent and the library. That connection sees one library only.
 
-Clients register themselves and get their own client id. Desktop clients (Cursor, Claude Code, Claude Desktop through `mcp-remote`, MCP Inspector, VS Code) return to a loopback or app-scheme address and work out of the box. A hosted client that returns to an `https://` site, such as Claude custom connectors on `claude.ai`, needs that hostname in `OAUTH_REDIRECT_HOSTS`. See [docs/deploy.md](docs/deploy.md#mcp-client-sign-in).
+Clients register themselves and get their own client id. Desktop clients (Cursor, Claude Code, Claude Desktop through `mcp-remote`, MCP Inspector, VS Code) return to a loopback address or a known app scheme (`cursor:`, `vscode:`, `vscode-insiders:`, `claude:`, or a reverse-DNS scheme such as `com.example.app:`) and work out of the box. Browser-launcher schemes (`microsoft-edge:`, `x-safari-https:`, `googlechromes:`, `firefox:`, …) are refused. A hosted client that returns to an `https://` site, such as Claude custom connectors on `claude.ai`, needs that hostname in `OAUTH_REDIRECT_HOSTS`. See [docs/deploy.md](docs/deploy.md#mcp-client-sign-in).
 
 > Use `127.0.0.1`, not `localhost` — they are different OAuth audiences.
 
@@ -119,12 +119,21 @@ Every item has a summary: the short text `list_items` and `search_shelf` return 
 - Sign-out and a password reset sign the account out everywhere: every session, access token and refresh token. Refresh tokens rotate, a reused one revokes its sign-in, and a sign-in lasts at most `OAUTH_REFRESH_MAX_DAYS` (30).
 - A Connect link reaches its own library only, for every role including SA. The audit log on a link shows that library only, to publishers and SA.
 - Creating the first account takes a setup code, so a stranger cannot claim a new instance. Sign-in misses back off per username and address instead of locking accounts.
-- MCP clients register their own client id and callbacks. By default only loopback and app-scheme callbacks are accepted; remote https hosts must be listed in `OAUTH_REDIRECT_HOSTS`. Every MCP sign-in ends on a consent page. Tokens can only be requested for this app's own libraries.
+- MCP clients register their own client id and callbacks. By default only loopback callbacks, reverse-DNS app schemes and a short list of known app schemes are accepted; browser-launcher schemes are refused, and remote https hosts must be listed in `OAUTH_REDIRECT_HOSTS`. Every MCP sign-in ends on a consent page that shows the full callback address; a client's self-chosen name is marked unverified. Registration and authorize are rate limited per address. Tokens can only be requested for this app's own libraries.
+- A non-loopback `http://` `PUBLIC_BASE_URL` is refused at startup unless `ALLOW_INSECURE_HTTP=true`.
 - Tokens are checked for signature, issuer, expiry and audience. Access tokens are never stored.
 - Reader keys are stored as SHA-256 hashes and can only read published items.
 - Item Markdown never executes raw HTML, and the Content-Security-Policy refuses inline script. Forms carry CSRF; sessions are httpOnly cookies (`__Host-` on HTTPS); sign-out is a POST.
 
 Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+
+### Known limitations (v0.1)
+
+- **Single instance only.** Pending sign-ins, consent answers, authorization codes, and the sign-in and rate-limit counters live in the app's memory. Run one app process; a second replica would not see the first one's pending sign-ins.
+- **`style-src` still allows `'unsafe-inline'`.** Scripts are strict (`script-src 'self'`); inline styles cannot run code but are still permitted.
+- **Connect tokens are stored in plain text** in Postgres, so the publisher can show the link again. Treat database backups as secret. Reader keys are hashed.
+- **Review Lock hides edited items.** Editing a published item (by a person or an agent) moves it back to Pending, and readers stop seeing it until someone publishes it again. MCP item output does not yet include the status, so an agent cannot tell. A fix is planned for v0.2.
+- **Pending sign-ins are lost on restart.** Someone in the middle of a sign-in simply starts again; issued tokens survive.
 
 ---
 

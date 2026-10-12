@@ -16,7 +16,7 @@ npm install
 npm start
 ```
 
-Open `http://127.0.0.1:3000/` and sign in. The first visit creates the account: enter the setup code (`SETUP_TOKEN` in `.env`; `scripts/init-env.sh` wrote one), a username and a password of at least 12 characters. For a throwaway local database you can set `ALLOW_OPEN_SETUP=true` instead; never on an address others can reach. Postgres listens on `127.0.0.1:5432`. Connection settings are in `.env` (see `.env.example`).
+Open `http://127.0.0.1:3000/` and sign in. Create the first account: enter the setup code (`SETUP_TOKEN` in `.env`; `scripts/init-env.sh` wrote one), a username and a password of at least 12 characters. For a throwaway local database you can set `ALLOW_OPEN_SETUP=true` instead; never on an address others can reach. Postgres listens on `127.0.0.1:5432`. Connection settings are in `.env` (see `.env.example`).
 
 For a deploy (Docker image, environment variables, `/healthz`, TLS), see [deploy.md](deploy.md).
 
