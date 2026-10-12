@@ -5,22 +5,36 @@ import { allRows, runSql } from "./query-helpers.ts";
 
 export async function writeAudit(
   db: Database,
-  event: { actorSub: string; tool: string; success: boolean; detail?: string },
+  event: {
+    actorSub: string;
+    tool: string;
+    success: boolean;
+    detail?: string;
+    /** The library the event happened in. list_audit on a Connect link shows only that library's events. */
+    libraryId?: string | null;
+  },
 ): Promise<void> {
   await runSql(
     db,
-    `INSERT INTO audit_events (id, actor_sub, tool, success, detail, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO audit_events (id, actor_sub, tool, success, detail, created_at, library_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
     crypto.randomUUID(),
     event.actorSub,
     event.tool,
     event.success,
     event.detail ?? "",
     Date.now(),
+    event.libraryId ?? null,
   );
 }
 
-export async function listAudit(db: Database, limit = 50): Promise<AuditRow[]> {
+/**
+ * Recent tool-call events for one library. There is no unscoped variant: the
+ * log names items and people from every library, so a caller only ever sees
+ * the library it is connected to.
+ */
+export async function listAudit(db: Database, libraryId: string, limit = 50): Promise<AuditRow[]> {
+  if (!libraryId) throw new Error("library_id is required");
   const capped = Math.min(Math.max(limit, 1), 100);
   const rows = await allRows<{
     id: string;
@@ -33,8 +47,10 @@ export async function listAudit(db: Database, limit = 50): Promise<AuditRow[]> {
     db,
     `SELECT id, actor_sub, tool, success, detail, created_at
      FROM audit_events
+     WHERE library_id = ?
      ORDER BY created_at DESC
      LIMIT ?`,
+    libraryId,
     capped,
   );
   return rows.map((row) => ({

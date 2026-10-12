@@ -357,7 +357,13 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       res.status(404).send(errorPage("Item not found."));
       return;
     }
-    await writeAudit(db, { actorSub: access.sub, tool: "ui.update", success: true, detail: row.id });
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.update",
+      success: true,
+      libraryId: row.library_id,
+      detail: row.id,
+    });
     const notice =
       library.writeMode === "direct"
         ? "saved_live"
@@ -417,6 +423,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       actorSub: access.sub,
       tool: `ui.${action}`,
       success: true,
+      libraryId: row.library_id,
       detail: row.id,
     });
     const notice =
@@ -469,6 +476,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       actorSub: access.sub,
       tool: "ui.cancel_publish",
       success: true,
+      libraryId: result.item.library_id,
       detail: `${result.item.id}:${result.kind}`,
     });
     const notice = result.kind === "archived" ? "canceled_new" : "canceled";
@@ -532,6 +540,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       actorSub: access.sub,
       tool: "ui.revert_to_published",
       success: true,
+      libraryId: result.item.library_id,
       detail: `${result.item.id} kind=${result.kind} published_at=${publishedAt}`,
     });
     const notice = result.kind === "previous" ? "reverted_previous" : "reverted";
@@ -560,6 +569,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       actorSub: access.sub,
       tool: "ui.delete",
       success: removed,
+      libraryId,
       detail: req.params.id,
     });
     res.redirect(libraryId ? `/libraries/${libraryId}` : "/");

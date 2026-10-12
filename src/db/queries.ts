@@ -27,6 +27,7 @@ export {
 export {
   listItems,
   getItem,
+  getLibraryItem,
   getItemByEntityKey,
   createItem,
   addDraftItem,
