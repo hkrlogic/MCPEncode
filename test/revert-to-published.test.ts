@@ -539,7 +539,7 @@ test("HTTP revert-published: success, CSRF, and reader denied", async () => {
       assert.equal(row?.status, "draft");
       assert.equal(row?.entity_key, "ring-1");
 
-      const events = await listAudit(db, 20);
+      const events = await listAudit(db, item.library_id, 20);
       assert.ok(
         events.some(
           (event) =>

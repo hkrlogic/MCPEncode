@@ -182,6 +182,11 @@ export async function getItemByEntityKey(
   return row ? toItem(row) : undefined;
 }
 
+/**
+ * Read one item by id. When a library is named the item must belong to it,
+ * whatever the caller's role: an id from another library is "not found".
+ * The reader path always names one.
+ */
 export async function getItem(
   db: Database,
   id: string,
@@ -190,15 +195,30 @@ export async function getItem(
   if (scope.publishedOnly && !scope.libraryId) {
     throw new Error("library_id is required");
   }
-  const row = scope.publishedOnly
+  const statusClause = scope.publishedOnly ? " AND status = 'published'" : "";
+  const row = scope.libraryId
     ? await getRow<SqlItem>(
         db,
-        `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ? AND library_id = ? AND status = 'published'`,
+        `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ? AND library_id = ?${statusClause}`,
         id,
         scope.libraryId,
       )
     : await getRow<SqlItem>(db, `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`, id);
   return row ? toItem(row) : undefined;
+}
+
+/**
+ * Read one item inside one library. MCP tools use this only: a Connect link
+ * is scoped to its library, so an id from another library is never returned.
+ */
+export async function getLibraryItem(
+  db: Database,
+  libraryId: string,
+  id: string,
+  scope: ReadScope,
+): Promise<ItemRow | undefined> {
+  if (!libraryId) throw new Error("library_id is required");
+  return getItem(db, id, { publishedOnly: scope.publishedOnly, libraryId });
 }
 
 type ItemSave = ItemInput & {
@@ -317,8 +337,10 @@ export async function updateItem(
   id: string,
   input: ItemSave,
   actorSub: string,
+  /** When set, the item must belong to this library or nothing is changed. */
+  scope: { libraryId?: string } = {},
 ): Promise<ItemRow | undefined> {
-  const existing = await getItem(db, id, { publishedOnly: false });
+  const existing = await getItem(db, id, { publishedOnly: false, libraryId: scope.libraryId });
   if (!existing) return undefined;
   const library = await getLibrary(db, existing.library_id);
   const writeMode = library?.writeMode ?? "reviewed";
@@ -355,7 +377,7 @@ export async function updateItem(
          SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
              status = 'published', published_snapshot = ?, previous_published_snapshot = ?,
              updated_by = ?, updated_at = ?
-         WHERE id = ?`,
+         WHERE id = ? AND library_id = ?`,
         input.name,
         keyed.key,
         JSON.stringify(input.labels),
@@ -367,6 +389,7 @@ export async function updateItem(
         actorSub,
         now,
         id,
+        existing.library_id,
       );
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -397,7 +420,7 @@ export async function updateItem(
        SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
            status = CASE WHEN status = 'published' THEN 'draft' ELSE status END,
            updated_by = ?, updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ? AND library_id = ?`,
       input.name,
       keyed.key,
       JSON.stringify(input.labels),
@@ -407,6 +430,7 @@ export async function updateItem(
       actorSub,
       now,
       id,
+      existing.library_id,
     );
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -757,12 +781,17 @@ export async function revertToPublished(
   });
 }
 
-export async function deleteItem(db: Database, id: string): Promise<boolean> {
+export async function deleteItem(
+  db: Database,
+  id: string,
+  /** When set, the item must belong to this library or nothing is deleted. */
+  scope: { libraryId?: string } = {},
+): Promise<boolean> {
   return db.transaction(async (tx) => {
-    const existing = await getItem(tx, id, { publishedOnly: false });
+    const existing = await getItem(tx, id, { publishedOnly: false, libraryId: scope.libraryId });
     if (!existing) return false;
     await runSql(tx, "DELETE FROM publish_audit WHERE item_id = ?", id);
-    await runSql(tx, "DELETE FROM items WHERE id = ?", id);
+    await runSql(tx, "DELETE FROM items WHERE id = ? AND library_id = ?", id, existing.library_id);
     return true;
   });
 }

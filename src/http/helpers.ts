@@ -78,7 +78,7 @@ export async function sessionAccess(
   // not when the cookie expires. The role comes from the account, not the cookie.
   const guard = req.app?.locals?.accountGuard as AccountGuard | undefined;
   if (guard) {
-    const check = await guard(session.sub);
+    const check = await guard(session.sub, session.issuedAt);
     if (!check.allowed) return undefined;
     role = check.role;
   }

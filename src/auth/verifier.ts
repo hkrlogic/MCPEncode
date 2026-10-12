@@ -119,7 +119,8 @@ export function createTokenVerifier(options: VerifierOptions): OAuthTokenVerifie
         clientId,
         scopes: [...access.permissions],
         expiresAt: payload.exp,
-        extra: { sub, role },
+        // iat lets the account guard refuse a token issued before a sign-out everywhere.
+        extra: { sub, role, iat: typeof payload.iat === "number" ? payload.iat : undefined },
       };
     },
   };

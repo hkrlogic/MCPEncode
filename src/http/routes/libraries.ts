@@ -336,6 +336,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.create_library",
       success: true,
+      libraryId: row.id,
       detail: `${row.id}:${row.writeMode}`,
     });
     res.redirect(`/libraries/${row.id}`);
@@ -366,6 +367,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.set_write_mode",
       success: Boolean(row),
+      libraryId: ctxLib.library.id,
       detail: `${ctxLib.library.id}:${writeMode}`,
     });
     res.redirect(`/libraries/${ctxLib.library.id}?mode=${writeMode}`);
@@ -401,6 +403,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.claim_library",
       success: true,
+      libraryId: library.id,
       detail: library.id,
     });
     res.redirect(`/libraries/${library.id}`);
@@ -549,6 +552,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.publish_bulk",
       success: published.length > 0,
+      libraryId: ctxLib.library.id,
       detail: `${ctxLib.library.id}:${published.length}`,
     });
     res.redirect(`/libraries/${ctxLib.library.id}?published=${published.length}`);
@@ -577,6 +581,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.cancel_publish",
       success: canceled > 0,
+      libraryId: ctxLib.library.id,
       detail: `${ctxLib.library.id}:restored=${result.restored.length}:archived=${result.archived.length}`,
     });
     const params = new URLSearchParams({ tab: "pending" });
@@ -609,6 +614,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.set_library_shelf",
       success: moved.ok,
+      libraryId: ctxLib.library.id,
       detail: `${ctxLib.library.id}:${shelfId ?? "none"}`,
     });
     if (!moved.ok) {
@@ -648,6 +654,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         actorSub: access.sub,
         tool: "ui.grant_access",
         success: true,
+        libraryId: ctxLib.library.id,
         detail: `${ctxLib.library.id}:${subject}:${role}`,
       });
       res.redirect(`/libraries/${ctxLib.library.id}?tab=access`);
@@ -697,6 +704,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         actorSub: access.sub,
         tool: "ui.revoke_access",
         success: true,
+        libraryId: ctxLib.library.id,
         detail: `${ctxLib.library.id}:${subject}`,
       });
       res.redirect(`/libraries/${ctxLib.library.id}?tab=access`);
@@ -744,6 +752,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         actorSub: access.sub,
         tool: "ui.rotate_connect",
         success: Boolean(updated),
+        libraryId: ctxLib.library.id,
         detail: ctxLib.library.id,
       });
       res.redirect(`/libraries/${ctxLib.library.id}?connect=rotated`);
@@ -793,6 +802,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.reader_key_issue",
       success: true,
+      libraryId: ctxLib.library.id,
       detail: ctxLib.library.id,
     });
     const revealId = stashReaderKeyReveal({
@@ -831,6 +841,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.reader_key_remove",
       success: true,
+      libraryId: ctxLib.library.id,
       detail: ctxLib.library.id,
     });
     res.redirect(`/libraries/${ctxLib.library.id}?reader-key=removed`);
@@ -856,6 +867,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.rename_library",
       success: result.ok,
+      libraryId: ctxLib.library.id,
       detail: ctxLib.library.id,
     });
     if (!result.ok) {
@@ -890,6 +902,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.copy_library_template",
       success: result.ok,
+      libraryId: ctxLib.library.id,
       detail: result.ok ? `${ctxLib.library.id}->${result.library.id}` : ctxLib.library.id,
     });
     if (!result.ok) {
@@ -917,6 +930,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         actorSub: access.sub,
         tool: "ui.delete_library",
         success: removed,
+        libraryId: ctxLib.library.id,
         detail: ctxLib.library.id,
       });
       res.redirect("/");
@@ -928,6 +942,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         actorSub: access.sub,
         tool: "ui.delete_library",
         success: false,
+        libraryId: ctxLib.library.id,
         detail: ctxLib.library.id,
       });
       const shell = await publisherShell(db, access);
@@ -1004,6 +1019,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.approve_table",
       success: result.ok,
+      libraryId: ctxLib.library.id,
       detail: ctxLib.library.id,
     });
     res.redirect(`/libraries/${ctxLib.library.id}?table=${flag}`);
@@ -1029,6 +1045,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.reject_table",
       success: removed,
+      libraryId: ctxLib.library.id,
       detail: ctxLib.library.id,
     });
     res.redirect(`/libraries/${ctxLib.library.id}?table=${removed ? "rejected" : "missing"}`);
@@ -1063,6 +1080,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.approve_field",
       success: result.ok,
+      libraryId: ctxLib.library.id,
       detail: ctxLib.library.id,
     });
     res.redirect(`/libraries/${ctxLib.library.id}?field=${flag}`);
@@ -1088,6 +1106,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       actorSub: access.sub,
       tool: "ui.reject_field",
       success: removed,
+      libraryId: ctxLib.library.id,
       detail: ctxLib.library.id,
     });
     res.redirect(`/libraries/${ctxLib.library.id}?field=${removed ? "rejected" : "missing"}`);
@@ -1137,7 +1156,13 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       );
       return;
     }
-    await writeAudit(db, { actorSub: access.sub, tool: "ui.create", success: true, detail: result.item.id });
+    await writeAudit(db, {
+      actorSub: access.sub,
+      tool: "ui.create",
+      success: true,
+      libraryId: ctxLib.library.id,
+      detail: result.item.id,
+    });
     const notice = result.item.status === "published" ? "created_live" : "created";
     res.redirect(`/items/${result.item.id}?notice=${notice}`);
   });

@@ -33,6 +33,7 @@ Out of scope: running with the example or placeholder secrets, exposing the buil
 - The default bind is `127.0.0.1`. Put MCPEncode behind a TLS-terminating reverse proxy before exposing it, and set `PUBLIC_BASE_URL` to the `https://` origin.
 - Responses carry a Content-Security-Policy (no framing, no third-party loads), `nosniff`, and HSTS on HTTPS. Session cookies are `Secure` on an HTTPS address. Password hashes use scrypt at 64 MiB per hash and older hashes are upgraded at sign-in.
 - On a public address, the first account needs a setup code. **Every public deploy should set `SETUP_TOKEN`** (16+ characters) before it is reachable; otherwise a one-time code is printed to the server log at first start. See [docs/deploy.md](docs/deploy.md).
-- If you only connect known clients, set `OAUTH_REDIRECT_HOSTS` to their hostnames (for example `claude.ai`).
+- MCP clients register their own client id. Only loopback and app-scheme callbacks are accepted by default; add hosted clients' hostnames to `OAUTH_REDIRECT_HOSTS` (for example `claude.ai`) rather than turning on `OAUTH_ALLOW_ANY_HTTPS_REDIRECT`. Every MCP sign-in shows a consent page with the client, callback host and library. Once every client has reconnected, set `OAUTH_LEGACY_CLIENT=false` to retire the shared `mpos-mcp` id.
+- Refresh tokens rotate, are stored hashed, and a reused one revokes its sign-in. Sign-out and a password reset sign the account out everywhere. Keep `OAUTH_REFRESH_MAX_DAYS` short for sensitive libraries.
 - Remote Postgres must use `POSTGRES_SSL=required`.
 - Treat each library's Connect link and Reader key as secrets. Rotate them from the publisher UI if they leak.

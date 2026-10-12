@@ -21,7 +21,8 @@ export type Role = "readonly" | "sa";
 export type LibraryRole = "reader" | "publisher";
 
 export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
-  readonly: ["records.read", "audit.read"],
+  // The audit log names people and items. Readers do not get it.
+  readonly: ["records.read"],
   sa: [
     "records.read",
     "records.write",
@@ -35,7 +36,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
 
 /** Publishers archive and run a library; only SA hard-deletes items. */
 export const LIBRARY_ROLE_PERMISSIONS: Record<LibraryRole, readonly Permission[]> = {
-  reader: ["records.read", "audit.read"],
+  reader: ["records.read"],
   publisher: ["records.read", "audit.read", "records.write", "libraries.delete"],
 };
 

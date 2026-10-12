@@ -3,6 +3,8 @@ import { createEmbeddedIdp } from "./auth/embedded-idp.ts";
 import { legacySqliteFilePresent, loadConfig } from "./config.ts";
 import { accountStore } from "./db/accounts.ts";
 import { openDatabase } from "./db/client.ts";
+import { postgresIdpStore } from "./db/idp-store.ts";
+import { getLibrary } from "./db/queries.ts";
 import { createApp } from "./http/app.ts";
 import { loadAuthServer } from "./http/discovery.ts";
 
@@ -11,7 +13,12 @@ async function main(): Promise<void> {
   const db = await openDatabase(config.database);
 
   const accounts = config.authMode === "embedded" ? accountStore(db) : undefined;
-  const embedded = accounts ? await createEmbeddedIdp(config, accounts) : undefined;
+  const embedded = accounts
+    ? await createEmbeddedIdp(config, accounts, {
+        store: postgresIdpStore(db, config.sessionSecret),
+        libraryName: async (id) => (await getLibrary(db, id))?.name,
+      })
+    : undefined;
   const authServer = embedded ? embedded.endpoints : await loadAuthServer(config.authIssuer);
 
   const app = createApp({
@@ -20,6 +27,7 @@ async function main(): Promise<void> {
     authServer,
     verifierKey: embedded?.publicKey,
     mountAuthServer: embedded?.mount,
+    revokeAccount: embedded?.revokeAccount,
     accounts,
   });
 

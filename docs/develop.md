@@ -24,7 +24,7 @@ An SA can open **Accounts** to create more people. Grant Access on a library by 
 
 ### Cursor
 
-Copy `.cursor/mcp.example.json` to `.cursor/mcp.json` (git-ignored), then open a library → **Connect** → put that URL in it. With built-in sign-in, the client id is `mpos-mcp`. In **Settings → Tools & MCP**, connect the library. Cursor will 401, discover the issuer, and open a browser login.
+Copy `.cursor/mcp.example.json` to `.cursor/mcp.json` (git-ignored), then open a library → **Connect** → put that URL in it. With built-in sign-in, Cursor registers itself and gets its own client id. In **Settings → Tools & MCP**, connect the library. Cursor will 401, discover the issuer, register, and open a browser login. After the password, **Allow** on the consent page.
 
 Use `127.0.0.1` consistently. `localhost` is a different host. The token audience is that library URL.
 
@@ -55,7 +55,7 @@ Each connection is one library.
 | `propose_field` | `records.write` | one optional field to append; human Approves (cap 12) |
 | `create_item` / `update_item` | `records.write` | Review Lock → draft; Review Unlock → published. General libraries take no `summary`: it is built from the body (text before the first table). Other libraries take a required one-line `summary`. |
 | `delete_item` | `records.delete` | by id |
-| `list_audit` | `audit.read` | who invoked which tool |
+| `list_audit` | `audit.read` (publishers and SA) | who invoked which tool in this library |
 
 No publish, approve, write-mode, or revert tools. Those stay in the publisher UI.
 
@@ -65,9 +65,13 @@ No publish, approve, write-mode, or revert tools. Those stay in the publisher UI
 - Access tokens must pass signature, issuer, expiry, and audience.
 - Library access is an allow-list of subjects with reader or publisher role.
 - A **Reader key** is optional, one per library, and Reader only. Publishers create it under Reader key; the plaintext is shown once and Postgres stores a SHA-256 hash. It lists and opens published items. It cannot write, publish, or read the audit log, and it cannot sign in to the publisher. Rotating Connect does not change it. In LibreChat, put the Connect link on the server, send `Authorization: Bearer <key>`, and set `requiresOAuth: false`.
-- **Disable and demotion take effect at once.** With built-in sign-in, every session, MCP request and token refresh looks the account up again. A disabled account gets nothing from an existing session, access token or refresh token, and a demoted SA is no longer SA even if its token says so. With `AUTH_MODE=oidc` the identity provider owns this.
+- **One link, one library.** Every MCP item tool (`open_item`, `update_item`, `delete_item`, lookups) matches the item id *and* the link's library, for publishers and SA alike. An id from another library is "not found". `list_audit` shows only the link's library and is not offered to readers or Reader keys.
+- **Disable and demotion take effect at once.** With built-in sign-in, every session, MCP request and token refresh looks the account up again. A disabled account gets nothing from an existing session, access token or refresh token. A demoted SA is no longer SA even if its token says so: the MCP tool list (write, delete, audit, shelf scope) is built only from the re-checked role. With `AUTH_MODE=oidc` the identity provider owns this.
+- **Sign-out and password reset sign the account out everywhere.** Every refresh chain is deleted, and every session cookie and access token issued earlier is refused. MCP clients then sign in again.
+- **Refresh tokens rotate.** They are stored as SHA-256 hashes in `oauth_refresh_tokens`. A rotated token presented again revokes that whole sign-in (reuse detection). A token unused for 12 hours expires, and a sign-in ends `OAUTH_REFRESH_MAX_DAYS` (default 30) after it started.
+- **The signing key is kept in Postgres** (`oauth_signing_keys`), encrypted with a key derived from `SESSION_SECRET`, with a thumbprint `kid`. A restart keeps tokens valid. Changing `SESSION_SECRET` makes a new key, so everyone signs in again.
 - **First account on a public address needs a setup code.** If `PUBLIC_BASE_URL` or `BIND_HOST` is not loopback, the create-account page asks for `SETUP_TOKEN` (or a random code printed once to the server log). Wrong codes count toward the sign-in wait. Local-only instances need no code.
-- **Sign-in shows where you will be sent.** MCP clients may use any callback, so the sign-in page names the destination before the password is typed. Set `OAUTH_REDIRECT_HOSTS` to pin remote web callbacks to known hostnames. Tokens can only be requested for this app's login or one of its library links.
+- **MCP clients register, and get a consent page.** `/id/register` stores a random client id with its callbacks (`oauth_clients`). Authorize and token require one of those callbacks exactly (a loopback IP callback may change port, RFC 8252 §7.3), and the token endpoint checks `client_id`. By default only loopback and app-scheme callbacks register; a remote https host must be in `OAUTH_REDIRECT_HOSTS` (or `OAUTH_ALLOW_ANY_HTTPS_REDIRECT=true`). After the password, the consent page names the client, the callback host and the library; Allow/Deny posts back with a single-use id bound to a cookie. The publisher's own sign-in skips it. The old shared id `mpos-mcp` still works for loopback and app-scheme callbacks while `OAUTH_LEGACY_CLIENT` is on. Tokens can only be requested for this app's login or one of its library links.
 - The access token is never written to Postgres — only `sub` as actor fields.
 - Tool results label store content as **data**, not instructions.
 - Markdown preview does not execute raw HTML in item bodies.

@@ -237,9 +237,7 @@ export async function lookupItems(
   if (tokens.length === 0) return { kind: "none" };
   const phrase = searchPhrase(tokens);
   const shortTokens = tokens.filter((token) => token.length < SEARCH_MIN_TOKEN);
-  const openScope = scope.publishedOnly
-    ? { publishedOnly: true as const, libraryId: library.id }
-    : { publishedOnly: false as const };
+  const openScope = { publishedOnly: scope.publishedOnly, libraryId: library.id };
 
   const nameHits = await findNameSummaryHits(db, library.id, scope, phrase, shortTokens);
   const rankedNames = rankHits(nameHits, tokens);

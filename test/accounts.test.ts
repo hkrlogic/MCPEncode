@@ -3,6 +3,7 @@ import express from "express";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
+import { WEB_OAUTH } from "./oauth-flow.ts";
 import { memoryAccountStore, type Account } from "../src/auth/accounts.ts";
 import { createEmbeddedIdp } from "../src/auth/embedded-idp.ts";
 import { hashPassword, needsRehash, verifyPassword } from "../src/auth/passwords.ts";
@@ -52,13 +53,7 @@ test("the first visit creates an account and later visits sign in", async () => 
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
   const base = `http://127.0.0.1:${port}`;
-  const params = new URLSearchParams({
-    client_id: "mpos-mcp",
-    redirect_uri: "https://brand-new-client.example/oauth/callback",
-    response_type: "code",
-    code_challenge: "a".repeat(43),
-    code_challenge_method: "S256",
-  });
+  const params = new URLSearchParams(WEB_OAUTH);
   try {
     const page = await fetch(`${base}/id/authorize?${params}`);
     const html = await page.text();

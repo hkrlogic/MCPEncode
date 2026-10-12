@@ -8,7 +8,7 @@
 
 Your agents need facts they can rely on: the current policy, the real recovery steps, the approved vendor list. Most "AI knowledge" is a pile of documents where nobody can tell an approved procedure from an old draft, and agents fill the gaps by guessing.
 
-MCPEncode keeps that knowledge in **libraries** with a shape you define. Agents can look things up and draft changes. **Only a person can Publish.** Agents only ever read what was published, and they cite an item or say it isn't there.
+MCPEncode keeps that knowledge in **libraries** with a shape you define. Agents can look things up and draft changes. **By default (Review Lock on), only a person can Publish.** Readers and the kiosk only ever read what was published, and they cite an item or say it isn't there.
 
 ---
 
@@ -17,7 +17,7 @@ MCPEncode keeps that knowledge in **libraries** with a shape you define. Agents 
 1. **Add a library** — a policy, a procedure, or a table you design (e.g. CIS controls, DR scenarios, a vendor register).
 2. **Connect an agent** with that library's MCP link. The library's fields become the tool's parameters, so the agent can't invent columns.
 3. **The agent drafts** — from an interview, a scan, or a sync. Drafts wait in **Pending**.
-4. **A person Publishes.** Now readers and agents see it. Every change is in the audit log, and Revert brings back the last published copy.
+4. **A person Publishes** (Review Lock, the default; a Review Unlock library publishes agent writes directly). Now readers and agents see it. Every change is in the audit log, and Revert brings back the last published copy.
 5. **Put libraries on a shelf** to search across them; the agent opens the item from the library that owns it before citing it.
 
 <p align="center">
@@ -62,7 +62,9 @@ Use the [`Dockerfile`](Dockerfile) on any container host, with a TLS reverse pro
 
 ### Connect an MCP client
 
-Open a library → **Connect** → copy the MCP link into your client (Cursor, Claude, LibreChat, …). Sign in when prompted. That connection sees one library only.
+Open a library → **Connect** → copy the MCP link into your client (Cursor, Claude, LibreChat, …). Sign in when prompted, then **Allow** on the consent page, which names the app, where the sign-in is sent and the library. That connection sees one library only.
+
+Clients register themselves and get their own client id. Desktop clients (Cursor, Claude Code, Claude Desktop through `mcp-remote`, MCP Inspector, VS Code) return to a loopback or app-scheme address and work out of the box. A hosted client that returns to an `https://` site, such as Claude custom connectors on `claude.ai`, needs that hostname in `OAUTH_REDIRECT_HOSTS`. See [docs/deploy.md](docs/deploy.md#mcp-client-sign-in).
 
 > Use `127.0.0.1`, not `localhost` — they are different OAuth audiences.
 
@@ -80,7 +82,7 @@ For a shared agent that only reads, create a **Reader key** on the library and s
 | `create_item` / `update_item` | Save a draft (Review Lock) or publish directly (Review Unlock) |
 | `delete_item` | Remove an item |
 | `create_library` / `propose_table` / `propose_field` | Design a library; a person approves the schema |
-| `list_audit` | Who called which tool |
+| `list_audit` | Who called which tool in this library (publishers and SA) |
 | `whoami` | Current identity and role |
 
 There is **no publish, approve or revert tool.** Those stay with people in the publisher UI.
@@ -113,9 +115,11 @@ Every item has a summary: the short text `list_items` and `search_shelf` return 
 
 - Secrets (`SESSION_SECRET`, `POSTGRES_PASSWORD`, `SETUP_TOKEN`) are generated per install by `scripts/init-env.sh`; the app refuses to start with a placeholder `SESSION_SECRET`.
 - Default bind is `127.0.0.1`. The built-in sign-in is meant for local and small-team use — **put MCPEncode behind TLS and set real secrets before exposing it.**
-- Disabling or demoting an account takes effect immediately: sessions, tokens and refreshes are re-checked on every request.
+- Disabling or demoting an account takes effect immediately: sessions, tokens and refreshes are re-checked on every request, and an MCP connection's tools come from the re-checked role, not the token.
+- Sign-out and a password reset sign the account out everywhere: every session, access token and refresh token. Refresh tokens rotate, a reused one revokes its sign-in, and a sign-in lasts at most `OAUTH_REFRESH_MAX_DAYS` (30).
+- A Connect link reaches its own library only, for every role including SA. The audit log on a link shows that library only, to publishers and SA.
 - On a public address, creating the first account takes a setup code, so a stranger cannot claim a new instance.
-- The sign-in page shows where you will be sent. Tokens can only be requested for this app's own libraries, and `OAUTH_REDIRECT_HOSTS` can pin callbacks to known hostnames.
+- MCP clients register their own client id and callbacks. By default only loopback and app-scheme callbacks are accepted; remote https hosts must be listed in `OAUTH_REDIRECT_HOSTS`. Every MCP sign-in ends on a consent page. Tokens can only be requested for this app's own libraries.
 - Tokens are checked for signature, issuer, expiry and audience. Access tokens are never stored.
 - Reader keys are stored as SHA-256 hashes and can only read published items.
 - Item Markdown never executes raw HTML. Forms carry CSRF; sessions are httpOnly cookies.

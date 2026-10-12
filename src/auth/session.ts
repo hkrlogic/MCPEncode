@@ -6,6 +6,8 @@ export type Session = {
   clientId: string;
   role: Role;
   csrf: string;
+  /** JWT iat in seconds. Set on sessions read back from a cookie. */
+  issuedAt?: number;
 };
 
 function secretKey(secret: string): Uint8Array {
@@ -24,7 +26,8 @@ export async function signSession(
     csrf: session.csrf,
   })
     .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
+    // Fractional seconds, so a sign-in right after a sign-out is not mistaken for an earlier one.
+    .setIssuedAt(Date.now() / 1000)
     .setExpirationTime(`${ttlSeconds}s`)
     .sign(secretKey(secret));
 }
@@ -47,7 +50,13 @@ export async function readSession(token: string, secret: string): Promise<Sessio
     ) {
       return undefined;
     }
-    return { sub: payload.sub, clientId: payload.clientId, role, csrf: payload.csrf };
+    return {
+      sub: payload.sub,
+      clientId: payload.clientId,
+      role,
+      csrf: payload.csrf,
+      issuedAt: typeof payload.iat === "number" ? payload.iat : undefined,
+    };
   } catch {
     return undefined;
   }

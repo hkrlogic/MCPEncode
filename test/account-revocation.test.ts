@@ -19,6 +19,7 @@ import {
   resolveLibraryMcpAccess,
 } from "../src/mcp/server.ts";
 import { withTestDatabase } from "./db.ts";
+import { signInForCode } from "./oauth-flow.ts";
 
 const PASSWORD = "correct horse battery";
 const SECRET = "test-session-secret-32-bytes-minimum!!";
@@ -79,6 +80,20 @@ test("a session takes the account's current role, not the one in the cookie", as
   assert.equal(access?.permissions.includes("accounts.manage"), false);
 });
 
+test("a sign-in in the same second as a sign-out still counts as after it", async () => {
+  const { accounts, ada } = await twoSas();
+  const guard = createAccountGuard(accounts);
+  const config = { sessionSecret: SECRET } as AppConfig;
+  const before = await signSession({ sub: ada.id, clientId: "mpos-web", role: "sa", csrf: "c" }, SECRET);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await accounts.revokeSessions(ada.id);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const after = await signSession({ sub: ada.id, clientId: "mpos-web", role: "sa", csrf: "c" }, SECRET);
+  // Whole-second iat would put both in the same second; the guard must still tell them apart.
+  assert.equal(await sessionAccess(requestWithSession(before, guard), config), undefined);
+  assert.ok(await sessionAccess(requestWithSession(after, guard), config));
+});
+
 test("without a guard (external identity provider) the session is read as before", async () => {
   const config = { sessionSecret: SECRET } as AppConfig;
   const token = await signSession({ sub: "idp-user", clientId: "web", role: "readonly", csrf: "c" }, SECRET);
@@ -108,31 +123,27 @@ type Tokens = { refresh_token: string; scope: string };
 
 async function signIn(base: string, username: string): Promise<Tokens> {
   const verifier = "v".repeat(64);
-  const redirectUri = "https://client.example/callback";
-  const authorize = await fetch(`${base}/id/authorize`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
+  const redirectUri = "http://127.0.0.1:8765/callback";
+  const code = await signInForCode(
+    base,
+    {
       client_id: "mpos-mcp",
       redirect_uri: redirectUri,
       response_type: "code",
       code_challenge: await pkceChallenge(verifier),
       code_challenge_method: "S256",
       state: "s",
-      username,
-      password: PASSWORD,
-    }),
-    redirect: "manual",
-  });
-  assert.equal(authorize.status, 302);
-  const code = new URL(authorize.headers.get("location") ?? "").searchParams.get("code");
-  assert.ok(code);
+    },
+    username,
+    PASSWORD,
+  );
   const token = await fetch(`${base}/id/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code,
+      client_id: "mpos-mcp",
       redirect_uri: redirectUri,
       code_verifier: verifier,
     }),

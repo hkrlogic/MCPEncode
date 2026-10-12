@@ -3,6 +3,7 @@ import express from "express";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
+import { WEB_OAUTH } from "./oauth-flow.ts";
 import { memoryAccountStore } from "../src/auth/accounts.ts";
 import { createEmbeddedIdp } from "../src/auth/embedded-idp.ts";
 import { newSetupCode, setupCodeMatches } from "../src/auth/setup-code.ts";
@@ -55,13 +56,7 @@ async function startIdp(overrides: Partial<AppConfig>) {
   return { accounts, base: `http://127.0.0.1:${port}`, close: () => server.close() };
 }
 
-const oauth = {
-  client_id: "mpos-mcp",
-  redirect_uri: "https://client.example/callback",
-  response_type: "code",
-  code_challenge: "a".repeat(43),
-  code_challenge_method: "S256",
-};
+const oauth = WEB_OAUTH;
 
 function createAccount(base: string, extra: Record<string, string>) {
   return fetch(`${base}/id/authorize`, {

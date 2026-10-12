@@ -9,4 +9,9 @@ export type AppRouteContext = {
   db: Database;
   authServer: AuthServerEndpoints;
   verifier: ReturnType<typeof createTokenVerifier>;
+  /**
+   * Built-in sign-in: sign an account out everywhere (refresh chains, sessions,
+   * access tokens). Called on sign-out and password reset. Unset with AUTH_MODE=oidc.
+   */
+  revokeAccount?: (sub: string) => Promise<void>;
 };
