@@ -5,6 +5,7 @@ import { legacySqliteFilePresent, loadConfig, OAUTH_LIMITS } from "./config.ts";
 import { accountStore } from "./db/accounts.ts";
 import { openDatabase } from "./db/client.ts";
 import { postgresIdpStore, postgresKnownGoodStore } from "./db/idp-store.ts";
+import { writeAudit } from "./db/audit.ts";
 import { getLibrary } from "./db/queries.ts";
 import { createApp } from "./http/app.ts";
 import { loadAuthServer } from "./http/discovery.ts";
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
         store: postgresIdpStore(db, config.sessionSecret),
         knownGoodStore: postgresKnownGoodStore(db),
         libraryName: async (id) => (await getLibrary(db, id))?.name,
+        audit: (event) => writeAudit(db, event),
       })
     : undefined;
   const authServer = embedded ? embedded.endpoints : await loadAuthServer(config.authIssuer);
@@ -31,6 +33,7 @@ async function main(): Promise<void> {
     verifierKey: embedded?.publicKey,
     mountAuthServer: embedded?.mount,
     revokeAccount: embedded?.revokeAccount,
+    callbackHosts: embedded?.callbackHosts,
     accounts,
   });
 

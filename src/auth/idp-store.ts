@@ -47,6 +47,30 @@ export type SigningKeyRecord = {
   createdAt: number;
 };
 
+export type CallbackHostStatus = "pending" | "approved" | "denied";
+
+/** A remote https callback host a site admin approves or denies (migration 017). */
+export type CallbackHostRecord = {
+  host: string;
+  status: CallbackHostStatus;
+  firstSeen: number;
+  lastSeen: number;
+  /** client_name of a client that used this host. Unverified: the client chose it. */
+  sampleClientName: string;
+  decidedBy: string | null;
+  decidedAt: number | null;
+};
+
+/** The hostname of an http(s) callback, lowercased, or undefined. */
+export function uriHost(uri: string): string | undefined {
+  try {
+    const parsed = new URL(uri);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.hostname.toLowerCase() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export type IdpStore = {
   saveClient(client: OAuthClient): Promise<void>;
   findClient(clientId: string): Promise<OAuthClient | undefined>;
@@ -64,6 +88,21 @@ export type IdpStore = {
   revokeSubject(sub: string): Promise<void>;
   /** Remove rows whose chain started before `before` (past the maximum lifetime). */
   pruneRefresh(before: number): Promise<void>;
+  findHost(host: string): Promise<CallbackHostRecord | undefined>;
+  /** Hosts a site admin approved. */
+  approvedHosts(): Promise<string[]>;
+  listHosts(): Promise<CallbackHostRecord[]>;
+  /**
+   * Record that a client asked for this host. Existing rows only get last_seen
+   * updated. A new row is pending, unless `maxPending` pending rows exist (then "full").
+   */
+  notePendingHost(input: { host: string; clientName: string; now: number; maxPending: number }): Promise<
+    "created" | "seen" | "full"
+  >;
+  /** Set a host's status (creating the row if needed). */
+  decideHost(input: { host: string; status: CallbackHostStatus; by: string; now: number }): Promise<CallbackHostRecord>;
+  /** Delete the refresh tokens of every client with a callback on this host. Returns how many were removed. */
+  revokeHostTokens(host: string): Promise<number>;
   /** The active signing key, creating it with `create` when there is none. Safe to call from two processes. */
   signingKey(create: () => Promise<SigningKeyRecord>): Promise<SigningKeyRecord>;
 };
@@ -84,6 +123,7 @@ export function newClientId(): string {
 export function memoryIdpStore(): IdpStore {
   const clients = new Map<string, OAuthClient>();
   const tokens = new Map<string, RefreshRecord>();
+  const hosts = new Map<string, CallbackHostRecord>();
   let key: SigningKeyRecord | undefined;
   return {
     async saveClient(client) {
@@ -133,6 +173,64 @@ export function memoryIdpStore(): IdpStore {
     },
     async pruneRefresh(before) {
       for (const [hash, entry] of tokens) if (entry.chainStartedAt < before) tokens.delete(hash);
+    },
+    async findHost(host) {
+      const row = hosts.get(host);
+      return row ? { ...row } : undefined;
+    },
+    async approvedHosts() {
+      return [...hosts.values()].filter((row) => row.status === "approved").map((row) => row.host);
+    },
+    async listHosts() {
+      return [...hosts.values()].map((row) => ({ ...row })).sort((a, b) => b.lastSeen - a.lastSeen);
+    },
+    async notePendingHost({ host, clientName, now, maxPending }) {
+      const row = hosts.get(host);
+      if (row) {
+        row.lastSeen = now;
+        if (!row.sampleClientName && clientName) row.sampleClientName = clientName;
+        return "seen";
+      }
+      if ([...hosts.values()].filter((entry) => entry.status === "pending").length >= maxPending) return "full";
+      hosts.set(host, {
+        host,
+        status: "pending",
+        firstSeen: now,
+        lastSeen: now,
+        sampleClientName: clientName,
+        decidedBy: null,
+        decidedAt: null,
+      });
+      return "created";
+    },
+    async decideHost({ host, status, by, now }) {
+      const row = hosts.get(host) ?? {
+        host,
+        status,
+        firstSeen: now,
+        lastSeen: now,
+        sampleClientName: "",
+        decidedBy: null,
+        decidedAt: null,
+      };
+      Object.assign(row, { status, decidedBy: by, decidedAt: now });
+      hosts.set(host, row);
+      return { ...row };
+    },
+    async revokeHostTokens(host) {
+      const affected = new Set(
+        [...clients.values()]
+          .filter((client) => client.redirectUris.some((uri) => uriHost(uri) === host))
+          .map((client) => client.clientId),
+      );
+      let removed = 0;
+      for (const [hash, entry] of tokens) {
+        if (affected.has(entry.clientId)) {
+          tokens.delete(hash);
+          removed += 1;
+        }
+      }
+      return removed;
     },
     async signingKey(create) {
       key ??= await create();

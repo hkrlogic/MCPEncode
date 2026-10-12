@@ -132,10 +132,13 @@ const mcpBase = {
   code_challenge_method: "S256",
 };
 
-test("a remote https callback needs OAUTH_REDIRECT_HOSTS", async () => {
+test("a remote https callback waits for approval unless OAUTH_REDIRECT_HOSTS lists it", async () => {
   const strict = await startIdp();
   try {
-    assert.equal((await registerClient(strict.base, ["https://evil.example/cb"])).status, 400);
+    // Kept as pending: no code goes anywhere until a site admin approves the host.
+    assert.equal((await registerClient(strict.base, ["https://evil.example/cb"])).status, 201);
+    assert.equal((await strict.idp.callbackHosts.list()).hosts[0]?.status, "pending");
+    assert.equal((await registerClient(strict.base, ["https://203.0.113.9/cb"])).status, 400);
     const authorize = await fetch(
       `${strict.base}/id/authorize?${new URLSearchParams({ ...mcpBase, client_id: "mpos-mcp", redirect_uri: CALLBACK })}`,
     );
@@ -147,7 +150,7 @@ test("a remote https callback needs OAUTH_REDIRECT_HOSTS", async () => {
   const listed = await startIdp({ oauthRedirectHosts: ["claude.ai"] });
   try {
     assert.equal((await registerClient(listed.base, ["https://claude.ai/api/mcp/auth_callback"])).status, 201);
-    assert.equal((await registerClient(listed.base, ["https://evil.example/cb"])).status, 400);
+    assert.equal((await registerClient(listed.base, ["http://evil.example/cb"])).status, 400);
   } finally {
     await listed.close();
   }

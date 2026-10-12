@@ -156,6 +156,8 @@ test("fixed OAuth limits keep their previous defaults", () => {
     authorizePerMinute: 60,
     maxPendingClients: 1000,
     maxPendingClientsPerAddress: 20,
+    maxPendingCallbackHosts: 200,
+    pendingCallbackHostsPerHour: 10,
     pendingClientTtlMinutes: 60,
     refreshMaxDays: 30,
     passwordHashConcurrency: 2,

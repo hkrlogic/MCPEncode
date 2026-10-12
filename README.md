@@ -35,7 +35,7 @@ Open a Library → **Connect** → copy the Connect link.
 - **Cursor**: Settings → Tools & MCP → add a server with the link as `url` (example: [`.cursor/mcp.example.json`](.cursor/mcp.example.json)).
 - **Claude Code**: `claude mcp add --transport http my-library <Connect link>`
 - **Claude Desktop**: through `mcp-remote` (`npx mcp-remote <Connect link>` as the server command).
-- **claude.ai** (hosted): first add `OAUTH_REDIRECT_HOSTS=claude.ai` to `.env` and restart.
+- **Hosted web apps** (claude.ai and other web connectors): connect, then a Site admin approves the app's callback host once (on the sign-in page, or Settings → **Apps**). Or pre-approve it with `OAUTH_REDIRECT_HOSTS=claude.ai` in `.env`. See [Approving apps](docs/deploy.md#approving-apps).
 
 The client opens a browser: sign in, then **Allow** on the consent page. That connection sees this one Library only. Use `127.0.0.1`, not `localhost`, consistently.
 

@@ -16,7 +16,7 @@ export type AddressRateLimit = {
   ipv6Subnet: number;
   /** Writes the 429 body; the status is already set. */
   send: (res: Response) => void;
-  skip?: (req: Request) => boolean;
+  skip?: (req: Request) => boolean | Promise<boolean>;
 };
 
 export function addressRateLimit(options: AddressRateLimit): RequestHandler | undefined {
