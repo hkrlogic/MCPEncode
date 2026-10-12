@@ -76,6 +76,10 @@ export type AppConfig = {
   oauthAuthorizeRateLimit?: number;
   /** OAUTH_MAX_PENDING_CLIENTS: registrations not yet used for a sign-in, kept at once. Default 1000. */
   oauthMaxPendingClients?: number;
+  /** OAUTH_MAX_PENDING_CLIENTS_PER_ADDRESS: unused registrations from one address (IPv6 per /64). Default 20. */
+  oauthMaxPendingClientsPerAddress?: number;
+  /** OAUTH_PENDING_CLIENT_TTL_MINUTES: a registration never used for a sign-in is dropped after this. Default 60. */
+  oauthPendingClientTtlMinutes?: number;
   /** MCP_RATE_LIMIT_PER_MINUTE: library MCP requests per client address per minute. 0 turns it off. Default 300. */
   mcpRateLimitPerMinute?: number;
 };
@@ -467,6 +471,20 @@ export function loadConfig(): AppConfig {
     oauthRegisterRateLimit: parseWholeNumber("OAUTH_REGISTER_RATE_LIMIT", process.env.OAUTH_REGISTER_RATE_LIMIT, 20, 0, 100_000),
     oauthAuthorizeRateLimit: parseWholeNumber("OAUTH_AUTHORIZE_RATE_LIMIT", process.env.OAUTH_AUTHORIZE_RATE_LIMIT, 60, 0, 100_000),
     oauthMaxPendingClients: parseWholeNumber("OAUTH_MAX_PENDING_CLIENTS", process.env.OAUTH_MAX_PENDING_CLIENTS, 1000, 1, 1_000_000),
+    oauthMaxPendingClientsPerAddress: parseWholeNumber(
+      "OAUTH_MAX_PENDING_CLIENTS_PER_ADDRESS",
+      process.env.OAUTH_MAX_PENDING_CLIENTS_PER_ADDRESS,
+      20,
+      1,
+      1_000_000,
+    ),
+    oauthPendingClientTtlMinutes: parseWholeNumber(
+      "OAUTH_PENDING_CLIENT_TTL_MINUTES",
+      process.env.OAUTH_PENDING_CLIENT_TTL_MINUTES,
+      60,
+      5,
+      7 * 24 * 60,
+    ),
   };
 }
 

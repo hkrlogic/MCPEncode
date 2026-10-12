@@ -40,7 +40,7 @@ docker compose up -d postgres
 npm start
 ```
 
-Sign-in is built in. The first account is created on the first browser visit (no demo passwords), and that page always asks for a setup code: `SETUP_TOKEN` from `.env`, or the one-time code printed in the server log when `SETUP_TOKEN` is unset.
+Sign-in is built in. There are no demo passwords. The first account (the site admin, SA) is created on the create-account page, which requires a setup code: `SETUP_TOKEN` from `.env`, or the one-time code printed in the server log when `SETUP_TOKEN` is unset. Without the code, no account can be created (only `ALLOW_OPEN_SETUP=true` skips it).
 
 Open `http://127.0.0.1:3000/`. Each library has its own MCP link under **Connect** (includes a secret path segment). Rotate that link under Actions if it leaks — Access grants stay. Remove on Access drops one person. The global `/mcp` URL is retired.
 

@@ -1,5 +1,6 @@
 /** Express app composer: static assets, OAuth metadata, routes, MCP mount. */
 import path from "node:path";
+import { forwardedForWarning } from "./proxy-warning.ts";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -131,6 +132,7 @@ export function createApp(input: {
   // Only when the operator says a proxy is in front (TRUST_PROXY). Otherwise a
   // client could choose its own address for the sign-in throttle.
   if (config.trustProxy !== undefined) app.set("trust proxy", config.trustProxy);
+  else app.use(forwardedForWarning());
   app.use(express.urlencoded({ extended: false }));
 
   // Authorization Server metadata (RFC 8414) at the publisher origin.

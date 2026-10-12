@@ -4,7 +4,7 @@ import { setHashConcurrency } from "./auth/passwords.ts";
 import { legacySqliteFilePresent, loadConfig } from "./config.ts";
 import { accountStore } from "./db/accounts.ts";
 import { openDatabase } from "./db/client.ts";
-import { postgresIdpStore } from "./db/idp-store.ts";
+import { postgresIdpStore, postgresKnownGoodStore } from "./db/idp-store.ts";
 import { getLibrary } from "./db/queries.ts";
 import { createApp } from "./http/app.ts";
 import { loadAuthServer } from "./http/discovery.ts";
@@ -18,6 +18,7 @@ async function main(): Promise<void> {
   const embedded = accounts
     ? await createEmbeddedIdp(config, accounts, {
         store: postgresIdpStore(db, config.sessionSecret),
+        knownGoodStore: postgresKnownGoodStore(db),
         libraryName: async (id) => (await getLibrary(db, id))?.name,
       })
     : undefined;

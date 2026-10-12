@@ -23,8 +23,10 @@
  * An attempt is counted when it starts, before the password is hashed, so a
  * burst of parallel posts cannot all slip in under the limit. A successful
  * sign-in takes its own count back and clears that username's misses.
- * Counts live in this process only. Put a per-address limit at the proxy as
- * well (docs/deploy.md).
+ * Counts live in this process only. Known-good addresses can be kept in a
+ * KnownGoodStore (Postgres in production, migration 016) so a restart does not
+ * forget them; they are stored as a SHA-256 of username + address key. Put a
+ * per-address limit at the proxy as well (docs/deploy.md).
  */
 
 export type SignInLimitOptions = {
@@ -40,8 +42,19 @@ export type SignInLimitOptions = {
   maxDelayMs?: number;
   /** A counter with no new miss for this long starts over. */
   windowMs?: number;
+  /** Keeps known-good addresses across restarts. Memory only when absent. */
+  knownGoodStore?: KnownGoodStore;
 };
 
+/** Where known-good sign-in addresses survive a restart. Keys are already hashed. */
+export type KnownGoodStore = {
+  /** Entries with at >= since, at most limit, oldest first. */
+  load(since: number, limit: number): Promise<{ key: string; at: number }[]>;
+  /** Upsert one entry, drop entries older than expireBefore, keep at most limit. */
+  remember(key: string, at: number, expireBefore: number, limit: number): Promise<void>;
+};
+
+import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { ipKeyGenerator } from "express-rate-limit";
 
@@ -50,7 +63,7 @@ type Bucket = { count: number; last: number };
 /** Most keys any one map holds. */
 export const MAX_ENTRIES = 10_000;
 /** How long a successful sign-in keeps that address known-good for the username. */
-const KNOWN_GOOD_MS = 30 * 24 * 60 * 60 * 1000;
+export const KNOWN_GOOD_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** The counting key for an address: IPv4 as is, IPv6 by its /64 prefix. */
 export function addressKey(address: string): string {
@@ -73,12 +86,29 @@ export class SignInLimit {
   private readonly pairs = new Map<string, Bucket>();
   private readonly addresses = new Map<string, Bucket>();
   private readonly usernames = new Map<string, Bucket>();
-  /** username + address key -> last successful sign-in. */
+  /** SHA-256 of username + address key -> last successful sign-in. */
   private readonly knownGood = new Map<string, number>();
+  private readonly knownGoodStore?: KnownGoodStore;
 
   constructor(options: SignInLimitOptions = {}) {
-    this.now = options.now ?? Date.now;
-    this.settings = { ...DEFAULTS, ...stripUndefined(options) };
+    const { knownGoodStore, ...rest } = options;
+    this.now = rest.now ?? Date.now;
+    this.settings = { ...DEFAULTS, ...stripUndefined(rest) };
+    this.knownGoodStore = knownGoodStore;
+  }
+
+  /** Load the stored known-good addresses. Call once at startup. */
+  async restore(): Promise<void> {
+    if (!this.knownGoodStore) return;
+    const rows = await this.knownGoodStore.load(this.now() - KNOWN_GOOD_MS, MAX_ENTRIES);
+    for (const row of rows) {
+      const current = this.knownGood.get(row.key);
+      if (current === undefined || current < row.at) {
+        this.knownGood.delete(row.key);
+        this.knownGood.set(row.key, row.at);
+      }
+    }
+    this.bound(this.knownGood, (last) => this.now() - last >= KNOWN_GOOD_MS);
   }
 
   /** True when this username or address must wait. Does not count anything. */
@@ -113,9 +143,14 @@ export class SignInLimit {
     const address = addressKey(rawAddress);
     const key = pairKey(username, address);
     this.pairs.delete(key);
-    this.knownGood.delete(key);
-    this.knownGood.set(key, this.now());
+    const goodKey = knownGoodKey(username, address);
+    const at = this.now();
+    this.knownGood.delete(goodKey);
+    this.knownGood.set(goodKey, at);
     this.bound(this.knownGood, (last) => this.now() - last >= KNOWN_GOOD_MS);
+    this.knownGoodStore?.remember(goodKey, at, at - KNOWN_GOOD_MS, MAX_ENTRIES).catch((error: unknown) => {
+      console.warn("Could not store a known-good sign-in address:", error instanceof Error ? error.message : error);
+    });
     this.usernames.delete(username);
     const bucket = this.addresses.get(address);
     if (bucket) {
@@ -125,7 +160,7 @@ export class SignInLimit {
   }
 
   private isKnownGood(username: string, address: string, now: number): boolean {
-    const last = this.knownGood.get(pairKey(username, address));
+    const last = this.knownGood.get(knownGoodKey(username, address));
     return last !== undefined && now - last < KNOWN_GOOD_MS;
   }
 
@@ -177,6 +212,11 @@ export class SignInLimit {
 
 function pairKey(username: string, address: string): string {
   return `${username}\u0000${address}`;
+}
+
+/** Stored form of a known-good pair: no username or address in the clear. */
+export function knownGoodKey(username: string, address: string): string {
+  return createHash("sha256").update(`known-good\u0000${pairKey(username, address)}`).digest("hex");
 }
 
 function stripUndefined<T extends object>(value: T): Partial<T> {
