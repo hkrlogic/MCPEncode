@@ -16,6 +16,8 @@ curl http://127.0.0.1:3000/healthz   # {"status":"ok","database":"ok"}
 
 For a public address, put a TLS reverse proxy in front (below) and set `PUBLIC_BASE_URL` in `.env` to the `https://` address.
 
+To start over with an empty database, run `docker compose down -v` (this deletes the Postgres volume). Compose reads `.env` even to stop the stack, so it needs one: if `.env` is missing, run `scripts/init-env.sh` first.
+
 `scripts/init-env.sh` is safe to re-run: it never changes a value that is already set and only adds missing secrets. It never prints them. `npm run check-env` checks a `.env` without starting anything.
 
 ## Any container host: the image

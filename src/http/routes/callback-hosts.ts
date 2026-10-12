@@ -10,7 +10,7 @@ import type { AppRouteContext } from "./context.ts";
 const NOTICES: Record<string, string> = {
   approve: "Approved. The app can finish signing in now; the person may need to start again from the app.",
   deny: "Denied. Apps on that host cannot sign in.",
-  revoke: "Revoked. Apps on that host were signed out and cannot sign in again unless you approve it.",
+  revoke: "Revoked. Apps on that host cannot refresh their sign-in; access they already have ends within 15 minutes. They cannot sign in again unless you approve it.",
 };
 
 export function registerCallbackHostRoutes(app: express.Express, ctx: AppRouteContext): void {
