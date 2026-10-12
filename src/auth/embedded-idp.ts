@@ -188,6 +188,11 @@ function safeHostname(uri: string): string | undefined {
   }
 }
 
+/** Text safe for one log line. */
+function oneLine(value: string): string {
+  return value.replace(/[\r\n\u2028\u2029]/g, " ");
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -470,7 +475,11 @@ export async function createEmbeddedIdp(
 
   // One warning per host and client, so the log names what to approve without flooding.
   const refusalsLogged = new Set<string>();
-  function logRefusal(host: string, clientId: string, clientName: string): void {
+  function logRefusal(rawHost: string, rawClientId: string, rawClientName: string): void {
+    // One log line each: no line breaks from client-chosen values.
+    const host = oneLine(rawHost);
+    const clientId = oneLine(rawClientId);
+    const clientName = oneLine(rawClientName);
     const key = `${host} ${clientId}`;
     if (refusalsLogged.has(key)) return;
     if (refusalsLogged.size >= 5000) refusalsLogged.clear();
@@ -775,7 +784,7 @@ export async function createEmbeddedIdp(
       for (const host of pendingHosts) {
         const noted = await store.notePendingHost({ host, clientName: client.clientName, now, maxPending: maxPendingHosts });
         if (noted === "full") {
-          console.warn(`OAuth registration refused: ${maxPendingHosts} callback hosts already wait for approval. Refused host=${host}`);
+          console.warn(`OAuth registration refused: the list of callback hosts waiting for approval is full. Refused host=${oneLine(host)}`);
           res.status(503).setHeader("Retry-After", "3600").json({
             error: "temporarily_unavailable",
             error_description: `${hostNotApprovedText(host)} Too many hosts are waiting for approval right now, so this one was not added to the list. A site admin can set OAUTH_REDIRECT_HOSTS=${host}.`,

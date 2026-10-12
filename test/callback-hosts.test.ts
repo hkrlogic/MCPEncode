@@ -370,7 +370,7 @@ test("Settings → Apps: SA approves, denies and revokes with CSRF; others canno
       const html = await page.text();
       assert.match(html, /client\.example\.test/);
       assert.match(html, /Hosted Chat.*\(unverified\)/);
-      assert.doesNotMatch(html, /<script>/);
+      assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)/i, "no inline script");
       assert.equal((await fetch(`${s.base}/apps`, { headers: { cookie: reader } })).status, 403);
 
       const host = "client.example.test";
