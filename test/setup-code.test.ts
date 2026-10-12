@@ -178,3 +178,24 @@ test("ALLOW_OPEN_SETUP=true is the only way to skip the setup code", async () =>
     idp.close();
   }
 });
+
+test("the account table, not the form's setup flag, decides whether a post is setup", async () => {
+  const idp = await startIdp({ setupCodeRequired: true, setupToken: TOKEN });
+  try {
+    // No accounts yet: a post without setup=1 still goes through setup and needs the code.
+    const noFlag = await createAccount(idp.base, { setup: "" });
+    assert.equal(noFlag.status, 200);
+    assert.match(await noFlag.text(), /setup code is not correct/);
+    assert.equal(await idp.accounts.count(), 0);
+
+    assert.equal((await createAccount(idp.base, { setup_code: TOKEN })).status, 302);
+
+    // An account exists: setup=1 is just a sign-in and cannot create another, even with the code.
+    const second = await createAccount(idp.base, { username: "eve", setup_code: TOKEN });
+    assert.equal(second.status, 200);
+    assert.match(await second.text(), /Unknown username or password/);
+    assert.equal(await idp.accounts.count(), 1);
+  } finally {
+    idp.close();
+  }
+});

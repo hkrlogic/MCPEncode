@@ -197,7 +197,6 @@ function loginPage(input: {
       ${input.error ? `<p class="error" role="alert">${escapeHtml(input.error)}</p>` : ""}
       <form method="post" action="/id/authorize">
         ${fields}
-        ${input.setup ? `<input type="hidden" name="setup" value="1">` : ""}
         ${
           input.setup && input.setupCodeRequired
             ? `<label>Setup code <input name="setup_code" autocomplete="off" required maxlength="200"></label>`
@@ -605,10 +604,13 @@ export async function createEmbeddedIdp(
     const checkSignIn = async (
       req: Request,
       res: Response,
-      input: { username: string; password: string; settingUp: boolean },
+      input: { username: string; password: string },
     ): Promise<{ sub: string; role: Role; realmRole: string; username: string } | undefined> => {
       const { username, password } = input;
-      if (input.settingUp) {
+      // Setup is decided by the account table, never by a form field. Once an
+      // account exists, a late setup post is checked as an ordinary sign-in.
+      const settingUp = (await accounts.count()) === 0;
+      if (settingUp) {
         if (setupCode !== undefined && !setupCodeMatches(form(req, "setup_code"), setupCode)) {
           await showAuthorize(req, res, "That setup code is not correct.", username);
           return undefined;
@@ -656,7 +658,6 @@ export async function createEmbeddedIdp(
     app.post("/id/authorize", async (req, res) => {
       const username = form(req, "username");
       const password = form(req, "password");
-      const settingUp = form(req, "setup") === "1";
       const attemptKey = normalizeUsername(username) || "(blank)";
       const address = clientAddress(req);
       // Counted now, before any scrypt runs: parallel posts cannot slip under the limit.
@@ -666,7 +667,7 @@ export async function createEmbeddedIdp(
       }
       let user: { sub: string; role: Role; realmRole: string; username: string } | undefined;
       try {
-        user = await checkSignIn(req, res, { username, password, settingUp });
+        user = await checkSignIn(req, res, { username, password });
       } catch (error) {
         if (!(error instanceof QueueFullError)) throw error;
         await showAuthorize(req, res, SIGN_IN_BUSY, username);
