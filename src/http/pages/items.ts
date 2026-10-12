@@ -15,7 +15,7 @@ import {
   layout,
   itemReviewBlock,
   noticeMessage,
-  onConfirm,
+  confirmText,
   publishDiff,
   spreadsheetHead,
   statusBadge,
@@ -45,7 +45,7 @@ function itemFilesSection(input: {
     .map((file) => {
       const remove = canWrite
         ? `<form method="post" action="/items/${esc(input.item.id)}/files/${esc(file.id)}/delete"
-               onsubmit="${onConfirm("Remove this file from the item?")}">
+               data-confirm="${confirmText("Remove this file from the item?")}">
              <input type="hidden" name="csrf" value="${esc(input.csrf)}">
              <button class="btn secondary" type="submit">Remove</button>
            </form>`
@@ -181,7 +181,7 @@ export function itemPage(input: {
   const revertForm = (className?: string) =>
     showRevert
       ? `<form${className ? ` class="${className}"` : ""} method="post" action="/items/${esc(input.item.id)}/revert-published"
-           onsubmit="${onConfirm(revertConfirm)}">
+           data-confirm="${confirmText(revertConfirm)}">
            <input type="hidden" name="csrf" value="${esc(input.csrf)}">
            <button type="submit">${esc(revertLabel)}</button>
          </form>`
@@ -197,7 +197,7 @@ export function itemPage(input: {
             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
             <button class="btn" type="submit">Publish</button>
           </form>
-          <form method="post" action="/items/${esc(input.item.id)}/cancel" onsubmit="${onConfirm(cancelConfirm)}">
+          <form method="post" action="/items/${esc(input.item.id)}/cancel" data-confirm="${confirmText(cancelConfirm)}">
             <input type="hidden" name="csrf" value="${esc(input.csrf)}">
             <button class="btn secondary" type="submit">Cancel</button>
           </form>
@@ -223,13 +223,13 @@ export function itemPage(input: {
                  <button type="submit">Restore to Pending</button>
                </form>`
             : `<form method="post" action="/items/${esc(input.item.id)}/archive"
-                   onsubmit="return confirm('Archive this item? It will leave Pending and Published.');">
+                   data-confirm="Archive this item? It will leave Pending and Published.">
                  <input type="hidden" name="csrf" value="${esc(input.csrf)}">
                  <button type="submit">Archive</button>
                </form>`,
           canDelete
             ? `<form class="menu-danger-sep" method="post" action="/items/${esc(input.item.id)}/delete"
-                   onsubmit="${onConfirm(`Delete item “${input.item.name}”? This cannot be undone.`)}">
+                   data-confirm="${confirmText(`Delete item “${input.item.name}”? This cannot be undone.`)}">
                  <input type="hidden" name="csrf" value="${esc(input.csrf)}">
                  <button class="menu-danger" type="submit">Delete</button>
                </form>`
@@ -285,24 +285,7 @@ export function itemPage(input: {
              }
            </div>
          </div>
-       </dialog>
-       <script>
-         (function publishDiffSheet() {
-           const sheet = document.getElementById("publish-diff");
-           if (!(sheet instanceof HTMLDialogElement)) return;
-           document.querySelectorAll('[data-open-sheet="publish-diff"]').forEach((btn) => {
-             btn.addEventListener("click", () => {
-               const menu = btn.closest("details.item-menu");
-               if (menu) menu.open = false;
-               sheet.showModal();
-             });
-           });
-           sheet.querySelector("[data-close-sheet]")?.addEventListener("click", () => sheet.close());
-           sheet.addEventListener("click", (event) => {
-             if (event.target === sheet) sheet.close();
-           });
-         })();
-       </script>`
+       </dialog>`
     : "";
 
   return layout({

@@ -10,7 +10,7 @@ import {
   itemListMarkup,
   layout,
   mcpLinkSummary,
-  onConfirm,
+  confirmText,
   type AppShell,
 } from "./layout.ts";
 import type { CustomFieldRow } from "../../items/custom-schema.ts";
@@ -223,7 +223,7 @@ function writeModePanel(library: LibraryRow, csrf: string): string {
       <button type="submit" class="write-mode-toggle-btn${live ? " is-on" : ""}" role="switch"
               aria-checked="${live ? "true" : "false"}"
               aria-label="How writes go live. Now ${esc(writeModeLabel(library.writeMode))}. Switch to ${esc(writeModeLabel(next))}."
-              onclick="${onConfirm(confirm)}">
+              data-confirm="${confirmText(confirm)}">
         <span class="write-mode-toggle-knob" aria-hidden="true"></span>
       </button>
       <span class="write-mode-toggle-label${live ? " is-current" : ""}">${esc(writeModeLabel("direct"))}</span>
@@ -386,7 +386,7 @@ function accessPanel(input: {
                 ${detail}
               </div>
               <form method="post" action="/libraries/${esc(input.library.id)}/access/revoke" class="access-remove"
-                    onsubmit="${onConfirm(`Remove ${confirmName} from ${input.library.name}?`)}">
+                    data-confirm="${confirmText(`Remove ${confirmName} from ${input.library.name}?`)}">
                 <input type="hidden" name="csrf" value="${esc(input.csrf)}">
                 <input type="hidden" name="subject" value="${esc(row.subject)}">
                 <button type="submit" class="btn danger-ghost"${
@@ -538,18 +538,18 @@ headers:
   const actions = reveal
     ? `${copyConfig}
        <form method="post" action="/libraries/${esc(input.library.id)}/reader-key/remove"
-           onsubmit="${onConfirm(`Remove the Reader key for ${input.library.name}? Shared agents using it will stop.`)}">
+           data-confirm="${confirmText(`Remove the Reader key for ${input.library.name}? Shared agents using it will stop.`)}">
          <input type="hidden" name="csrf" value="${esc(input.csrf)}">
          <button class="btn secondary" type="submit">Remove</button>
        </form>`
     : active
       ? `<form method="post" action="/libraries/${esc(input.library.id)}/reader-key"
-             onsubmit="${onConfirm(`Rotate the Reader key for ${input.library.name}? The current key stops immediately.`)}">
+             data-confirm="${confirmText(`Rotate the Reader key for ${input.library.name}? The current key stops immediately.`)}">
            <input type="hidden" name="csrf" value="${esc(input.csrf)}">
            <button class="btn" type="submit">Rotate</button>
          </form>
          <form method="post" action="/libraries/${esc(input.library.id)}/reader-key/remove"
-             onsubmit="${onConfirm(`Remove the Reader key for ${input.library.name}? Shared agents using it will stop.`)}">
+             data-confirm="${confirmText(`Remove the Reader key for ${input.library.name}? Shared agents using it will stop.`)}">
            <input type="hidden" name="csrf" value="${esc(input.csrf)}">
            <button class="btn secondary" type="submit">Remove</button>
          </form>`
@@ -662,14 +662,14 @@ export function libraryPage(input: {
          ${actionsMenuSummary()}
          <div class="menu-list">
            <form method="post" action="/libraries/${esc(input.library.id)}/connect/rotate"
-                onsubmit="${onConfirm(
+                data-confirm="${confirmText(
                   `Rotate the Connect link for ${input.library.name}? Old links stop working. People on Access stay.`,
                 )}">
              <input type="hidden" name="csrf" value="${esc(input.csrf)}">
              <button type="submit">Rotate connect link</button>
            </form>
            <form class="menu-form" method="post" action="/libraries/${esc(input.library.id)}/copy"
-                 onsubmit="${onConfirm(
+                 data-confirm="${confirmText(
                    `Copy the template for “${input.library.name}” into a new empty library? Items and Access are not copied.`,
                  )}">
              <input type="hidden" name="csrf" value="${esc(input.csrf)}">
@@ -706,7 +706,7 @@ export function libraryPage(input: {
            ${
              can(input.access, "libraries.delete")
                ? `<form class="menu-danger-sep" method="post" action="/libraries/${esc(input.library.id)}/delete"
-                    onsubmit="${onConfirm(
+                    data-confirm="${confirmText(
                       `Delete library “${input.library.name}” and every item in it? This cannot be undone.`,
                     )}">
                  <input type="hidden" name="csrf" value="${esc(input.csrf)}">
@@ -770,7 +770,7 @@ export function libraryPage(input: {
                   <div class="pending-actions">
                     <button class="btn secondary" type="submit" id="pending-cancel-btn" disabled
                       formaction="/libraries/${esc(input.library.id)}/items/cancel"
-                      onclick="${onConfirm("Cancel the selected publish requests? Items that were already live go back to the last published version. Items that were never published move to Archives.")}">Cancel</button>
+                      data-confirm="${confirmText("Cancel the selected publish requests? Items that were already live go back to the last published version. Items that were never published move to Archives.")}">Cancel</button>
                     <button class="btn" type="submit" id="pending-publish-btn" disabled>Publish</button>
                   </div>
                 </div>
@@ -873,96 +873,6 @@ export function libraryPage(input: {
         ${search}
         ${panel}
       </div>
-      <script>
-        document.querySelectorAll("[data-copy]").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const el = document.querySelector(btn.getAttribute("data-copy"));
-            if (!el) return;
-            try {
-              await navigator.clipboard.writeText(el.textContent || "");
-              const previous = btn.textContent;
-              btn.textContent = "Copied";
-              btn.classList.add("is-copied");
-              setTimeout(() => {
-                btn.textContent = previous || "Copy";
-                btn.classList.remove("is-copied");
-              }, 1500);
-            } catch { /* clipboard can be denied; the link stays visible */ }
-          });
-        });
-        (function mcpMenu() {
-          const menus = Array.from(document.querySelectorAll(".mcp-menu"));
-          if (menus.length === 0) return;
-          document.addEventListener("click", (event) => {
-            for (const menu of menus) {
-              if (!menu.open) continue;
-              if (event.target instanceof Node && menu.contains(event.target)) continue;
-              menu.open = false;
-            }
-          });
-          document.addEventListener("keydown", (event) => {
-            if (event.key !== "Escape") return;
-            for (const menu of menus) {
-              if (!menu.open) continue;
-              menu.open = false;
-              const summary = menu.querySelector("summary");
-              if (summary instanceof HTMLElement) summary.focus();
-            }
-          });
-        })();
-        (function pendingSelect() {
-          const form = document.getElementById("pending-publish");
-          if (!form) return;
-          const selectAll = document.getElementById("pending-select-all");
-          const publishBtn = document.getElementById("pending-publish-btn");
-          const cancelBtn = document.getElementById("pending-cancel-btn");
-          const selection = document.getElementById("pending-selection");
-          const boxes = () => Array.from(form.querySelectorAll('input[name="item_id"]'));
-          function sync() {
-            const all = boxes();
-            const checked = all.filter((box) => box.checked);
-            if (publishBtn) {
-              publishBtn.disabled = checked.length === 0;
-              publishBtn.textContent =
-                checked.length === 0
-                  ? "Publish"
-                  : checked.length === 1
-                    ? "Publish 1"
-                    : "Publish " + checked.length;
-            }
-            if (cancelBtn) {
-              cancelBtn.disabled = checked.length === 0;
-              cancelBtn.textContent =
-                checked.length === 0
-                  ? "Cancel"
-                  : checked.length === 1
-                    ? "Cancel 1"
-                    : "Cancel " + checked.length;
-            }
-            if (selection) {
-              selection.textContent =
-                checked.length === 0
-                  ? "Select items"
-                  : checked.length === all.length
-                    ? "All " + checked.length + " selected"
-                    : checked.length + " selected";
-            }
-            if (selectAll) {
-              selectAll.checked = all.length > 0 && checked.length === all.length;
-              selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
-            }
-          }
-          selectAll?.addEventListener("change", () => {
-            boxes().forEach((box) => { box.checked = selectAll.checked; });
-            sync();
-          });
-          form.addEventListener("change", (event) => {
-            const target = event.target;
-            if (target instanceof HTMLInputElement && target.name === "item_id") sync();
-          });
-          sync();
-        })();
-      </script>
     `,
   });
 }

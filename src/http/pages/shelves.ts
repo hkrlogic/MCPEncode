@@ -1,7 +1,7 @@
 /** Add a shelf and search the libraries bonded to it. */
 import { can, type Access } from "../../auth/rbac.ts";
 import type { ShelfHit, ShelfRow } from "../../db/shelves.ts";
-import { actionsMenuSummary, esc, layout, onConfirm, type AppShell } from "./layout.ts";
+import { actionsMenuSummary, esc, layout, confirmText, type AppShell } from "./layout.ts";
 
 function shellFrom(input: {
   access: Access;
@@ -110,7 +110,7 @@ export function shelfPage(input: {
              <button type="submit">Rename shelf</button>
            </form>
            <form method="post" action="/shelves/${esc(input.shelf.id)}/delete"
-                 onsubmit="${onConfirm(`Remove the shelf “${input.shelf.name}”? Libraries stay. They will no longer be searched together.`)}">
+                 data-confirm="${confirmText(`Remove the shelf “${input.shelf.name}”? Libraries stay. They will no longer be searched together.`)}">
              <input type="hidden" name="csrf" value="${esc(input.csrf)}">
              <button class="menu-danger" type="submit">Remove shelf</button>
            </form>

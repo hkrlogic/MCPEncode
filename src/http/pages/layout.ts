@@ -306,14 +306,13 @@ export type AppShell = {
   settingsActive?: "accounts";
 };
 
-/** confirm() text safe to place in a double-quoted onsubmit attribute. */
-export function onConfirm(message: string): string {
-  const js = message
-    .replaceAll("\\", "\\\\")
-    .replaceAll("'", "\\'")
-    .replaceAll("\r", "")
-    .replaceAll("\n", "\\n");
-  return `return confirm('${esc(js)}');`;
+/**
+ * Text for a data-confirm attribute (double-quoted). public/page.js asks it
+ * with confirm() before the form submits; no inline handler, so the CSP can
+ * refuse inline script.
+ */
+export function confirmText(message: string): string {
+  return esc(message.replaceAll("\r", ""));
 }
 
 /** Warn before granting app SA (destructive admin). */
@@ -608,6 +607,7 @@ export function layout(input: {
 <body class="${shellMode ? "app-body" : ""}">
   ${nav}
   ${content}
+  <script src="${staticUrl("page.js")}"></script>
   ${input.extraScripts ?? ""}
 </body>
 </html>`;
