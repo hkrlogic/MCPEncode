@@ -5,6 +5,8 @@ alwaysApply: true
 
 # Locked UI terms
 
+The full agent guide (deploy, verify, test, contribution rules) is [AGENTS.md](../../AGENTS.md). This rule only locks UI words.
+
 Do not invent synonyms. MCP/tool names may stay `*_record` until explicitly edited.
 
 ## Objects

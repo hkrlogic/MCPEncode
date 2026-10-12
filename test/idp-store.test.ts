@@ -14,7 +14,7 @@ const config = {
   publicBaseUrl: "http://127.0.0.1:3000",
   authIssuer: "http://127.0.0.1:3000/id",
   authAudience: "http://127.0.0.1:3000",
-  webClientId: "mpos-web",
+  webClientId: "mcpencode-web",
 } as AppConfig;
 
 function record(token: string, chainId: string, sub = "sub-1"): RefreshRecord {

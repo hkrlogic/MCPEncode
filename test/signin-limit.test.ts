@@ -9,6 +9,7 @@ import { hashPassword, setHashConcurrency, DEFAULT_HASH_CONCURRENCY } from "../s
 import { QueueFullError, Semaphore } from "../src/auth/semaphore.ts";
 import { SIGN_IN_WAIT, SignInLimit } from "../src/auth/signin-limit.ts";
 import type { AppConfig } from "../src/config.ts";
+import { registeredClientId } from "./oauth-flow.ts";
 
 const MINUTE = 60 * 1000;
 
@@ -152,7 +153,7 @@ test("the sign-in form counts the try before hashing and stops checking after th
     publicBaseUrl: "http://127.0.0.1:3000",
     authIssuer: "http://127.0.0.1:3000/id",
     authAudience: "http://127.0.0.1:3000",
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
   } as AppConfig;
   const idp = await createEmbeddedIdp(config, accounts, { signInLimit: limit });
   const app = express();
@@ -163,7 +164,7 @@ test("the sign-in form counts the try before hashing and stops checking after th
   const { port } = server.address() as AddressInfo;
   const base = `http://127.0.0.1:${port}`;
   const params = {
-    client_id: "mpos-mcp",
+    client_id: await registeredClientId(base, ["http://127.0.0.1:8765/oauth/callback"]),
     redirect_uri: "http://127.0.0.1:8765/oauth/callback",
     response_type: "code",
     code_challenge: "a".repeat(43),

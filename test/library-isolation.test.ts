@@ -24,7 +24,7 @@ type Tool = { handler: (args: unknown, extra: unknown) => Promise<ToolResult> };
 function authFor(role: "sa" | "readonly", sub: string): AuthInfo {
   return {
     token: "test",
-    clientId: "mpos-mcp",
+    clientId: "test-client",
     scopes: [],
     expiresAt: Math.floor(Date.now() / 1000) + 600,
     extra: { sub, role },

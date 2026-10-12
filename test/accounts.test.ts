@@ -21,7 +21,7 @@ const config = {
   publicBaseUrl: "http://127.0.0.1:3000",
   authIssuer: "http://127.0.0.1:3000/id",
   authAudience: "http://127.0.0.1:3000",
-  webClientId: "mpos-web",
+  webClientId: "mcpencode-web",
   // ALLOW_OPEN_SETUP=true: these tests are about accounts, not the setup code.
   setupCodeRequired: false,
 } as AppConfig;
@@ -209,7 +209,7 @@ test("Accounts refuses a posted demotion of the last SA", async () => {
     await once(server, "listening");
     const { port } = server.address() as AddressInfo;
     const token = await signSession(
-      { sub: first.account.id, clientId: "mpos-web", role: "sa", csrf },
+      { sub: first.account.id, clientId: "mcpencode-web", role: "sa", csrf },
       secret,
     );
     try {

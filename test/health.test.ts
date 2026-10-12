@@ -23,14 +23,14 @@ function testConfig(): AppConfig {
     authIssuer: `${origin}/id`,
     authJwksUrl: `${origin}/id/jwks`,
     authAudience: origin,
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     sessionSecret: "test-session-secret-32-bytes-minimum!!",
     database: {
       host: "127.0.0.1",
       port: 5432,
-      user: "mpos",
+      user: "mcpencode",
       password: "stub-not-a-real-password",
-      database: "mpos",
+      database: "mcpencode",
       ssl: false,
     },
   };

@@ -100,7 +100,9 @@ export function accessForLibrary(input: {
 /**
  * Resolve exactly one role from token scopes and/or IdP role names.
  * SA wins if both appear. Unknown tokens have no role.
- * Legacy mpos:edit / mpos-editor names still mean SA.
+ * mcpencode:* are the built-in sign-in's scopes. The mpos-* role names are what
+ * external issuers are configured with (docs/oidc.md), and mpos:* scopes are on
+ * tokens issued before 0.1; both keep working.
  */
 export function resolveRole(claims: {
   scopes: string[];
@@ -110,6 +112,8 @@ export function resolveRole(claims: {
     [...claims.scopes, ...claims.roles].map((value) => value.toLowerCase()),
   );
   if (
+    names.has("mcpencode:sa") ||
+    names.has("mcpencode:edit") ||
     names.has("mpos:sa") ||
     names.has("mpos-sa") ||
     names.has("mpos:edit") ||
@@ -119,6 +123,7 @@ export function resolveRole(claims: {
     return "sa";
   }
   if (
+    names.has("mcpencode:readonly") ||
     names.has("mpos:readonly") ||
     names.has("mpos-readonly") ||
     names.has("mpos-reader")

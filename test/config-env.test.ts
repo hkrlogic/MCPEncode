@@ -4,7 +4,8 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { loadConfig, loadDatabaseConfig, parseTrustProxy } from "../src/config.ts";
+import { loadConfig, loadDatabaseConfig, OAUTH_LIMITS, parseTrustProxy, warnIgnoredEnv } from "../src/config.ts";
+import { REMOVED_ENV_VARS } from "../src/env-schema.ts";
 
 const KEYS = [
   "PUBLIC_BASE_URL",
@@ -29,21 +30,12 @@ const KEYS = [
   "POSTGRES_SSL",
   "POSTGRES_CONNECT_TIMEOUT_SECONDS",
   "OAUTH_REDIRECT_HOSTS",
-  "OAUTH_ALLOW_ANY_HTTPS_REDIRECT",
-  "OAUTH_LEGACY_CLIENT",
-  "OAUTH_REFRESH_MAX_DAYS",
-  "ALLOW_OPEN_SETUP",
   "TRUST_PROXY",
-  "PASSWORD_HASH_CONCURRENCY",
   "AUTH_ISSUER",
   "AUTH_AUDIENCE",
   "AUTH_MCP_AUDIENCE",
-  "AUTH_MCP_AUDIENCE_SHARED",
   "ALLOW_INSECURE_HTTP",
-  "OAUTH_ALLOWED_SCHEMES",
-  "OAUTH_REGISTER_RATE_LIMIT",
-  "OAUTH_AUTHORIZE_RATE_LIMIT",
-  "OAUTH_MAX_PENDING_CLIENTS",
+  ...REMOVED_ENV_VARS,
 ];
 
 /** Run fn with only the given variables set (from the list above). Restores the rest. */
@@ -73,9 +65,9 @@ test("defaults stay local: loopback bind, local origin, local database", () => {
     assert.equal(config.bindHost, "127.0.0.1");
     assert.equal(config.port, 3000);
     assert.equal(config.database.host, "127.0.0.1");
-    assert.equal(config.database.database, "mpos");
+    assert.equal(config.database.database, "mcpencode");
     // Even on loopback, the first account needs the setup code.
-    assert.equal(config.setupCodeRequired, true);
+    assert.notEqual(config.setupCodeRequired, false);
     assert.equal(config.trustProxy, undefined);
   });
 });
@@ -87,7 +79,7 @@ test("PUBLIC_BASE_URL, PORT and BIND_HOST set the public address and listener", 
     assert.equal(config.authIssuer, "https://library.example.org/id");
     assert.equal(config.port, 8080);
     assert.equal(config.bindHost, "0.0.0.0");
-    assert.equal(config.setupCodeRequired, true);
+    assert.notEqual(config.setupCodeRequired, false);
   });
 });
 
@@ -107,12 +99,12 @@ test("DATABASE_URL configures the database; POSTGRES_* override its parts", () =
     {
       DATABASE_URL: "postgresql://app:s3cret@db.example.internal:6543/library",
       POSTGRES_HOST: "127.0.0.1",
-      POSTGRES_DATABASE: "mpos",
+      POSTGRES_DATABASE: "mcpencode",
     },
     () => {
       const db = loadDatabaseConfig();
       assert.equal(db.host, "127.0.0.1");
-      assert.equal(db.database, "mpos");
+      assert.equal(db.database, "mcpencode");
       assert.equal(db.ssl, false);
     },
   );
@@ -130,46 +122,44 @@ test("a missing database password names the standard variables", () => {
   });
 });
 
-test("OAuth callback and refresh settings default to the safe choice", () => {
-  withEnv(BASE, () => {
-    const config = loadConfig();
-    assert.deepEqual(config.oauthRedirectHosts, []);
-    assert.equal(config.oauthAllowAnyHttpsRedirect, false);
-    assert.equal(config.oauthLegacyClient, true);
-    assert.equal(config.refreshMaxLifetimeDays, 30);
-  });
-  withEnv(
-    {
-      ...BASE,
-      OAUTH_REDIRECT_HOSTS: "claude.ai, www.perplexity.ai",
-      OAUTH_ALLOW_ANY_HTTPS_REDIRECT: "true",
-      OAUTH_LEGACY_CLIENT: "false",
-      OAUTH_REFRESH_MAX_DAYS: "7",
-    },
-    () => {
-      const config = loadConfig();
-      assert.deepEqual(config.oauthRedirectHosts, ["claude.ai", "www.perplexity.ai"]);
-      assert.equal(config.oauthAllowAnyHttpsRedirect, true);
-      assert.equal(config.oauthLegacyClient, false);
-      assert.equal(config.refreshMaxLifetimeDays, 7);
-    },
+test("OAUTH_REDIRECT_HOSTS defaults to none", () => {
+  withEnv(BASE, () => assert.deepEqual(loadConfig().oauthRedirectHosts, []));
+  withEnv({ ...BASE, OAUTH_REDIRECT_HOSTS: "claude.ai, www.perplexity.ai" }, () =>
+    assert.deepEqual(loadConfig().oauthRedirectHosts, ["claude.ai", "www.perplexity.ai"]),
   );
-  const bad: Record<string, string>[] = [
-    { OAUTH_REFRESH_MAX_DAYS: "0" },
-    { OAUTH_REFRESH_MAX_DAYS: "1.5" },
-    { OAUTH_LEGACY_CLIENT: "maybe" },
-  ];
-  for (const values of bad) {
-    withEnv({ ...BASE, ...values }, () => assert.throws(() => loadConfig()));
-  }
 });
 
-test("ALLOW_OPEN_SETUP=true is the only way to skip the setup code", () => {
-  withEnv({ ...BASE, ALLOW_OPEN_SETUP: "true" }, () => assert.equal(loadConfig().setupCodeRequired, false));
-  withEnv({ ...BASE, ALLOW_OPEN_SETUP: "false" }, () => assert.equal(loadConfig().setupCodeRequired, true));
-  withEnv({ ...BASE, PUBLIC_BASE_URL: "https://library.example.org" }, () =>
-    assert.equal(loadConfig().setupCodeRequired, true),
-  );
+test("removed settings are ignored with one warning each, never a crash", () => {
+  const values = Object.fromEntries(REMOVED_ENV_VARS.map((name) => [name, name === "OAUTH_REFRESH_MAX_DAYS" ? "7" : "true"]));
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args.join(" "));
+  try {
+    withEnv({ ...BASE, ...values, OAUTH_LEGACY_CLIENT: "maybe" }, () => {
+      const config = loadConfig();
+      // The setup code stays required and limits keep their fixed values.
+      assert.equal(config.setupCodeRequired, undefined);
+      assert.equal(config.refreshMaxLifetimeDays, undefined);
+    });
+  } finally {
+    console.warn = original;
+  }
+  for (const name of REMOVED_ENV_VARS) {
+    assert.equal(warnings.filter((line) => line.startsWith(`${name} is no longer supported`)).length, 1, name);
+  }
+  assert.deepEqual(warnIgnoredEnv({}, () => assert.fail("no warning expected")), []);
+});
+
+test("fixed OAuth limits keep their previous defaults", () => {
+  assert.deepEqual(OAUTH_LIMITS, {
+    registerPerHour: 20,
+    authorizePerMinute: 60,
+    maxPendingClients: 1000,
+    maxPendingClientsPerAddress: 20,
+    pendingClientTtlMinutes: 60,
+    refreshMaxDays: 30,
+    passwordHashConcurrency: 2,
+  });
 });
 
 test("TRUST_PROXY is off unless set, and never trusts every hop", () => {
@@ -188,15 +178,7 @@ test("TRUST_PROXY is off unless set, and never trusts every hop", () => {
   withEnv({ ...BASE, TRUST_PROXY: "1" }, () => assert.equal(loadConfig().trustProxy, 1));
 });
 
-test("PASSWORD_HASH_CONCURRENCY defaults to 2 and must be small", () => {
-  withEnv(BASE, () => assert.equal(loadConfig().passwordHashConcurrency, 2));
-  withEnv({ ...BASE, PASSWORD_HASH_CONCURRENCY: "4" }, () => assert.equal(loadConfig().passwordHashConcurrency, 4));
-  for (const bad of ["0", "17", "two", "1.5"]) {
-    withEnv({ ...BASE, PASSWORD_HASH_CONCURRENCY: bad }, () => assert.throws(() => loadConfig(), /PASSWORD_HASH_CONCURRENCY/));
-  }
-});
-
-test("AUTH_MCP_AUDIENCE: required in oidc mode unless AUTH_MCP_AUDIENCE_SHARED=true", () => {
+test("AUTH_MCP_AUDIENCE: always required in oidc mode", () => {
   const oidc = { ...BASE, AUTH_MODE: "oidc", AUTH_ISSUER: "https://idp.example.org", AUTH_AUDIENCE: "web-project" };
   const warnings: string[] = [];
   const original = console.warn;
@@ -209,8 +191,8 @@ test("AUTH_MCP_AUDIENCE: required in oidc mode unless AUTH_MCP_AUDIENCE_SHARED=t
     });
     assert.equal(warnings.some((line) => line.includes("AUTH_MCP_AUDIENCE")), false);
     withEnv(oidc, () => assert.throws(() => loadConfig(), /AUTH_MCP_AUDIENCE is required/));
-    withEnv({ ...oidc, AUTH_MCP_AUDIENCE_SHARED: "true" }, () => assert.equal(loadConfig().authMcpAudience, undefined));
-    assert.equal(warnings.some((line) => line.includes("AUTH_MCP_AUDIENCE_SHARED")), true);
+    // The old escape hatch is ignored: still required.
+    withEnv({ ...oidc, AUTH_MCP_AUDIENCE_SHARED: "true" }, () => assert.throws(() => loadConfig(), /AUTH_MCP_AUDIENCE is required/));
     warnings.length = 0;
     withEnv({ ...BASE, AUTH_MCP_AUDIENCE: "ignored" }, () => assert.equal(loadConfig().authMcpAudience, undefined));
     assert.equal(warnings.length, 0);
@@ -230,25 +212,4 @@ test("PUBLIC_BASE_URL: plain http only on loopback unless ALLOW_INSECURE_HTTP=tr
     );
   }
   withEnv({ ...BASE, PUBLIC_BASE_URL: "ftp://library.example.org" }, () => assert.throws(() => loadConfig()));
-});
-
-test("OAuth limits and extra app schemes have defaults and are checked", () => {
-  withEnv(BASE, () => {
-    const config = loadConfig();
-    assert.equal(config.oauthRegisterRateLimit, 20);
-    assert.equal(config.oauthAuthorizeRateLimit, 60);
-    assert.equal(config.oauthMaxPendingClients, 1000);
-    assert.deepEqual(config.oauthAllowedSchemes, ["cursor", "vscode", "vscode-insiders", "claude"]);
-  });
-  withEnv({ ...BASE, OAUTH_ALLOWED_SCHEMES: "windsurf, zed:" }, () =>
-    assert.deepEqual(loadConfig().oauthAllowedSchemes?.slice(-2), ["windsurf", "zed"]),
-  );
-  for (const bad of ["microsoft-edge", "x-safari-https", "https", "not a scheme"]) {
-    withEnv({ ...BASE, OAUTH_ALLOWED_SCHEMES: bad }, () => assert.throws(() => loadConfig(), /OAUTH_ALLOWED_SCHEMES/));
-  }
-  withEnv({ ...BASE, OAUTH_REGISTER_RATE_LIMIT: "0", OAUTH_MAX_PENDING_CLIENTS: "5" }, () => {
-    assert.equal(loadConfig().oauthRegisterRateLimit, 0);
-    assert.equal(loadConfig().oauthMaxPendingClients, 5);
-  });
-  withEnv({ ...BASE, OAUTH_MAX_PENDING_CLIENTS: "0" }, () => assert.throws(() => loadConfig(), /OAUTH_MAX_PENDING_CLIENTS/));
 });

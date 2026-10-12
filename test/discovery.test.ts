@@ -13,14 +13,14 @@ const config: AppConfig = {
   authIssuer: "http://127.0.0.1:3000/id",
   authJwksUrl: "http://127.0.0.1:3000/id/jwks",
   authAudience: "http://127.0.0.1:3000",
-  webClientId: "mpos-web",
+  webClientId: "mcpencode-web",
   sessionSecret: "x".repeat(32),
   database: {
     host: "127.0.0.1",
     port: 5432,
-    user: "mpos",
+    user: "mcpencode",
     password: "local-test-only",
-    database: "mpos",
+    database: "mcpencode",
     ssl: false,
   },
 };

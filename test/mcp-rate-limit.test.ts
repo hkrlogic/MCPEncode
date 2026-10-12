@@ -24,9 +24,9 @@ function testConfig(overrides: Partial<AppConfig>): AppConfig {
     authIssuer: `${origin}/id`,
     authJwksUrl: `${origin}/id/jwks`,
     authAudience: origin,
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     sessionSecret: "test-session-secret-32-bytes-minimum!!",
-    database: { host: "127.0.0.1", port: 5432, user: "mpos", password: "stub", database: "mpos", ssl: false },
+    database: { host: "127.0.0.1", port: 5432, user: "mcpencode", password: "stub", database: "mcpencode", ssl: false },
     ...overrides,
   };
 }

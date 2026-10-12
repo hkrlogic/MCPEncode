@@ -43,7 +43,7 @@ async function startIdp(overrides: Partial<AppConfig>) {
     publicBaseUrl: "http://127.0.0.1:3000",
     authIssuer: "http://127.0.0.1:3000/id",
     authAudience: "http://127.0.0.1:3000",
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     ...overrides,
   } as AppConfig;
   const idp = await createEmbeddedIdp(config, accounts);

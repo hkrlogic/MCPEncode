@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { decodeProtectedHeader, jwtVerify } from "jose";
 import { createAccountGuard } from "../src/auth/account-guard.ts";
 import { memoryAccountStore, type AccountStore } from "../src/auth/accounts.ts";
-import { createEmbeddedIdp, LEGACY_CLIENT_ID } from "../src/auth/embedded-idp.ts";
+import { createEmbeddedIdp } from "../src/auth/embedded-idp.ts";
 import { memoryIdpStore, type IdpStore } from "../src/auth/idp-store.ts";
 import type { AppConfig } from "../src/config.ts";
 import { pkceChallenge } from "../src/http/pkce.ts";
@@ -32,7 +32,7 @@ async function startIdp(
     publicBaseUrl: "http://127.0.0.1:3000",
     authIssuer: "http://127.0.0.1:3000/id",
     authAudience: "http://127.0.0.1:3000",
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     ...overrides,
   } as AppConfig;
   const idp = await createEmbeddedIdp(config, accounts, {
@@ -109,7 +109,6 @@ test("registration stores a random client id tied to its callbacks", async () =>
     const one = await register(s.base);
     const two = await register(s.base);
     assert.match(one.client_id, /^mcp_[A-Za-z0-9_-]{20,}$/);
-    assert.notEqual(one.client_id, LEGACY_CLIENT_ID);
     assert.notEqual(one.client_id, two.client_id);
     assert.deepEqual(one.redirect_uris, [CALLBACK]);
     assert.equal(one.client_name, "Claude Code (runbooks)");
@@ -133,13 +132,14 @@ const mcpBase = {
   code_challenge_method: "S256",
 };
 
-test("a remote https callback needs OAUTH_REDIRECT_HOSTS or the any-https opt-in", async () => {
+test("a remote https callback needs OAUTH_REDIRECT_HOSTS", async () => {
   const strict = await startIdp();
   try {
     assert.equal((await registerClient(strict.base, ["https://evil.example/cb"])).status, 400);
     const authorize = await fetch(
-      `${strict.base}/id/authorize?${new URLSearchParams({ ...mcpBase, client_id: LEGACY_CLIENT_ID, redirect_uri: "https://evil.example/cb" })}`,
+      `${strict.base}/id/authorize?${new URLSearchParams({ ...mcpBase, client_id: "mpos-mcp", redirect_uri: CALLBACK })}`,
     );
+    // The shared legacy client id is gone: it is just an unknown client now.
     assert.equal(authorize.status, 400);
   } finally {
     await strict.close();
@@ -150,29 +150,6 @@ test("a remote https callback needs OAUTH_REDIRECT_HOSTS or the any-https opt-in
     assert.equal((await registerClient(listed.base, ["https://evil.example/cb"])).status, 400);
   } finally {
     await listed.close();
-  }
-  const open = await startIdp({ oauthAllowAnyHttpsRedirect: true });
-  try {
-    const client = await register(open.base, ["https://anything.example/cb"]);
-    assert.equal(
-      (
-        await fetch(
-          `${open.base}/id/authorize?${new URLSearchParams({ ...mcpBase, client_id: client.client_id, redirect_uri: "https://anything.example/cb" })}`,
-        )
-      ).status,
-      200,
-    );
-    // The legacy id never gets the any-https opt-in.
-    assert.equal(
-      (
-        await fetch(
-          `${open.base}/id/authorize?${new URLSearchParams({ ...mcpBase, client_id: LEGACY_CLIENT_ID, redirect_uri: "https://anything.example/cb" })}`,
-        )
-      ).status,
-      400,
-    );
-  } finally {
-    await open.close();
   }
 });
 
@@ -321,7 +298,7 @@ test("the publisher's own sign-in skips consent", async () => {
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         ...mcpBase,
-        client_id: "mpos-web",
+        client_id: "mcpencode-web",
         redirect_uri: "http://127.0.0.1:3000/callback",
         username: "ada",
         password: PASSWORD,
@@ -332,35 +309,6 @@ test("the publisher's own sign-in skips consent", async () => {
     assert.ok(new URL(res.headers.get("location") ?? "").searchParams.get("code"));
   } finally {
     await s.close();
-  }
-});
-
-test("the legacy mpos-mcp id keeps loopback and app-scheme callbacks working, with consent", async () => {
-  const s = await startIdp();
-  try {
-    for (const uri of [CALLBACK, "http://localhost:6274/oauth/callback", "cursor://anysphere.cursor-mcp/oauth/callback"]) {
-      const authorize = await fetch(`${s.base}/id/authorize`, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ ...(await authorizeParams(LEGACY_CLIENT_ID, uri)), username: "ada", password: PASSWORD }),
-        redirect: "manual",
-      });
-      const consent = await readConsent(authorize);
-      assert.match(consent.html, /shared id will be retired/);
-    }
-    const tokens = await fullSignIn(s.base, LEGACY_CLIENT_ID);
-    assert.ok(tokens.refresh_token);
-  } finally {
-    await s.close();
-  }
-  const off = await startIdp({ oauthLegacyClient: false });
-  try {
-    const page = await fetch(
-      `${off.base}/id/authorize?${new URLSearchParams({ ...mcpBase, client_id: LEGACY_CLIENT_ID, redirect_uri: CALLBACK })}`,
-    );
-    assert.equal(page.status, 400);
-  } finally {
-    await off.close();
   }
 });
 

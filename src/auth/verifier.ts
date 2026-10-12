@@ -100,7 +100,7 @@ export function createTokenVerifier(options: VerifierOptions): OAuthTokenVerifie
       if (!role) {
         throw new OAuthError(
           OAuthErrorCode.InsufficientScope,
-          "token has neither mpos:readonly nor mpos:edit/mpos:sa",
+          "token carries no MCPEncode role (scope mcpencode:readonly / mcpencode:sa, or an mpos-* role from the issuer)",
         );
       }
 

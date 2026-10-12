@@ -24,7 +24,7 @@ const config = {
   publicBaseUrl: "http://127.0.0.1:3000",
   authIssuer: "http://127.0.0.1:3000/id",
   authAudience: "http://127.0.0.1:3000",
-  webClientId: "mpos-web",
+  webClientId: "mcpencode-web",
   authMode: "embedded",
   sessionSecret: SECRET,
 } as AppConfig;
@@ -89,8 +89,8 @@ test("sign-out revokes the account's refresh tokens and earlier sessions", async
       await s.refreshFor(s.ada.id, "ada-refresh");
       await s.refreshFor(s.sa.id, "boss-refresh");
       const csrf = "c";
-      const session = await signSession({ sub: s.ada.id, clientId: "mpos-web", role: "readonly", csrf }, SECRET);
-      const other = await signSession({ sub: s.ada.id, clientId: "mpos-web", role: "readonly", csrf }, SECRET);
+      const session = await signSession({ sub: s.ada.id, clientId: "mcpencode-web", role: "readonly", csrf }, SECRET);
+      const other = await signSession({ sub: s.ada.id, clientId: "mcpencode-web", role: "readonly", csrf }, SECRET);
       const locals = { locals: { accountGuard: createAccountGuard(s.accounts) } };
       assert.ok(await sessionAccess(sessionRequest(other, locals), config));
 
@@ -134,8 +134,8 @@ test("a password reset revokes that account's refresh tokens and sessions", asyn
     try {
       await s.refreshFor(s.ada.id, "ada-refresh");
       const csrf = "csrf-reset";
-      const boss = await signSession({ sub: s.sa.id, clientId: "mpos-web", role: "sa", csrf }, SECRET);
-      const adaSession = await signSession({ sub: s.ada.id, clientId: "mpos-web", role: "readonly", csrf: "a" }, SECRET);
+      const boss = await signSession({ sub: s.sa.id, clientId: "mcpencode-web", role: "sa", csrf }, SECRET);
+      const adaSession = await signSession({ sub: s.ada.id, clientId: "mcpencode-web", role: "readonly", csrf: "a" }, SECRET);
       const res = await fetch(`${s.base}/accounts/${s.ada.id}/password`, {
         method: "POST",
         headers: {

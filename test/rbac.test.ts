@@ -16,6 +16,12 @@ test("SA wins over readonly when both claims appear", () => {
   assert.equal(resolveRole({ scopes: ["mpos:sa"], roles: [] }), "sa");
 });
 
+test("built-in mcpencode:* scopes resolve, and tokens with the older mpos:* scopes still do", () => {
+  assert.equal(resolveRole({ scopes: ["openid", "mcpencode:readonly"], roles: [] }), "readonly");
+  assert.equal(resolveRole({ scopes: ["mcpencode:edit", "mcpencode:sa"], roles: [] }), "sa");
+  assert.equal(resolveRole({ scopes: ["mpos:readonly"], roles: [] }), "readonly");
+});
+
 test("readonly resolves from IdP role names", () => {
   assert.equal(resolveRole({ scopes: [], roles: ["mpos-readonly"] }), "readonly");
 });

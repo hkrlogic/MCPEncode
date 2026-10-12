@@ -50,14 +50,14 @@ function testConfig(port: number): AppConfig {
     authIssuer: `${origin}/id`,
     authJwksUrl: `${origin}/id/jwks`,
     authAudience: origin,
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     sessionSecret: SESSION_SECRET,
     database: {
       host: "127.0.0.1",
       port: 5432,
-      user: "mpos",
+      user: "mcpencode",
       password: "stub-not-a-real-password",
-      database: "mpos",
+      database: "mcpencode",
       ssl: false,
     },
   };
@@ -86,10 +86,10 @@ function stubAuthServer(issuer: string): AuthServerEndpoints {
 
 async function publisherCookie(sub: string, csrf: string, role: "sa" | "readonly" = "sa") {
   const token = await signSession(
-    { sub, clientId: "mpos-web", role, csrf },
+    { sub, clientId: "mcpencode-web", role, csrf },
     SESSION_SECRET,
   );
-  return `mpos_session=${token}`;
+  return `mcpencode_session=${token}`;
 }
 
 async function withPublisherApp(

@@ -189,14 +189,14 @@ function testConfig(port: number): AppConfig {
     authIssuer: `${origin}/id`,
     authJwksUrl: `${origin}/id/jwks`,
     authAudience: origin,
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     sessionSecret: SESSION_SECRET,
     database: {
       host: "127.0.0.1",
       port: 5432,
-      user: "mpos",
+      user: "mcpencode",
       password: "stub-not-a-real-password",
-      database: "mpos",
+      database: "mcpencode",
       ssl: false,
     },
   };
@@ -223,8 +223,8 @@ function stubAuthServer(issuer: string): AuthServerEndpoints {
 }
 
 async function sessionCookie(sub: string, csrf: string, role: "sa" | "readonly") {
-  const token = await signSession({ sub, clientId: "mpos-web", role, csrf }, SESSION_SECRET);
-  return `mpos_session=${token}`;
+  const token = await signSession({ sub, clientId: "mcpencode-web", role, csrf }, SESSION_SECRET);
+  return `mcpencode_session=${token}`;
 }
 
 test("HTTP: Reader key is shown once, stays Reader, and rejects a leaked key", async () => {
@@ -268,7 +268,7 @@ test("HTTP: Reader key is shown once, stays Reader, and rejects a leaked key", a
         body: new URLSearchParams({ csrf }),
       });
       assert.equal(created.status, 302);
-      const reveal = created.headers.getSetCookie().find((row) => row.startsWith("mpos_reader_reveal="));
+      const reveal = created.headers.getSetCookie().find((row) => row.startsWith("mcpencode_reader_reveal="));
       assert.ok(reveal);
       const revealPair = reveal.split(";")[0] ?? "";
       assert.match(reveal, /HttpOnly/);

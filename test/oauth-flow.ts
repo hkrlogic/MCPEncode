@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 /** Web client: no consent page, a code comes straight back. */
 export const WEB_OAUTH = {
-  client_id: "mpos-web",
+  client_id: "mcpencode-web",
   redirect_uri: "http://127.0.0.1:3000/callback",
   response_type: "code",
   code_challenge: "a".repeat(43),
@@ -18,9 +18,9 @@ export async function readConsent(response: Response): Promise<{ consentId: stri
   const consentId = /name="consent_id" value="([^"]+)"/.exec(html)?.[1];
   assert.ok(consentId, "consent page carries a consent id");
   const setCookie = response.headers.get("set-cookie") ?? "";
-  const cookie = /mpos_consent=([^;]+)/.exec(setCookie)?.[1];
+  const cookie = /mcpencode_consent=([^;]+)/.exec(setCookie)?.[1];
   assert.ok(cookie, "consent page sets the consent cookie");
-  return { consentId, cookie: `mpos_consent=${cookie}`, html };
+  return { consentId, cookie: `mcpencode_consent=${cookie}`, html };
 }
 
 /** Answer the consent page. Returns the redirect response. */
@@ -68,4 +68,11 @@ export async function registerClient(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ redirect_uris: redirectUris, client_name: clientName, token_endpoint_auth_method: "none" }),
   });
+}
+
+/** Register an MCP client for these callbacks and return its client id. */
+export async function registeredClientId(base: string, redirectUris: string[]): Promise<string> {
+  const res = await registerClient(base, redirectUris);
+  assert.equal(res.status, 201);
+  return ((await res.json()) as { client_id: string }).client_id;
 }

@@ -7,7 +7,7 @@ import type { Database } from "../src/db/types.ts";
 
 const { Client } = pg;
 
-const TEST_DATABASE = /^mpos_test_[a-f0-9]{16}$/;
+const TEST_DATABASE = /^mcpencode_test_[a-f0-9]{16}$/;
 
 function adminPassword(): string {
   const password =
@@ -47,7 +47,7 @@ export async function disposableDatabase(): Promise<{
   cleanup: () => Promise<void>;
 }> {
   const base = loadDatabaseConfig();
-  const database = `mpos_test_${randomBytes(8).toString("hex")}`;
+  const database = `mcpencode_test_${randomBytes(8).toString("hex")}`;
   assertTestDatabase(database);
   assertDbIdentifier(base.user, "POSTGRES_USER");
   const config: DatabaseConfig = { ...base, database };
