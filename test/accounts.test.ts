@@ -22,7 +22,7 @@ const config = {
   authIssuer: "http://127.0.0.1:3000/id",
   authAudience: "http://127.0.0.1:3000",
   webClientId: "mcpencode-web",
-  // ALLOW_OPEN_SETUP=true: these tests are about accounts, not the setup code.
+  // Test-only switch (no env var): these tests are about accounts, not the setup code.
   setupCodeRequired: false,
 } as AppConfig;
 

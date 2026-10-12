@@ -66,8 +66,10 @@ Store `SESSION_SECRET` and `SETUP_TOKEN` in the platform's secret store; generat
 ```bash
 npm ci
 scripts/init-env.sh
-# point .env at your database: POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_DATABASE
-# (POSTGRES_PASSWORD was generated; replace it with the real one) or set DATABASE_URL
+# add your database to .env (defaults: 127.0.0.1:5432, user and database "mcpencode"):
+#   POSTGRES_HOST=...  POSTGRES_PORT=...  POSTGRES_USER=...  POSTGRES_DATABASE=...
+#   and replace the generated POSTGRES_PASSWORD with the real one (or set DATABASE_URL instead)
+# set PORT and PUBLIC_BASE_URL if 3000 is taken
 npm run check-env
 npm start
 ```
