@@ -8,7 +8,7 @@
  * an already-used one revokes its whole chain. Clients, refresh chains and the
  * signing key live in the IdpStore (Postgres in production).
  */
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import express, { type Express, type Request, type RequestHandler, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import { calculateJwkThumbprint, exportJWK, generateKeyPair, importJWK, SignJWT, type JWK } from "jose";
@@ -29,7 +29,7 @@ import {
 import { hashPassword, needsRehash, normalizeUsername, verifyPassword } from "./passwords.ts";
 import { newSetupCode, setupCodeMatches } from "./setup-code.ts";
 import { QueueFullError } from "./semaphore.ts";
-import { SIGN_IN_BUSY, SIGN_IN_WAIT, SignInLimit } from "./signin-limit.ts";
+import { addressKey, type KnownGoodStore, SIGN_IN_BUSY, SIGN_IN_WAIT, SignInLimit } from "./signin-limit.ts";
 import {
   callbackHost,
   callbackKind,
@@ -67,8 +67,9 @@ export const LEGACY_CLIENT_ID = "mpos-mcp";
 const REFRESH_IDLE_MS = 12 * 60 * 60 * 1000;
 const CODE_TTL_MS = 5 * 60 * 1000;
 const CONSENT_TTL_MS = 10 * 60 * 1000;
-/** Registrations that never completed a sign-in are dropped after a day. */
-const UNUSED_CLIENT_TTL_MS = 24 * 60 * 60 * 1000;
+/** Registrations that never completed a sign-in are dropped after this (OAUTH_PENDING_CLIENT_TTL_MINUTES). */
+const DEFAULT_PENDING_CLIENT_TTL_MINUTES = 60;
+const DEFAULT_MAX_PENDING_PER_ADDRESS = 20;
 const CONSENT_COOKIE = "mpos_consent";
 const MAX_REDIRECT_URIS = 8;
 const REGISTER_BODY_LIMIT = "8kb";
@@ -94,6 +95,8 @@ export type EmbeddedIdp = {
 
 export type EmbeddedIdpOptions = {
   signInLimit?: SignInLimit;
+  /** Keeps the sign-in throttle's known-good addresses across restarts (ignored when signInLimit is given). */
+  knownGoodStore?: KnownGoodStore;
   /** Clients, refresh chains and the signing key. Defaults to memory (tests). */
   store?: IdpStore;
   /** Library name for the consent page. */
@@ -301,7 +304,14 @@ export async function createEmbeddedIdp(
 ): Promise<EmbeddedIdp> {
   // Used when the username is unknown so a miss still spends a scrypt verification.
   const dummyPasswordHash = await hashPassword(`unused-${crypto.randomUUID()}`);
-  const signInLimit = options?.signInLimit ?? new SignInLimit();
+  const signInLimit = options?.signInLimit ?? new SignInLimit({ knownGoodStore: options?.knownGoodStore });
+  if (!options?.signInLimit) {
+    await signInLimit.restore().catch((error: unknown) => {
+      console.warn("Could not load known-good sign-in addresses:", error instanceof Error ? error.message : error);
+    });
+  }
+  const unusedClientTtlMs = (config.oauthPendingClientTtlMinutes ?? DEFAULT_PENDING_CLIENT_TTL_MINUTES) * 60 * 1000;
+  const maxPendingPerAddress = config.oauthMaxPendingClientsPerAddress ?? DEFAULT_MAX_PENDING_PER_ADDRESS;
   const store = options?.store ?? memoryIdpStore();
   const refreshMaxMs = (config.refreshMaxLifetimeDays ?? DEFAULT_REFRESH_MAX_DAYS) * 24 * 60 * 60 * 1000;
   const secureCookies = config.publicBaseUrl.startsWith("https://");
@@ -490,7 +500,7 @@ export async function createEmbeddedIdp(
 
   // Registrations nobody used are swept every hour, not only when the next one arrives.
   const sweep = setInterval(() => {
-    store.pruneClients(Date.now() - UNUSED_CLIENT_TTL_MS).catch((error: unknown) => {
+    store.pruneClients(Date.now() - unusedClientTtlMs).catch((error: unknown) => {
       console.warn("Could not prune unused OAuth registrations:", error instanceof Error ? error.message : error);
     });
   }, CLIENT_SWEEP_MS);
@@ -581,8 +591,8 @@ export async function createEmbeddedIdp(
         return;
       }
       const now = Date.now();
-      await store.pruneClients(now - UNUSED_CLIENT_TTL_MS);
-      if ((await store.countPendingClients(now - UNUSED_CLIENT_TTL_MS)) >= maxPendingClients) {
+      await store.pruneClients(now - unusedClientTtlMs);
+      if ((await store.countPendingClients(now - unusedClientTtlMs)) >= maxPendingClients) {
         console.warn("OAuth registration refused: the OAUTH_MAX_PENDING_CLIENTS limit of unused registrations is reached.");
         res.status(503).setHeader("Retry-After", "3600").json({
           error: "temporarily_unavailable",
@@ -590,11 +600,24 @@ export async function createEmbeddedIdp(
         });
         return;
       }
+      const registeredFrom = createHash("sha256").update(addressKey(clientAddress(req))).digest("hex");
+      if ((await store.countPendingClientsFrom(now - unusedClientTtlMs, registeredFrom)) >= maxPendingPerAddress) {
+        res
+          .status(429)
+          .setHeader("Retry-After", String(Math.ceil(unusedClientTtlMs / 1000)))
+          .json({
+            error: "too_many_requests",
+            error_description:
+              "Too many unused client registrations from this address. Finish a sign-in with one you have, or wait (see Retry-After).",
+          });
+        return;
+      }
       const client = {
         clientId: newClientId(),
         clientName: cleanClientName(body.client_name),
         redirectUris: accepted,
         createdAt: now,
+        registeredFrom,
       };
       await store.saveClient(client);
       res.status(201).json({

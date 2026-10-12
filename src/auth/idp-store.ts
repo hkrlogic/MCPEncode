@@ -11,6 +11,8 @@ export type OAuthClient = {
   clientName: string;
   redirectUris: string[];
   createdAt: number;
+  /** SHA-256 of the registering address key (IPv6 per /64), for the per-address pending cap. */
+  registeredFrom?: string;
 };
 
 /** One refresh token. Tokens in one chain share chainId and chainStartedAt. */
@@ -52,6 +54,8 @@ export type IdpStore = {
   pruneClients(before: number): Promise<void>;
   /** Registrations made at or after `since` that have not yet got a refresh token (pending sign-in). */
   countPendingClients(since: number): Promise<number>;
+  /** The same, only for registrations made from this address (see OAuthClient.registeredFrom). */
+  countPendingClientsFrom(since: number, registeredFrom: string): Promise<number>;
   insertRefresh(record: RefreshRecord): Promise<void>;
   /** Atomically mark an active token used. Reuse of a used token revokes its chain. */
   claimRefresh(tokenHash: string, now: number): Promise<RefreshClaim>;
@@ -98,6 +102,14 @@ export function memoryIdpStore(): IdpStore {
       const used = new Set([...tokens.values()].map((row) => row.clientId));
       let count = 0;
       for (const [id, client] of clients) if (client.createdAt >= since && !used.has(id)) count += 1;
+      return count;
+    },
+    async countPendingClientsFrom(since, registeredFrom) {
+      const used = new Set([...tokens.values()].map((row) => row.clientId));
+      let count = 0;
+      for (const [id, client] of clients) {
+        if (client.registeredFrom === registeredFrom && client.createdAt >= since && !used.has(id)) count += 1;
+      }
       return count;
     },
     async insertRefresh(record) {

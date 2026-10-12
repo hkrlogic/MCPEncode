@@ -1,6 +1,7 @@
 /** Postgres store for the built-in identity provider: clients, refresh chains, signing key. */
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 import type { IdpStore, OAuthClient, RefreshRecord, SigningKeyRecord } from "../auth/idp-store.ts";
+import type { KnownGoodStore } from "../auth/signin-limit.ts";
 import { allRows, getRow, runSql } from "./query-helpers.ts";
 import type { Database } from "./types.ts";
 
@@ -70,12 +71,13 @@ export function postgresIdpStore(db: Database, sessionSecret: string): IdpStore 
     async saveClient(client) {
       await runSql(
         db,
-        `INSERT INTO oauth_clients (client_id, client_name, redirect_uris, created_at)
-         VALUES (?, ?, ?::jsonb, ?)`,
+        `INSERT INTO oauth_clients (client_id, client_name, redirect_uris, created_at, registered_from)
+         VALUES (?, ?, ?::jsonb, ?, ?)`,
         client.clientId,
         client.clientName,
         JSON.stringify(client.redirectUris),
         client.createdAt,
+        client.registeredFrom ?? null,
       );
     },
     async findClient(clientId) {
@@ -101,6 +103,17 @@ export function postgresIdpStore(db: Database, sessionSecret: string): IdpStore 
         `SELECT COUNT(*) AS n FROM oauth_clients AS c
          WHERE c.created_at >= ?
            AND NOT EXISTS (SELECT 1 FROM oauth_refresh_tokens AS r WHERE r.client_id = c.client_id)`,
+        since,
+      );
+      return Number(row?.n ?? 0);
+    },
+    async countPendingClientsFrom(since, registeredFrom) {
+      const row = await getRow<{ n: string | number }>(
+        db,
+        `SELECT COUNT(*) AS n FROM oauth_clients AS c
+         WHERE c.registered_from = ? AND c.created_at >= ?
+           AND NOT EXISTS (SELECT 1 FROM oauth_refresh_tokens AS r WHERE r.client_id = c.client_id)`,
+        registeredFrom,
         since,
       );
       return Number(row?.n ?? 0);
@@ -187,6 +200,38 @@ export function postgresIdpStore(db: Database, sessionSecret: string): IdpStore 
         );
         return key;
       });
+    },
+  };
+}
+
+/** Postgres copy of the sign-in throttle's known-good addresses (migration 016). */
+export function postgresKnownGoodStore(db: Database): KnownGoodStore {
+  return {
+    async load(since, limit) {
+      const rows = await allRows<{ pair_hash: string; last_success: number }>(
+        db,
+        `SELECT pair_hash, last_success FROM signin_known_good
+         WHERE last_success >= ? ORDER BY last_success DESC LIMIT ?`,
+        since,
+        limit,
+      );
+      return rows.map((row) => ({ key: row.pair_hash, at: Number(row.last_success) })).reverse();
+    },
+    async remember(key, at, expireBefore, limit) {
+      await runSql(
+        db,
+        `INSERT INTO signin_known_good (pair_hash, last_success) VALUES (?, ?)
+         ON CONFLICT (pair_hash) DO UPDATE SET last_success = EXCLUDED.last_success`,
+        key,
+        at,
+      );
+      await runSql(db, "DELETE FROM signin_known_good WHERE last_success < ?", expireBefore);
+      await runSql(
+        db,
+        `DELETE FROM signin_known_good WHERE pair_hash IN (
+           SELECT pair_hash FROM signin_known_good ORDER BY last_success DESC OFFSET ?)`,
+        limit,
+      );
     },
   };
 }

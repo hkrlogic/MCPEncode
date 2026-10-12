@@ -50,7 +50,7 @@ scripts/init-env.sh         # creates .env with fresh random secrets (incl. SETU
 docker compose up -d --build
 ```
 
-Open <http://127.0.0.1:3000/> and create the first account (it is the SA). The page asks for a setup code: `SETUP_TOKEN` from your `.env` (`scripts/init-env.sh` generated it), or, if `SETUP_TOKEN` is unset, the one-time code printed in the server log (`docker compose logs app`). Then add a library, add an item, Publish.
+Open <http://127.0.0.1:3000/> and create the first account (it is the site admin (SA)). The page asks for a setup code: `SETUP_TOKEN` from your `.env` (`scripts/init-env.sh` generated it), or, if `SETUP_TOKEN` is unset, the one-time code printed in the server log (`docker compose logs app`). Then add a library, add an item, Publish.
 
 To work on the code, run only Postgres in Docker and the app with Node: `docker compose up -d postgres`, `npm install`, `npm start` (see [docs/develop.md](docs/develop.md)).
 
@@ -62,7 +62,7 @@ Use the [`Dockerfile`](Dockerfile) on any container host, with a TLS reverse pro
 
 ### Connect an MCP client
 
-Open a library → **Connect** → copy the MCP link into your client (Cursor, Claude, LibreChat, …). Sign in when prompted, then **Allow** on the consent page, which names the app, where the sign-in is sent and the library. That connection sees one library only.
+Open a library → **Connect** → copy the MCP link into your client. Desktop and editor clients (Cursor, Claude Code, Claude Desktop, VS Code) work as is; hosted clients such as LibreChat or claude.ai sign in through a remote `https` callback, so add their host to `OAUTH_REDIRECT_HOSTS` first ([docs/deploy.md](docs/deploy.md)). Sign in when prompted, then **Allow** on the consent page, which names the app, where the sign-in is sent and the library. That connection sees one library only.
 
 Clients register themselves and get their own client id. Desktop clients (Cursor, Claude Code, Claude Desktop through `mcp-remote`, MCP Inspector, VS Code) return to a loopback address or a known app scheme (`cursor:`, `vscode:`, `vscode-insiders:`, `claude:`, or a reverse-DNS scheme such as `com.example.app:`) and work out of the box. Browser-launcher schemes (`microsoft-edge:`, `x-safari-https:`, `googlechromes:`, `firefox:`, …) are refused. A hosted client that returns to an `https://` site, such as Claude custom connectors on `claude.ai`, needs that hostname in `OAUTH_REDIRECT_HOSTS`. See [docs/deploy.md](docs/deploy.md#mcp-client-sign-in).
 
@@ -129,10 +129,10 @@ Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 ### Known limitations (v0.1)
 
-- **Single instance only.** Pending sign-ins, consent answers, authorization codes, and the sign-in and rate-limit counters live in the app's memory. Run one app process; a second replica would not see the first one's pending sign-ins.
+- **Single instance only.** Pending sign-ins, consent answers, authorization codes, and the sign-in and rate-limit counters live in the app's memory (known-good sign-in addresses are kept in Postgres). Run one app process; a second replica would not see the first one's pending sign-ins.
 - **`style-src` still allows `'unsafe-inline'`.** Scripts are strict (`script-src 'self'`); inline styles cannot run code but are still permitted.
-- **Connect tokens are stored in plain text** in Postgres, so the publisher can show the link again. Treat database backups as secret. Reader keys are hashed.
-- **Review Lock hides edited items.** Editing a published item (by a person or an agent) moves it back to Pending, and readers stop seeing it until someone publishes it again. MCP item output does not yet include the status, so an agent cannot tell. A fix is planned for v0.2.
+- **Connect tokens are stored in plain text** in Postgres, so the publisher can show the link again. Treat database backups as secret. Reader keys are hashed; hashing Connect tokens is planned for v0.2.
+- **Review Lock hides edited items.** Editing a published item (by a person or an agent) moves it back to Pending, and readers stop seeing it until someone publishes it again. MCP item output does not yet include the status, so an agent cannot tell. Workaround: publish edits promptly, so the item is out of view only briefly. The fix is planned for v0.2.
 - **Pending sign-ins are lost on restart.** Someone in the middle of a sign-in simply starts again; issued tokens survive.
 
 ---
