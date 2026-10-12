@@ -96,11 +96,14 @@ test("a token can be requested for this app's login or one of its library links 
     assert.equal((await page()).status, 200);
     assert.equal((await page("http://127.0.0.1:3000")).status, 200);
     assert.equal((await page(LIBRARY_RESOURCE)).status, 200);
+    // The header form (X-Library-Token) connects to the library without the token in the path.
+    assert.equal((await page(LIBRARY_RESOURCE.replace(/\/[^/]+$/, ""))).status, 200);
 
     for (const resource of [
       "https://other-service.example/api",
       "http://127.0.0.1:3000/libraries/not-a-uuid/mcp/" + "t".repeat(43),
       LIBRARY_RESOURCE + "?x=1",
+      LIBRARY_RESOURCE + "/extra",
       "http://127.0.0.1:3000/accounts",
       "not a url",
     ]) {

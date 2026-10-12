@@ -123,7 +123,7 @@ function cleanClientName(value: unknown): string {
 }
 
 const LIBRARY_RESOURCE_PATH =
-  /^\/libraries\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/mcp\/[A-Za-z0-9_-]{32,64}$/i;
+  /^\/libraries\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/mcp(?:\/[A-Za-z0-9_-]{32,64})?$/i;
 
 /**
  * The token audience a client may ask for: this app's own login, or one of this
