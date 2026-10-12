@@ -8,17 +8,25 @@ import { MAX_FILE_BYTES } from "../items/files.ts";
 
 export type UploadRead =
   | { ok: true; filename: string; bytes: Buffer; csrf: string }
-  | { ok: false; code: "not_multipart" | "missing" | "too_big"; csrf: string };
+  | { ok: false; code: "not_multipart" | "missing" | "too_big"; csrf: string }
+  | { ok: false; code: "csrf"; csrf: string };
 
-/** CSRF field plus a single file named "file". Extra parts are discarded. */
-export function readItemUpload(req: Request): Promise<UploadRead> {
+/**
+ * CSRF field plus a single file named "file". Extra parts are discarded.
+ * csrfOk is asked before any file bytes are read: the token must come first,
+ * in the X-CSRF-Token header or as the csrf field ahead of the file (the
+ * form puts its hidden csrf input first, and browsers send fields in order).
+ * A missing or wrong token stops the parse with code "csrf".
+ */
+export function readItemUpload(req: Request, csrfOk: (token: string) => boolean): Promise<UploadRead> {
   const contentType = req.headers["content-type"];
   if (typeof contentType !== "string" || !contentType.toLowerCase().includes("multipart/form-data")) {
     return Promise.resolve({ ok: false, code: "not_multipart", csrf: "" });
   }
+  const headerToken = typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : "";
 
   return new Promise((resolve, reject) => {
-    let csrf = "";
+    let csrf = headerToken;
     let filename = "";
     let tooBig = false;
     let sawFile = false;
@@ -65,9 +73,17 @@ export function readItemUpload(req: Request): Promise<UploadRead> {
     }
 
     parser.on("field", (name: string, value: string) => {
-      if (name === "csrf") csrf = value.slice(0, 200);
+      if (name === "csrf" && !headerToken) csrf = value.slice(0, 200);
     });
     parser.on("file", (name: string, stream: NodeJS.ReadableStream, info: { filename?: string }) => {
+      if (!csrfOk(csrf)) {
+        // Stop here: nothing of the file is buffered for a forged request.
+        stream.resume();
+        req.unpipe(parser);
+        req.resume();
+        finish({ ok: false, code: "csrf", csrf });
+        return;
+      }
       if (name !== "file" || sawFile) {
         stream.resume();
         return;

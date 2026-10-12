@@ -1,5 +1,4 @@
 /** Item view/edit/update, publish gate, delete, files, and /notes redirects. */
-import { timingSafeEqual } from "node:crypto";
 import type express from "express";
 import type { Request, Response } from "express";
 import { accessForLibrary, can, type Access } from "../../auth/rbac.ts";
@@ -32,18 +31,10 @@ import {
 import { itemToMarkdown, markdownExportFilename } from "../../items/export-markdown.ts";
 import { parseTableValues, tableControl, tableParts } from "../../items/table-proposal.ts";
 import { renderMarkdown } from "../../markdown/render.ts";
-import { parseLibraryItem, requireCsrf, sessionAccess } from "../helpers.ts";
+import { parseLibraryItem, requireCsrf, sessionAccess, tokensMatch } from "../helpers.ts";
 import { editPage, errorPage, itemPage } from "../pages.ts";
 import { readItemUpload } from "../upload.ts";
 import type { AppRouteContext } from "./context.ts";
-
-/** Form CSRF for multipart uploads, where the body is not urlencoded. */
-function sameToken(left: string, right: string): boolean {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  if (a.length === 0 || a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
 
 function downloadName(name: string): string {
   const ascii = name.replace(/[^\w.\- ()[\]]+/g, "_").replace(/"/g, "") || "file";
@@ -215,13 +206,15 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
     }
     let upload;
     try {
-      upload = await readItemUpload(req);
+      upload = await readItemUpload(req, (token) => tokensMatch(token, access.csrf));
     } catch (error) {
       console.error("item file upload failed", error);
       res.redirect(`/items/${encodeURIComponent(item.id)}?notice=file_type`);
       return;
     }
-    if (!sameToken(upload.csrf, access.csrf)) {
+    if ((!upload.ok && upload.code === "csrf") || !tokensMatch(upload.csrf, access.csrf)) {
+      // The rest of a forged upload is not read; close instead of draining it.
+      res.setHeader("Connection", "close");
       res.status(403).send(errorPage("You cannot add files with this account."));
       return;
     }

@@ -493,7 +493,10 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         ? await accountStore(db).list()
         : [];
     const shelfChoices = can(ctxLib.libraryAccess, "records.write") ? await listShelves(db) : [];
-    const revealId = readCookie(req.headers, READER_REVEAL_COOKIE);
+    const revealId = readCookie(req.headers, READER_REVEAL_COOKIE, {
+      path: readerKeyCookiePath(ctxLib.library.id),
+      secure: config.publicBaseUrl.startsWith("https://"),
+    });
     let readerKey: string | undefined;
     if (revealId && can(ctxLib.libraryAccess, "records.write")) {
       readerKey = takeReaderKeyReveal(revealId, ctxLib.library.id, access.sub);

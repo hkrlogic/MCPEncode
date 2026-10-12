@@ -1,4 +1,5 @@
 /** Cookie names and form/session helpers for HTTP routes. */
+import { timingSafeEqual } from "node:crypto";
 import type { Request, Response } from "express";
 import type { AppConfig } from "../config.ts";
 import type { AccountGuard } from "../auth/account-guard.ts";
@@ -69,7 +70,9 @@ export async function sessionAccess(
   req: Request,
   config: AppConfig,
 ): Promise<(Access & { csrf: string }) | undefined> {
-  const token = readCookie(req.headers, SESSION_COOKIE);
+  // Tests and tools may build a partial config; no public address means plain HTTP.
+  const secure = config.publicBaseUrl?.startsWith("https://") ?? false;
+  const token = readCookie(req.headers, SESSION_COOKIE, { secure });
   if (!token) return undefined;
   const session = await readSession(token, config.sessionSecret);
   if (!session) return undefined;
@@ -88,11 +91,23 @@ export async function sessionAccess(
   };
 }
 
+/** Constant-time compare of two secrets; an empty value never matches. */
+export function tokensMatch(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length === 0 || a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/** CSRF token from the X-CSRF-Token header, for requests whose body is not parsed yet. */
+export function csrfHeader(req: Request): string {
+  const value = req.headers["x-csrf-token"];
+  return typeof value === "string" ? value : "";
+}
+
 export function requireCsrf(req: Request, csrf: string): boolean {
-  const fromForm = formString(req.body, "csrf");
-  const fromHeader = typeof req.headers["x-csrf-token"] === "string" ? req.headers["x-csrf-token"] : "";
-  const provided = fromForm || fromHeader;
-  return Boolean(provided) && provided === csrf;
+  const provided = formString(req.body, "csrf") || csrfHeader(req);
+  return tokensMatch(provided, csrf);
 }
 
 export function parseItem(body: unknown) {

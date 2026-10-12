@@ -133,3 +133,24 @@ document.querySelectorAll("[data-copy]").forEach((btn) => {
     if (event.target === sheet) sheet.close();
   });
 })();
+(function signOut() {
+  // Sign-out links post the CSRF token at once; without script they open the
+  // confirm form at GET /logout.
+  const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+  if (!token) return;
+  document.addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest('a[href="/logout"]') : null;
+    if (!link || link.closest("form")) return;
+    event.preventDefault();
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = "/logout";
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "csrf";
+    input.value = token;
+    form.append(input);
+    document.body.append(form);
+    form.submit();
+  });
+})();

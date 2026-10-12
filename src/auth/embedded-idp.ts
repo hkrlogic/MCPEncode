@@ -727,7 +727,7 @@ export async function createEmbeddedIdp(
       const consentId = form(req, "consent_id");
       const pending = consentId ? consents.get(consentId) : undefined;
       if (consentId) consents.delete(consentId);
-      const browserKey = readCookie(req.headers, CONSENT_COOKIE) ?? "";
+      const browserKey = readCookie(req.headers, CONSENT_COOKIE, { path: "/id", secure: secureCookies }) ?? "";
       res.setHeader(
         "Set-Cookie",
         cookieHeader(CONSENT_COOKIE, "", { path: "/id", clear: true, secure: secureCookies }),
