@@ -35,6 +35,9 @@ const KEYS = [
   "ALLOW_OPEN_SETUP",
   "TRUST_PROXY",
   "PASSWORD_HASH_CONCURRENCY",
+  "AUTH_ISSUER",
+  "AUTH_AUDIENCE",
+  "AUTH_MCP_AUDIENCE",
 ];
 
 /** Run fn with only the given variables set (from the list above). Restores the rest. */
@@ -184,5 +187,27 @@ test("PASSWORD_HASH_CONCURRENCY defaults to 2 and must be small", () => {
   withEnv({ ...BASE, PASSWORD_HASH_CONCURRENCY: "4" }, () => assert.equal(loadConfig().passwordHashConcurrency, 4));
   for (const bad of ["0", "17", "two", "1.5"]) {
     withEnv({ ...BASE, PASSWORD_HASH_CONCURRENCY: bad }, () => assert.throws(() => loadConfig(), /PASSWORD_HASH_CONCURRENCY/));
+  }
+});
+
+test("AUTH_MCP_AUDIENCE: used in oidc mode, falls back to AUTH_AUDIENCE with a warning", () => {
+  const oidc = { ...BASE, AUTH_MODE: "oidc", AUTH_ISSUER: "https://idp.example.org", AUTH_AUDIENCE: "web-project" };
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args.join(" "));
+  try {
+    withEnv({ ...oidc, AUTH_MCP_AUDIENCE: "mcp-project" }, () => {
+      const config = loadConfig();
+      assert.equal(config.authAudience, "web-project");
+      assert.equal(config.authMcpAudience, "mcp-project");
+    });
+    assert.equal(warnings.some((line) => line.includes("AUTH_MCP_AUDIENCE")), false);
+    withEnv(oidc, () => assert.equal(loadConfig().authMcpAudience, undefined));
+    assert.equal(warnings.some((line) => line.includes("AUTH_MCP_AUDIENCE")), true);
+    warnings.length = 0;
+    withEnv({ ...BASE, AUTH_MCP_AUDIENCE: "ignored" }, () => assert.equal(loadConfig().authMcpAudience, undefined));
+    assert.equal(warnings.length, 0);
+  } finally {
+    console.warn = original;
   }
 });

@@ -32,6 +32,13 @@ export type AppConfig = {
   authJwksUrl: string;
   /** Audience for the web UI login token (not a library MCP link). */
   authAudience: string;
+  /**
+   * AUTH_MCP_AUDIENCE (oidc mode): the audience library MCP tokens must carry,
+   * kept apart from AUTH_AUDIENCE so a token for the web app cannot open MCP
+   * and the other way round. Unset: AUTH_AUDIENCE, with a warning.
+   * Embedded mode ignores it; each library link is its own audience.
+   */
+  authMcpAudience?: string;
   webClientId: string;
   sessionSecret: string;
   database: DatabaseConfig;
@@ -341,6 +348,13 @@ export function loadConfig(): AppConfig {
   if (!authIssuer) {
     throw new Error("AUTH_ISSUER is required when AUTH_MODE=oidc");
   }
+  const authAudience = process.env.AUTH_AUDIENCE?.trim() || publicBaseUrl;
+  const authMcpAudience = authMode === "oidc" ? process.env.AUTH_MCP_AUDIENCE?.trim() || undefined : undefined;
+  if (authMode === "oidc" && !authMcpAudience) {
+    console.warn(
+      "AUTH_MCP_AUDIENCE is not set: library MCP accepts tokens for AUTH_AUDIENCE, the same audience as web sign-in. Give MCP its own audience (docs/deploy.md).",
+    );
+  }
   const sessionSecret = assertSessionSecret(required("SESSION_SECRET"));
   const setupToken = envValue("SETUP_TOKEN");
   if (setupToken && setupToken.length < SETUP_TOKEN_MIN_LENGTH) {
@@ -369,7 +383,8 @@ export function loadConfig(): AppConfig {
       (authMode === "embedded"
         ? `${authIssuer}/jwks`
         : `${authIssuer}/protocol/openid-connect/certs`),
-    authAudience: process.env.AUTH_AUDIENCE?.trim() || publicBaseUrl,
+    authAudience,
+    authMcpAudience,
     webClientId: process.env.WEB_CLIENT_ID ?? "mpos-web",
     sessionSecret,
     database: loadDatabaseConfig(),
