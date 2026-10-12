@@ -66,6 +66,8 @@ export type AppConfig = {
   refreshMaxLifetimeDays?: number;
   /** PASSWORD_HASH_CONCURRENCY: scrypt hashes run at once (64 MiB each). Default 2. */
   passwordHashConcurrency?: number;
+  /** MCP_RATE_LIMIT_PER_MINUTE: library MCP requests per client address per minute. 0 turns it off. Default 300. */
+  mcpRateLimitPerMinute?: number;
 };
 
 /**
@@ -109,6 +111,19 @@ export function parseHashConcurrency(raw: string | undefined): number {
   if (!value) return 2;
   if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 16) {
     throw new Error("PASSWORD_HASH_CONCURRENCY must be a whole number from 1 to 16");
+  }
+  return Number(value);
+}
+
+/** Default for MCP_RATE_LIMIT_PER_MINUTE. */
+export const DEFAULT_MCP_RATE_LIMIT_PER_MINUTE = 300;
+
+/** MCP_RATE_LIMIT_PER_MINUTE: whole number, 0 (off) to 100000; default 300. */
+export function parseMcpRateLimit(raw: string | undefined): number {
+  const value = raw?.trim();
+  if (!value) return DEFAULT_MCP_RATE_LIMIT_PER_MINUTE;
+  if (!/^\d+$/.test(value) || Number(value) > 100_000) {
+    throw new Error("MCP_RATE_LIMIT_PER_MINUTE must be a whole number from 0 (off) to 100000");
   }
   return Number(value);
 }
@@ -400,6 +415,7 @@ export function loadConfig(): AppConfig {
     oauthLegacyClient: parseBooleanEnv("OAUTH_LEGACY_CLIENT", process.env.OAUTH_LEGACY_CLIENT, true),
     refreshMaxLifetimeDays: parseRefreshMaxDays(process.env.OAUTH_REFRESH_MAX_DAYS),
     passwordHashConcurrency: parseHashConcurrency(process.env.PASSWORD_HASH_CONCURRENCY),
+    mcpRateLimitPerMinute: parseMcpRateLimit(process.env.MCP_RATE_LIMIT_PER_MINUTE),
   };
 }
 

@@ -23,7 +23,7 @@ import {
 } from "../auth/reader-key.ts";
 import { createAccountGuard, type AccountGuard } from "../auth/account-guard.ts";
 import type { AccountStore } from "../auth/accounts.ts";
-import type { AppConfig } from "../config.ts";
+import { DEFAULT_MCP_RATE_LIMIT_PER_MINUTE, type AppConfig } from "../config.ts";
 import { libraryTokenAudience } from "../auth/audience.ts";
 import { loginScopes } from "../auth/scopes.ts";
 import { createTokenVerifier } from "../auth/verifier.ts";
@@ -53,6 +53,7 @@ import { registerItemRoutes } from "./routes/items.ts";
 import { registerLibraryRoutes } from "./routes/libraries.ts";
 import { registerShelfRoutes } from "./routes/shelves.ts";
 import { originAllowed } from "./origin.ts";
+import { mcpRateLimit } from "./mcp-rate-limit.ts";
 import { securityHeaders } from "./security-headers.ts";
 import { staticPublicDir } from "./static-assets.ts";
 
@@ -244,7 +245,11 @@ export function createApp(input: {
   // so it stays out of proxy access logs.
   // Embedded tokens are bound to the URL the client connected to.
   // Zitadel tokens are bound to the MCP audience; the access list scopes them.
-  app.all("/libraries/:libraryId/mcp", async (req, res, next) => {
+  // Per client address (req.ip, so TRUST_PROXY decides which address that is).
+  const mcpLimit =
+    mcpRateLimit(config.mcpRateLimitPerMinute ?? DEFAULT_MCP_RATE_LIMIT_PER_MINUTE) ??
+    ((_req: express.Request, _res: express.Response, next: express.NextFunction) => next());
+  app.all("/libraries/:libraryId/mcp", mcpLimit, async (req, res, next) => {
     const header = req.headers["x-library-token"];
     if (typeof header !== "string" || header === "") {
       res.status(410).json({
@@ -257,8 +262,8 @@ export function createApp(input: {
     await serveLibraryMcp(req, res, next, header.trim(), "header").catch(next);
   });
 
-  app.all("/libraries/:libraryId/mcp/:connectToken", async (req, res, next) => {
-    await serveLibraryMcp(req, res, next, req.params.connectToken, "path").catch(next);
+  app.all("/libraries/:libraryId/mcp/:connectToken", mcpLimit, async (req, res, next) => {
+    await serveLibraryMcp(req, res, next, String(req.params.connectToken), "path").catch(next);
   });
 
   async function serveLibraryMcp(
