@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.2
+
+### Fixed
+
+- **Allow did nothing in Chrome, then "This sign-in expired".** The site's `form-action 'self'` policy made Chrome block the redirect from **Allow** (and **Deny**) to the app's callback, so the page stayed put; pressing Allow again or reloading then showed *"This sign-in expired. Start again from the app."* The Allow page (also after **Approve <host> and continue**) now lets its form reach that one validated callback: its exact origin for `https://` and loopback callbacks, or its scheme (`cursor:`) for app callbacks. Every other page keeps `form-action 'self'`. With `AUTH_MODE=oidc`, the provider's sign-out page origin is allowed too, so **Sign out** reaches it.
+- Sending a used or expired Allow, Deny or Approve form again now shows a page: *"This sign-in was already submitted or has expired. Go back to the app and start again."*
+- Settings → Apps, Revoke: the message now says existing access ends within 15 minutes, instead of saying apps were signed out at once.
+
+### Docs
+
+- `docker compose down -v` needs a `.env`; run `scripts/init-env.sh` first.
+
 ## v0.1.1
 
 ### Added

@@ -17,6 +17,7 @@ import type { AuthServerEndpoints } from "../http/discovery.ts";
 import { cookieHeader, readCookie } from "../http/cookies.ts";
 import { pkceChallenge } from "../http/pkce.ts";
 import { staticUrl } from "../http/static-assets.ts";
+import { cspWithFormAction, formActionSource } from "../http/security-headers.ts";
 import type { AccountStore } from "./accounts.ts";
 import {
   hashRefreshToken,
@@ -70,6 +71,7 @@ const REFRESH_IDLE_MS = 12 * 60 * 60 * 1000;
 const CODE_TTL_MS = 5 * 60 * 1000;
 const CONSENT_TTL_MS = 10 * 60 * 1000;
 const CONSENT_COOKIE = "mcpencode_consent";
+const SUBMITTED_OR_EXPIRED = "This sign-in was already submitted or has expired. Go back to the app and start again.";
 const MAX_REDIRECT_URIS = 8;
 const REGISTER_BODY_LIMIT = "8kb";
 /** How often unused registrations are swept, besides on each registration. */
@@ -1039,6 +1041,8 @@ export async function createEmbeddedIdp(
     ): Promise<void> {
       const consentId = await rememberConsent(res, record);
       res.setHeader("Cache-Control", "no-store");
+      // Allow and Deny redirect to the callback; Chrome checks form-action on that redirect.
+      res.setHeader("Content-Security-Policy", cspWithFormAction([formActionSource(record.redirectUri)]));
       res.send(
         consentPage({
           consentId,
@@ -1074,7 +1078,7 @@ export async function createEmbeddedIdp(
       res.setHeader("Cache-Control", "no-store");
       const pending = takeConsent(req, res);
       if (!pending?.approveHost) {
-        res.status(400).send(simplePage("Sign-in expired", "<p>This sign-in expired. Start again from the app.</p>"));
+        res.status(400).send(simplePage("Sign-in expired", `<p>${SUBMITTED_OR_EXPIRED}</p>`));
         return;
       }
       const host = pending.approveHost;
@@ -1107,7 +1111,8 @@ export async function createEmbeddedIdp(
     app.post("/id/consent", async (req, res) => {
       const pending = takeConsent(req, res);
       if (!pending || pending.approveHost) {
-        res.status(400).send("This sign-in expired. Start again from the app.");
+        res.setHeader("Cache-Control", "no-store");
+        res.status(400).send(simplePage("Sign-in expired", `<p>${SUBMITTED_OR_EXPIRED}</p>`));
         return;
       }
       const client = await resolveClient(pending.clientId);

@@ -57,7 +57,7 @@ import { registerLibraryRoutes } from "./routes/libraries.ts";
 import { registerShelfRoutes } from "./routes/shelves.ts";
 import { originAllowed } from "./origin.ts";
 import { mcpRateLimit } from "./mcp-rate-limit.ts";
-import { securityHeaders } from "./security-headers.ts";
+import { formActionSource, securityHeaders } from "./security-headers.ts";
 import { staticPublicDir } from "./static-assets.ts";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -131,7 +131,16 @@ export function createApp(input: {
     });
   });
   app.disable("x-powered-by");
-  app.use(securityHeaders({ https: config.publicBaseUrl.startsWith("https://") }));
+  // Sign out posts a form that redirects to an external OIDC provider's
+  // end-session page; Chrome checks form-action on that redirect.
+  const endSession = authServer.endSessionEndpoint ? formActionSource(authServer.endSessionEndpoint) : undefined;
+  const ownOrigin = formActionSource(config.publicBaseUrl);
+  app.use(
+    securityHeaders({
+      https: config.publicBaseUrl.startsWith("https://"),
+      formAction: endSession && endSession !== ownOrigin ? [endSession] : [],
+    }),
+  );
   if (input.accounts) app.locals.accountGuard = createAccountGuard(input.accounts);
   // Only when the operator says a proxy is in front (TRUST_PROXY). Otherwise a
   // client could choose its own address for the sign-in throttle.
