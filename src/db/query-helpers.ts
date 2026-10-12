@@ -17,6 +17,10 @@ export type SqlItem = {
   status: string;
   published_snapshot: string | null;
   previous_published_snapshot: string | null;
+  /** Set on the items table only: Pending, and the published copy is still live. */
+  published_live?: boolean | null;
+  /** Set on the items_live view only. */
+  has_pending_changes?: boolean | null;
   created_by: string;
   updated_by: string;
   created_at: number;
@@ -28,7 +32,28 @@ export type SqlItem = {
  * pull the full-text document blob over the wire.
  */
 export const ITEM_COLUMNS =
-  "id, library_id, name, entity_key, labels, summary, body, details, status, published_snapshot, previous_published_snapshot, created_by, updated_by, created_at, updated_at";
+  "id, library_id, name, entity_key, labels, summary, body, details, status, published_snapshot, previous_published_snapshot, published_live, created_by, updated_by, created_at, updated_at";
+
+/** Same shape from the items_live view (what Readers and agents see). */
+export const LIVE_ITEM_COLUMNS =
+  "id, library_id, name, entity_key, labels, summary, body, details, status, published_snapshot, previous_published_snapshot, has_pending_changes, created_by, updated_by, created_at, updated_at";
+
+/**
+ * Readers always read items_live: a Pending edit on a live item shows its
+ * published copy there, so draft text cannot reach them. Editors read the
+ * working row unless they ask for the live view (MCP default).
+ */
+export function readsLive(scope: { publishedOnly: boolean; live?: boolean }): boolean {
+  return scope.publishedOnly || scope.live === true;
+}
+
+export function itemSource(scope: { publishedOnly: boolean; live?: boolean }): string {
+  return readsLive(scope) ? "items_live" : "items";
+}
+
+export function itemColumns(scope: { publishedOnly: boolean; live?: boolean }): string {
+  return readsLive(scope) ? LIVE_ITEM_COLUMNS : ITEM_COLUMNS;
+}
 
 /** Hard caps so callers cannot ask Postgres for unbounded pages. */
 export const LIST_LIMIT_MAX = 200;
@@ -197,6 +222,7 @@ export function snapshotFromItem(item: {
 }
 
 export function toItem(row: SqlItem): ItemRow {
+  const live = row.published_live === true || row.has_pending_changes === true;
   return {
     id: row.id,
     library_id: row.library_id,
@@ -209,6 +235,8 @@ export function toItem(row: SqlItem): ItemRow {
     details: row.details,
     published_snapshot: parsePublishedSnapshot(row.published_snapshot),
     previous_published_snapshot: parsePublishedSnapshot(row.previous_published_snapshot),
+    has_pending_changes: live,
+    view: row.has_pending_changes == null ? "working" : "live",
     policy: parsePolicyDetails(row.details),
     procedure: parseProcedureDetails(row.details),
     created_by: row.created_by,

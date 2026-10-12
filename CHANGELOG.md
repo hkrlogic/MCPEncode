@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.2.0
+
+### Changed
+
+- **Review Lock no longer hides an edited Item.** Editing a published Item puts the edit in Pending while its last published version stays live for Readers, Reader keys and agents (`list_items`, `open_item`, `search_shelf`, full-text search, the reader web page). Draft text is never searched or returned for them. **Publish** replaces the live version; **Cancel** drops the edit and keeps it. A never-published Item still stays hidden; Unpublish, Archive, Restore and Delete work as before. Review Unlock libraries are unchanged.
+- Publisher pages show *"Pending changes — agents still see the published version"* on such Items, with the published copy next to the change list; the Pending list tags them **Published copy live**.
+- MCP for Publisher connections: item output includes `status`, `has_pending_changes` and `version`; list summaries include `has_pending_changes`. By default they show the published version, like Readers; `open_item` takes `version: "draft"` to read the Pending edit. Reader connections get no new fields.
+- Audit log: `item.edit_pending`, `item.publish`, `item.publish_replace_live`, `item.discard_pending` and `item.revert_pending`.
+
+### Migration
+
+- 018 adds `items.published_live` and the `items_live` view. Pending Items whose last status change was an edit (or file change) after Publish, with a readable published copy, go live again with that copy. Items that were unpublished on purpose (an `ui.unpublish` audit entry), restored from Archives, never published, or whose stored copy cannot be read stay hidden until someone Publishes them.
+
+### Known limitations
+
+- Item files are not versioned: a file change on a published Item keeps its text live, but Readers see the current file list.
+
 ## v0.1.2
 
 ### Fixed

@@ -31,12 +31,14 @@ Disabling or demoting an account takes effect at once: sessions, MCP tokens and 
 
 Items move `draft` (Pending) → `published` (optionally `archived`). Reader connections see only published items.
 
+**Published while Pending.** With Review Lock, editing a published Item (by a person or an agent) puts the edit in Pending, and the **last published version stays live**: Readers, Reader keys and agents keep getting it from `list_items`, `open_item`, `search_shelf` and full-text search, and the draft text is never searched or returned for them. **Publish** replaces the live version with the edit; **Cancel** drops the edit and keeps the live version. Publishers see the draft in the web UI with the banner *"Pending changes — agents still see the published version"*, the change list, and the published copy. An Item that was never published stays hidden while Pending. **Unpublish**, **Archive** and **Restore** hide the Item as before. On disk: the edit is the working row (`status = 'draft'`), the live version is `published_snapshot`, and `published_live = true` marks it as still live; Reader queries read the `items_live` view.
+
 Each library has a **write mode**, chosen when it is added and changed later in the UI only (never over MCP):
 
 - **Review Lock** (default, stored as `reviewed`): agent and human saves go to Pending; a person Publishes.
 - **Review Unlock** (stored as `direct`): a successful save is published at once. For trusted automation output.
 
-**Revert to published** (item Diff / ⋯ menu) restores the last published copy; **Revert to previous published** goes one Publish further back. Revert leaves the item Pending until Publish. Details: [revert-to-published.md](revert-to-published.md).
+**Revert to published** (item Diff / ⋯ menu) restores the last published copy into the draft; **Revert to previous published** goes one Publish further back. Revert leaves the item Pending until Publish; the live version does not change. Details: [revert-to-published.md](revert-to-published.md).
 
 Library schema (starters, Custom tables, agent-proposed fields that a person approves): [library-schema-v1.md](library-schema-v1.md).
 
@@ -47,8 +49,8 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 | Tool | Who | Does |
 | --- | --- | --- |
 | `whoami` | anyone | Identity, library, role |
-| `list_items` | Reader+ | Look up by question (`q`) or browse. One clear match returns the full item. |
-| `open_item` | Reader+ | Full item by id |
+| `list_items` | Reader+ | Look up by question (`q`) or browse. One clear match returns the full item. Returns the published version; Publisher connections also get `status` and `has_pending_changes`. |
+| `open_item` | Reader+ | Full item by id (published version). Publishers may pass `version: "draft"` to read a Pending edit. |
 | `search_shelf` | Reader+ | Published summaries across the library's shelf |
 | `create_item` / `update_item` | Publisher | Save: Pending (Review Lock) or published (Review Unlock) |
 | `delete_item` | Publisher | Remove an item |

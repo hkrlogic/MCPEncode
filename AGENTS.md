@@ -4,7 +4,7 @@ Guide for AI coding agents (and humans) who need to deploy, verify, change or te
 
 ## What it is
 
-MCPEncode is a self-hosted web app and MCP server. People keep **Libraries** of **Items** and **Publish** them; AI agents connect to one Library through its **Connect link** (an MCP-over-HTTP URL) to look Items up and draft changes. With Review Lock (default) agent writes wait in Pending until a person Publishes. Roles: **Site admin** (app-wide), **Publisher** and **Reader** (per Library). More: [docs/concepts.md](docs/concepts.md).
+MCPEncode is a self-hosted web app and MCP server. People keep **Libraries** of **Items** and **Publish** them; AI agents connect to one Library through its **Connect link** (an MCP-over-HTTP URL) to look Items up and draft changes. With Review Lock (default) agent writes wait in Pending until a person Publishes; while an edit to a published Item is Pending, Readers and agents keep seeing its last published version. Roles: **Site admin** (app-wide), **Publisher** and **Reader** (per Library). More: [docs/concepts.md](docs/concepts.md).
 
 ## Stack
 
@@ -142,6 +142,7 @@ Tests read the same `POSTGRES_*` / `DATABASE_URL` settings and create a throwawa
 - Never add an MCP tool that publishes, approves, reverts or changes a Library's write mode. Those stay with people.
 - No inline `<script>` or `on…=` handlers (strict CSP; a test checks).
 - Database changes go in a new numbered file in `migrations/`; never edit an applied one.
+- Anything a Reader can see (list, open, search, shelf, counts) reads the `items_live` view, never the `items` table, so a Pending draft cannot leak. Editors read `items` for the draft.
 - Run typecheck, lint and tests before proposing a change. Keep pull requests small; open an issue first for large changes.
 - Do not edit CI workflows (`.github/workflows/`) in feature changes, and never commit secrets, `.env` or real customer data (use example data in tests and screenshots).
 - Security issues: follow [SECURITY.md](SECURITY.md), not a public issue.

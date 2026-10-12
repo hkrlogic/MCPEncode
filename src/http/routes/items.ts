@@ -79,12 +79,17 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
     if (!libraryAccess) {
       return { error: { status: 403 as const, message: "You do not have access to this library." } };
     }
-    if (libraryAccess.libraryRole === "reader" && item.status !== "published") {
+    // Readers see what is live: the published copy while an edit is Pending.
+    const visible =
+      libraryAccess.libraryRole === "reader"
+        ? await getItem(db, item.id, { publishedOnly: true, libraryId: item.library_id })
+        : item;
+    if (!visible) {
       return { error: { status: 404 as const, message: "Item not found." } };
     }
     const library = await getLibrary(db, item.library_id);
     if (!library) return { error: { status: 404 as const, message: "Library not found." } };
-    return { item, library, libraryAccess };
+    return { item: visible, library, libraryAccess };
   }
 
   app.get("/items/:id/export.md", async (req, res) => {

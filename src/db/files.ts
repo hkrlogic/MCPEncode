@@ -187,7 +187,11 @@ export async function removeItemFile(
   });
 }
 
-/** Review Lock hides a published item again when its files change. */
+/**
+ * Review Lock moves a published item to Pending when its files change. The
+ * published text stays live; files are not versioned, so Readers see the
+ * current file list (documented in known-limitations).
+ */
 async function holdPublishedForReview(
   db: Database,
   libraryId: string,
@@ -201,7 +205,7 @@ async function holdPublishedForReview(
   const now = Date.now();
   await runSql(
     db,
-    `UPDATE items SET status = 'draft', updated_by = ?, updated_at = ? WHERE id = ? AND status = 'published'`,
+    `UPDATE items SET status = 'draft', published_live = (published_snapshot IS NOT NULL), updated_by = ?, updated_at = ? WHERE id = ? AND status = 'published'`,
     actorSub,
     now,
     itemId,

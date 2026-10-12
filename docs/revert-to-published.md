@@ -27,7 +27,7 @@ A publisher can **revert the working item to its last `published_snapshot`** in 
 | Piece | Today |
 | --- | --- |
 | `published_snapshot` | name, labels, summary, body, details, published_at |
-| Review Lock edit | Unpublishes; **keeps** previous snapshot |
+| Review Lock edit | Edit goes to Pending; the snapshot **stays live** for Readers (v0.2, `published_live`) |
 | Publish | Writes working fields into snapshot; status → published |
 | Diff UI | Compares working item ↔ snapshot |
 | Restore (menu) | Archive → Pending only — **different feature** |

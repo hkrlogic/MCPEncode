@@ -168,7 +168,7 @@ export async function searchShelf(
   }>(
     db,
     `SELECT i.id AS item_id, i.name, i.summary, l.id AS library_id, l.name AS library_name
-     FROM items i
+     FROM items_live i
      INNER JOIN libraries l ON l.id = i.library_id
      WHERE l.shelf_id = ?
        AND i.status = 'published'

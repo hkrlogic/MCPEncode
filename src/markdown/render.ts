@@ -65,6 +65,10 @@ export function labeledItemData(item: {
   summary?: string;
   body: string;
   files?: { name: string; content_type: string; byte_size: number }[];
+  /** Editor connections only. Readers get none of these lines. */
+  status?: string;
+  has_pending_changes?: boolean;
+  version?: "published" | "draft";
 }): string {
   const files = item.files ?? [];
   const fileLines =
@@ -81,6 +85,9 @@ export function labeledItemData(item: {
     `id: ${item.id}`,
     item.library_id ? `library_id: ${item.library_id}` : "",
     item.entity_key ? `entity_key: ${item.entity_key}` : "",
+    item.status ? `status: ${item.status}` : "",
+    item.has_pending_changes === undefined ? "" : `has_pending_changes: ${item.has_pending_changes}`,
+    item.version ? `version: ${item.version}` : "",
     `name: ${item.name}`,
     `labels: ${item.labels.join(", ") || "(none)"}`,
     item.summary ? `summary: ${item.summary}` : "",

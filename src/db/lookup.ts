@@ -2,7 +2,7 @@
 import type { Database } from "./types.ts";
 import { excerptOf } from "../items/schema.ts";
 import type { ItemRow, ItemSummary, ReadScope } from "./models.ts";
-import { allRows, asStatus, libraryWhere, parseLabels } from "./query-helpers.ts";
+import { allRows, asStatus, itemSource, libraryWhere, parseLabels } from "./query-helpers.ts";
 import { getItem } from "./items.ts";
 import { resolveLibrary } from "./libraries.ts";
 
@@ -141,7 +141,7 @@ async function findNameSummaryHits(
       db,
       `SELECT id, library_id, name, entity_key, labels, summary, status, updated_at,
               ts_rank(search_tsv, plainto_tsquery('english', ?)) AS relevance
-       FROM items
+       FROM ${itemSource(scope)}
        WHERE ${libraryWhere(scope)}
          AND search_tsv @@ plainto_tsquery('english', ?)
        ORDER BY relevance DESC, updated_at DESC
@@ -160,7 +160,7 @@ async function findNameSummaryHits(
     const rows = await allRows<Omit<LookupHit, "body">>(
       db,
       `SELECT id, library_id, name, entity_key, labels, summary, status, updated_at
-       FROM items
+       FROM ${itemSource(scope)}
        WHERE ${libraryWhere(scope)}
          AND (LOWER(name) ~ ? OR LOWER(summary) ~ ?)
        ORDER BY updated_at DESC
@@ -184,7 +184,7 @@ async function findBodyHitIds(
   const rows = await allRows<{ id: string }>(
     db,
     `SELECT id
-     FROM items
+     FROM ${itemSource(scope)}
      WHERE ${libraryWhere(scope)}
        AND search_tsv @@ plainto_tsquery('english', ?)
      ORDER BY ts_rank(search_tsv, plainto_tsquery('english', ?)) DESC, updated_at DESC
@@ -207,7 +207,7 @@ async function loadLookupHits(
   return allRows<LookupHit>(
     db,
     `SELECT id, library_id, name, entity_key, labels, summary, body, status, updated_at
-     FROM items
+     FROM ${itemSource(scope)}
      WHERE ${libraryWhere(scope)}
        AND id IN (${placeholders})`,
     libraryId,
@@ -237,7 +237,7 @@ export async function lookupItems(
   if (tokens.length === 0) return { kind: "none" };
   const phrase = searchPhrase(tokens);
   const shortTokens = tokens.filter((token) => token.length < SEARCH_MIN_TOKEN);
-  const openScope = { publishedOnly: scope.publishedOnly, libraryId: library.id };
+  const openScope = { publishedOnly: scope.publishedOnly, live: scope.live, libraryId: library.id };
 
   const nameHits = await findNameSummaryHits(db, library.id, scope, phrase, shortTokens);
   const rankedNames = rankHits(nameHits, tokens);

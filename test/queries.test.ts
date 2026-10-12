@@ -85,7 +85,7 @@ test("reader queries return published items in one library only", async () => {
   });
 });
 
-test("edit unpublishes; publish restores visibility and refreshes snapshot", async () => {
+test("edit stays Pending while readers keep the published copy; publish refreshes it", async () => {
   await withTestDatabase(async (db) => {
     const library = await createLibrary(db, "Access", "alice");
     const item = await createItem(
@@ -107,8 +107,8 @@ test("edit unpublishes; publish restores visibility and refreshes snapshot", asy
     );
     assert.equal(edited?.status, "draft");
     assert.equal(edited?.published_snapshot?.body, "Use company VPN");
-    const hidden = await getItem(db, item.id, { publishedOnly: true, libraryId: library.id });
-    assert.equal(hidden, undefined);
+    const live = await getItem(db, item.id, { publishedOnly: true, libraryId: library.id });
+    assert.equal(live?.body, "Use company VPN");
 
     const again = await publishItem(db, item.id, "alice");
     assert.equal(again?.status, "published");
