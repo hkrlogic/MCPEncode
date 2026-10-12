@@ -88,6 +88,15 @@ Set on every real deploy: `PUBLIC_BASE_URL` (the `https://` address people open)
 
 Everything else is optional with working defaults. Full table with defaults: [docs/deploy.md#environment](docs/deploy.md#environment), same data as code in [`src/env-schema.ts`](src/env-schema.ts). `npm run check-env` reports missing, removed (ignored) and unknown variables in `.env`.
 
+### Approving hosted apps
+
+A hosted MCP client (web connector) with an `https://` callback can register, but cannot finish sign-in until its host is approved. The log prints `OAuth callback host not approved: host=… client_id=… client_name=…` and a line `OAUTH_REDIRECT_HOSTS=<host>`. An operator or agent can either:
+
+- add that line to `.env` (comma-separate several hosts) and restart, or
+- ask a Site admin to open **Settings → Apps** and click **Approve** (or approve inline when signing in as SA). Approvals are stored in Postgres (`callback_hosts`, migration 017) and audited; **Revoke** also ends that host's refresh tokens.
+
+Do not approve hosts you do not recognise. Details: [docs/deploy.md#approving-apps](docs/deploy.md#approving-apps).
+
 ## Verify
 
 1. **Health:** `curl -s http://127.0.0.1:3000/healthz` returns HTTP 200 and exactly `{"status":"ok","database":"ok"}`. HTTP 503 `{"status":"unavailable","database":"unreachable"}` means the app runs but cannot reach Postgres.
@@ -112,7 +121,8 @@ Everything else is optional with working defaults. Full table with defaults: [do
 | `... is no longer supported and is ignored` | Harmless. Delete that variable from `.env`. |
 | A value in `.env` seems ignored (`npm start`) | A variable already exported in the shell wins over `.env`. `unset` it or start from a clean shell. The startup log line `Postgres host:port/database` shows what was used. |
 | `That setup code is not correct.` | Use `SETUP_TOKEN` from the `.env` the app actually loaded (Compose reads `.env` at `up`; restart after editing). |
-| MCP client: `invalid redirect_uri` | Hosted clients (e.g. claude.ai) need their host in `OAUTH_REDIRECT_HOSTS`. Desktop clients must use a loopback or app-scheme callback. |
+| MCP client: "callback host … isn't approved yet" | A hosted client's https callback host waits for a Site admin. Approve it in Settings → **Apps** (or on the sign-in page as SA), or copy the `OAUTH_REDIRECT_HOSTS=<host>` line from the app log into `.env` and restart. |
+| MCP client: `invalid redirect_uri` | Desktop clients must use a loopback or app-scheme callback; https callbacks need a DNS host (no IP address). |
 
 ## Develop, test, lint
 

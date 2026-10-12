@@ -3,6 +3,7 @@ import type { Database } from "../../db/types.ts";
 import type { AppConfig } from "../../config.ts";
 import type { createTokenVerifier } from "../../auth/verifier.ts";
 import type { AuthServerEndpoints } from "../discovery.ts";
+import type { CallbackHostAdmin } from "../../auth/embedded-idp.ts";
 
 export type AppRouteContext = {
   config: AppConfig;
@@ -14,4 +15,6 @@ export type AppRouteContext = {
    * access tokens). Called on sign-out and password reset. Unset with AUTH_MODE=oidc.
    */
   revokeAccount?: (sub: string) => Promise<void>;
+  /** Built-in sign-in: approve or deny hosted apps' callback hosts (Settings → Apps). */
+  callbackHosts?: CallbackHostAdmin;
 };

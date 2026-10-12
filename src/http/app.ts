@@ -48,6 +48,8 @@ import {
 } from "./library-url.ts";
 import { registerAccountRoutes } from "./routes/accounts.ts";
 import { registerAuthRoutes } from "./routes/auth.ts";
+import { registerCallbackHostRoutes } from "./routes/callback-hosts.ts";
+import type { CallbackHostAdmin } from "../auth/embedded-idp.ts";
 import type { AppRouteContext } from "./routes/context.ts";
 import { registerEditorRoutes } from "./routes/editor.ts";
 import { registerItemRoutes } from "./routes/items.ts";
@@ -69,6 +71,8 @@ export function createApp(input: {
   mountAuthServer?: (app: express.Express) => void;
   /** Built-in sign-in: sign an account out everywhere. */
   revokeAccount?: (sub: string) => Promise<void>;
+  /** Built-in sign-in: site admin approval of hosted apps' callback hosts. */
+  callbackHosts?: CallbackHostAdmin;
   /** Built-in accounts. When set, sessions and tokens are re-checked against the account on every request. */
   accounts?: AccountStore;
 }) {
@@ -224,9 +228,11 @@ export function createApp(input: {
     authServer,
     verifier: webVerifier,
     revokeAccount: input.revokeAccount,
+    callbackHosts: input.callbackHosts,
   };
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);
+  registerCallbackHostRoutes(app, ctx);
   registerLibraryRoutes(app, ctx);
   registerShelfRoutes(app, ctx);
   registerItemRoutes(app, ctx);

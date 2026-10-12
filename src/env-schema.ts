@@ -33,7 +33,7 @@ export const ENV_VARS: readonly EnvVar[] = [
   { name: "ALLOWED_HOSTS", required: "no", default: "", description: "Extra hostnames (comma-separated) that may reach the app." },
   { name: "ALLOW_INSECURE_HTTP", required: "no", default: "false", description: "Accept a plain http PUBLIC_BASE_URL on a non-loopback host. Not recommended." },
   { name: "MCP_RATE_LIMIT_PER_MINUTE", required: "no", default: "300", description: "Library MCP requests per client address per minute. 0 turns it off." },
-  { name: "OAUTH_REDIRECT_HOSTS", required: "no", default: "", description: "Remote https hostnames MCP clients may use as sign-in callback, e.g. claude.ai." },
+  { name: "OAUTH_REDIRECT_HOSTS", required: "no", default: "", description: "Remote https callback hosts approved up front, e.g. claude.ai. A Site admin can also approve hosts in the app (Settings → Apps)." },
   { name: "AUTH_MODE", required: "no", default: "embedded", description: "embedded (built-in accounts) or oidc (external issuer, docs/oidc.md)." },
   { name: "AUTH_ISSUER", required: "oidc", default: "", description: "External issuer URL." },
   { name: "AUTH_AUDIENCE", required: "no", default: "PUBLIC_BASE_URL", description: "Audience of web sign-in tokens." },

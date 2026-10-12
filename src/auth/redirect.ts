@@ -15,9 +15,10 @@
  *   carrying the code. A custom callback whose path holds another URL
  *   (foo:https://evil.example/) is refused for the same reason.
  *
- * A remote https callback (a hosted client such as claude.ai) must be on the
- * operator's OAUTH_REDIRECT_HOSTS list. Plain http to a remote
- * host is never accepted.
+ * A remote https callback (a hosted client such as claude.ai) must be on an
+ * approved host: the operator's OAUTH_REDIRECT_HOSTS list, or a host a site
+ * admin approved in the app (callback_hosts table). Plain http to a remote
+ * host is never accepted, and IP-literal hosts cannot be approved.
  *
  * The publisher's own browser sign-in stays on this app's /callback only.
  */
@@ -120,6 +121,29 @@ export function callbackKind(uri: string, check: Omit<CallbackCheck, "clientId" 
   const host = parsed.hostname.toLowerCase();
   if (check.allowedHosts?.includes(host)) return "listed-host";
   return undefined;
+}
+
+/**
+ * The hostname of a remote https callback that a site admin could approve, or
+ * undefined. Only https, a DNS name with a dot (no IP literal, no loopback),
+ * no userinfo and no fragment qualify.
+ */
+export function approvableCallbackHost(uri: string): string | undefined {
+  const parsed = safeCallback(uri);
+  if (parsed?.protocol !== "https:") return undefined;
+  const host = parsed.hostname.toLowerCase();
+  return isApprovableHostname(host) ? host : undefined;
+}
+
+/** A DNS hostname a site admin may approve: not an IP literal, not loopback, valid labels, at least one dot. */
+export function isApprovableHostname(host: string): boolean {
+  if (!host || host.length > 253 || isLoopbackCallbackHost(host)) return false;
+  if (host.includes(":") || host.startsWith("[")) return false; // IPv6 literal
+  if (/^[0-9.]+$/.test(host)) return false; // IPv4 literal (URL normalises 0x7f.1 and friends to this)
+  const labels = host.split(".");
+  if (labels.length < 2) return false;
+  if (/^[0-9]+$/.test(labels[labels.length - 1] ?? "")) return false;
+  return labels.every((label) => /^(?!-)[a-z0-9-]{1,63}(?<!-)$/.test(label));
 }
 
 function customSchemeAllowed(parsed: URL, scheme: string, allowedSchemes: readonly string[]): boolean {

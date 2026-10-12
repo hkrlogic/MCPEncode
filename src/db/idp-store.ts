@@ -1,6 +1,6 @@
 /** Postgres store for the built-in identity provider: clients, refresh chains, signing key. */
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
-import type { IdpStore, OAuthClient, RefreshRecord, SigningKeyRecord } from "../auth/idp-store.ts";
+import type { CallbackHostRecord, CallbackHostStatus, IdpStore, OAuthClient, RefreshRecord, SigningKeyRecord } from "../auth/idp-store.ts";
 import type { KnownGoodStore } from "../auth/signin-limit.ts";
 import { allRows, getRow, runSql } from "./query-helpers.ts";
 import type { Database } from "./types.ts";
@@ -16,6 +16,29 @@ type RefreshRow = {
   expires_at: number;
   used_at: number | null;
 };
+type HostRow = {
+  host: string;
+  status: string;
+  first_seen: number;
+  last_seen: number;
+  sample_client_name: string;
+  decided_by: string | null;
+  decided_at: number | null;
+};
+const HOST_COLUMNS = "host, status, first_seen, last_seen, sample_client_name, decided_by, decided_at";
+
+function toHost(row: HostRow): CallbackHostRecord {
+  return {
+    host: row.host,
+    status: row.status as CallbackHostStatus,
+    firstSeen: Number(row.first_seen),
+    lastSeen: Number(row.last_seen),
+    sampleClientName: row.sample_client_name,
+    decidedBy: row.decided_by,
+    decidedAt: row.decided_at === null ? null : Number(row.decided_at),
+  };
+}
+
 type KeyRow = { kid: string; public_jwk: unknown; private_jwk_enc: string; created_at: number };
 
 function toClient(row: ClientRow): OAuthClient {
@@ -165,6 +188,83 @@ export function postgresIdpStore(db: Database, sessionSecret: string): IdpStore 
     },
     async pruneRefresh(before) {
       await runSql(db, "DELETE FROM oauth_refresh_tokens WHERE chain_started_at < ?", before);
+    },
+    async findHost(host) {
+      const row = await getRow<HostRow>(db, `SELECT ${HOST_COLUMNS} FROM callback_hosts WHERE host = ?`, host);
+      return row ? toHost(row) : undefined;
+    },
+    async approvedHosts() {
+      const rows = await allRows<{ host: string }>(db, "SELECT host FROM callback_hosts WHERE status = 'approved'");
+      return rows.map((row) => row.host);
+    },
+    async listHosts() {
+      const rows = await allRows<HostRow>(db, `SELECT ${HOST_COLUMNS} FROM callback_hosts ORDER BY last_seen DESC LIMIT 1000`);
+      return rows.map(toHost);
+    },
+    async notePendingHost({ host, clientName, now, maxPending }) {
+      return db.transaction(async (tx) => {
+        // One writer at a time, so two registrations cannot both slip under the cap.
+        await tx.get("SELECT pg_advisory_xact_lock(hashtext('mcpencode-callback-hosts'))");
+        const updated = await getRow<{ host: string }>(
+          tx,
+          `UPDATE callback_hosts
+           SET last_seen = ?, sample_client_name = CASE WHEN sample_client_name = '' THEN ? ELSE sample_client_name END
+           WHERE host = ? RETURNING host`,
+          now,
+          clientName,
+          host,
+        );
+        if (updated) return "seen" as const;
+        const pending = await getRow<{ n: string | number }>(
+          tx,
+          "SELECT COUNT(*) AS n FROM callback_hosts WHERE status = 'pending'",
+        );
+        if (Number(pending?.n ?? 0) >= maxPending) return "full" as const;
+        await runSql(
+          tx,
+          `INSERT INTO callback_hosts (host, status, first_seen, last_seen, sample_client_name)
+           VALUES (?, 'pending', ?, ?, ?)`,
+          host,
+          now,
+          now,
+          clientName,
+        );
+        return "created" as const;
+      });
+    },
+    async decideHost({ host, status, by, now }) {
+      const row = await getRow<HostRow>(
+        db,
+        `INSERT INTO callback_hosts (host, status, first_seen, last_seen, sample_client_name, decided_by, decided_at)
+         VALUES (?, ?, ?, ?, '', ?, ?)
+         ON CONFLICT (host) DO UPDATE SET status = EXCLUDED.status, decided_by = EXCLUDED.decided_by, decided_at = EXCLUDED.decided_at
+         RETURNING ${HOST_COLUMNS}`,
+        host,
+        status,
+        now,
+        now,
+        by,
+        now,
+      );
+      if (!row) throw new Error("callback host was not saved");
+      return toHost(row);
+    },
+    async revokeHostTokens(host) {
+      const rows = await allRows<{ token_hash: string }>(
+        db,
+        `DELETE FROM oauth_refresh_tokens AS r
+         USING oauth_clients AS c
+         WHERE r.client_id = c.client_id
+           AND EXISTS (
+             SELECT 1 FROM jsonb_array_elements_text(c.redirect_uris) AS u(uri)
+             WHERE lower(substring(u.uri from ?)) = ?
+           )
+         RETURNING r.token_hash`,
+        // A parameter: the query helper turns every ? in the SQL into a placeholder.
+        "^https?://([^/:?#]+)",
+        host,
+      );
+      return rows.length;
     },
     async signingKey(create) {
       return db.transaction(async (tx) => {

@@ -58,7 +58,7 @@ Every setting the app reads. [`src/env-schema.ts`](../src/env-schema.ts) is the 
 | `ALLOWED_HOSTS` | no | – | Extra hostnames (comma-separated) that may reach the app. |
 | `ALLOW_INSECURE_HTTP` | no | `false` | Accept a plain http PUBLIC_BASE_URL on a non-loopback host. Not recommended. |
 | `MCP_RATE_LIMIT_PER_MINUTE` | no | `300` | Library MCP requests per client address per minute. 0 turns it off. |
-| `OAUTH_REDIRECT_HOSTS` | no | – | Remote https hostnames MCP clients may use as sign-in callback, e.g. claude.ai. |
+| `OAUTH_REDIRECT_HOSTS` | no | – | Remote https callback hosts approved up front, e.g. claude.ai. A Site admin can also approve hosts in the app (Settings → Apps). |
 | `AUTH_MODE` | no | `embedded` | embedded (built-in accounts) or oidc (external issuer, docs/oidc.md). |
 | `AUTH_ISSUER` | oidc mode | – | External issuer URL. |
 | `AUTH_AUDIENCE` | no | `PUBLIC_BASE_URL` | Audience of web sign-in tokens. |
@@ -108,10 +108,23 @@ With built-in sign-in, each MCP client registers itself (`/id/register`) and get
 | Reverse-DNS app scheme with a dot, e.g. `com.example.app:/…` (RFC 8252 §7.1) | always | native apps |
 | `cursor:`, `vscode:`, `vscode-insiders:`, `claude:` | always | Cursor, VS Code, Claude |
 | Other single-word schemes, browser launchers and OS handlers (`microsoft-edge:`, `x-safari-*`, `googlechrome(s):`, `firefox:`, `ms-*`, `file:`, `javascript:`, …), or an app scheme whose path holds another URL | never | |
-| `https://<host>/…` | only if `<host>` is in `OAUTH_REDIRECT_HOSTS` | Claude custom connectors (`claude.ai`), Perplexity (`www.perplexity.ai`) |
+| `https://<host>/…` (a DNS name; no IP address, user info or fragment) | once `<host>` is approved: by a Site admin in the app, or listed in `OAUTH_REDIRECT_HOSTS` | Claude custom connectors (`claude.ai`), Perplexity (`www.perplexity.ai`) |
 | `http://<remote host>/…` | never | |
 
 A loopback or app-scheme callback can only be received on the person's own machine (RFC 8252). An app scheme is still only as trustworthy as the app that claimed it, so **the consent page is the guard**: it shows the full callback address, the client id, and the client's self-declared name marked unverified. A loopback IP callback may come back on a different port (RFC 8252 §7.3); everything else must match exactly.
+
+### Approving apps
+
+A hosted web app (a web chat's MCP connector) sends people back to its own `https://` address after sign-in. That host must be approved once; arbitrary https hosts are never accepted on their own.
+
+1. Someone connects the app. Its registration is kept, and its host is listed as **waiting** (Settings → **Apps**). No sign-in code goes to it yet. The log says, once per host and client:
+   `OAuth callback host not approved: host=client.example.test client_id=mcp_… client_name="…" (self-reported, unverified)…` followed by a copy-paste line `OAUTH_REDIRECT_HOSTS=client.example.test`.
+2. The browser shows *"This app's callback host … isn't approved yet. A site admin can approve it."*
+   - A **Site admin** who signs in there gets **Approve <host> and continue**, then the normal Allow page.
+   - Anyone else sees *"Waiting for your site admin to approve this app."* After approval they start again from the app.
+3. Or a Site admin opens Settings → **Apps** and clicks **Approve** or **Deny**. **Revoke** on an approved host denies it and deletes the refresh tokens of every client with a callback on it; access tokens already issued run out within 15 minutes.
+
+Approved hosts are the ones approved in the app plus `OAUTH_REDIRECT_HOSTS` (set it to pre-approve hosts without the UI; hosts from the environment cannot be revoked in the app). Every decision is written to the audit log (`callback_host.approve`, `.deny`, `.revoke`). At most 200 hosts wait at once, and one address may add 10 new waiting hosts per hour; past that, `/id/register` answers with an error naming the host. Callbacks still match the registered address exactly. Approving a host trusts every app that can receive requests on it, so approve only hosts you recognise (for example `claude.ai`).
 
 ### Sign-in lifetime
 

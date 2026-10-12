@@ -67,6 +67,10 @@ There is **no publish, approve, write-mode or revert tool.** Those stay with peo
 
 Rotating the Connect link (**Connect → Rotate**) invalidates the old token in both forms; Access grants stay.
 
+## Approving apps
+
+Desktop apps return the sign-in to the person's own machine, so they need no approval. A hosted web app returns it to its own `https://` host, which a Site admin must approve once: on the sign-in page (**Approve <host> and continue**) or under Settings → **Apps** (Approve, Deny, Revoke). `OAUTH_REDIRECT_HOSTS` pre-approves hosts from the environment. Each person still sees the Allow page. Details: [deploy.md → Approving apps](deploy.md#approving-apps).
+
 ## Architecture
 
 One Node.js 22 process (Express 5, TypeScript run by `tsx`, no build step) and PostgreSQL 16+.

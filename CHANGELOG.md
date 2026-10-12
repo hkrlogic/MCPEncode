@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.1
+
+### Added
+
+- **Approving hosted apps in the app.** A hosted MCP client (web connector) whose `https://` callback host is not approved can now register; its host waits for a Site admin. The sign-in page explains it (*"This app's callback host … isn't approved yet. A site admin can approve it."*). A Site admin signing in there gets **Approve <host> and continue**; others see *"Waiting for your site admin to approve this app."* Settings → **Apps** lists waiting, approved and denied hosts with Approve, Deny and Revoke (CSRF-protected, audited). Approved hosts are the app's approvals plus `OAUTH_REDIRECT_HOSTS`. Migration 017 adds `callback_hosts`.
+- The log names a refused callback host once per host and client (host, client id, self-reported client name) with a copy-paste `OAUTH_REDIRECT_HOSTS=<host>` line. `/id/register` errors include `callback_host`.
+
+### Security
+
+- Only https DNS hostnames can be approved: IP literals, user info, fragments and plain http stay refused, as do launcher and unknown single-word schemes. Callbacks still match the registered address exactly, and no code is sent to a host before it is approved.
+- At most 200 hosts wait for approval; one address may add 10 new waiting hosts per hour.
+- Revoking (or denying) a host deletes the refresh tokens of every client with a callback on it.
+
+### Changed
+
+- `/id/register` with an unapproved `https://` callback now returns 201 (the host waits for approval) instead of 400. Sign-in still cannot finish until the host is approved.
+
 ## v0.1.0
 
 First tagged release.

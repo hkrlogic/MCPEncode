@@ -134,7 +134,7 @@ test("authorize and register turn away a remote callback by default", async () =
     const web = await fetch(`${base}/id/authorize?${params("mcpencode-web", "https://evil.example/cb")}`);
     assert.equal(web.status, 400);
 
-    for (const uris of [["https://evil.example/cb"], ["http://127.0.0.1:1/cb", "javascript:alert(1)"], [], "x"]) {
+    for (const uris of [["https://203.0.113.9/cb"], ["http://evil.example/cb"], ["https://user@evil.example/cb"], ["http://127.0.0.1:1/cb", "javascript:alert(1)"], [], "x"]) {
       const registered = await fetch(`${base}/id/register`, {
         method: "POST",
         headers: { "content-type": "application/json" },

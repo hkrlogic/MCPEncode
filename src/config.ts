@@ -60,6 +60,10 @@ export type AppConfig = {
   oauthAuthorizeRateLimit?: number;
   oauthMaxPendingClients?: number;
   oauthMaxPendingClientsPerAddress?: number;
+  /** Callback hosts waiting for site admin approval, kept at once. */
+  oauthMaxPendingCallbackHosts?: number;
+  /** New pending callback hosts per address per hour. */
+  oauthPendingHostRateLimit?: number;
   /** MCP_RATE_LIMIT_PER_MINUTE: library MCP requests per client address per minute. 0 turns it off. Default 300. */
   mcpRateLimitPerMinute?: number;
 };
@@ -108,6 +112,10 @@ export const OAUTH_LIMITS = {
   maxPendingClients: 1000,
   /** Unused registrations from one address (IPv6 per /64). */
   maxPendingClientsPerAddress: 20,
+  /** Remote https callback hosts waiting for a site admin, kept at once. */
+  maxPendingCallbackHosts: 200,
+  /** New pending callback hosts one address may add per hour. */
+  pendingCallbackHostsPerHour: 10,
   /** A registration never used for a sign-in is dropped after this many minutes. */
   pendingClientTtlMinutes: 60,
   /** A sign-in's refresh chain ends this many days after sign-in. */

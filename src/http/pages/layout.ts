@@ -303,7 +303,7 @@ export type AppShell = {
   /** Left pane lists Settings items instead of libraries. */
   settingsMode?: boolean;
   /** Which Settings item is current. */
-  settingsActive?: "accounts";
+  settingsActive?: "accounts" | "apps";
 };
 
 /**
@@ -368,6 +368,17 @@ function settingsSidebar(shell: AppShell): string {
         </a>
       </li>`
     : "";
+  const appsActive = shell.settingsActive === "apps";
+  const apps = shell.showAccounts
+    ? `<li>
+        <a class="sidebar-lib${appsActive ? " is-active" : ""}" href="/apps"${appsActive ? ' aria-current="page"' : ""}>
+          <span class="sidebar-lib-text">
+            <span class="sidebar-lib-name">Apps</span>
+            <span class="sidebar-lib-meta">Approve hosted apps</span>
+          </span>
+        </a>
+      </li>`
+    : "";
   return `
     <aside class="lib-sidebar" aria-label="Settings">
       <div class="sidebar-head">
@@ -378,6 +389,7 @@ function settingsSidebar(shell: AppShell): string {
       <nav class="sidebar-nav" aria-label="Settings">
         <ul class="sidebar-libs">
           ${accounts}
+          ${apps}
           <li>
             <a class="sidebar-lib" href="/logout">
               <span class="sidebar-lib-text">
@@ -511,6 +523,7 @@ function sidebarShelfSection(shell: AppShell): string {
 function shellCurrentLabel(shell: AppShell): string {
   if (shell.settingsMode) {
     if (shell.settingsActive === "accounts") return "Accounts";
+    if (shell.settingsActive === "apps") return "Apps";
     return "Settings";
   }
   if (shell.addingShelf) return "Add shelf";

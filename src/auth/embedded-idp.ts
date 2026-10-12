@@ -23,6 +23,7 @@ import {
   memoryIdpStore,
   newClientId,
   newRefreshToken,
+  type CallbackHostRecord,
   type IdpStore,
   type SigningKeyRecord,
 } from "./idp-store.ts";
@@ -31,11 +32,13 @@ import { newSetupCode, setupCodeMatches } from "./setup-code.ts";
 import { QueueFullError } from "./semaphore.ts";
 import { addressKey, type KnownGoodStore, SIGN_IN_BUSY, SIGN_IN_WAIT, SignInLimit } from "./signin-limit.ts";
 import {
+  approvableCallbackHost,
   callbackHost,
   callbackKind,
   callbackLabel,
   DEFAULT_ALLOWED_SCHEMES,
   isAllowedCallback,
+  isApprovableHostname,
   redirectMatches,
 } from "./redirect.ts";
 import type { Role } from "./rbac.ts";
@@ -58,6 +61,8 @@ type PendingConsent = Omit<AuthCode, "expiresAt"> & {
   /** Double-submit value: the consent cookie must carry the same. */
   browserKey: string;
   expiresAt: number;
+  /** Set when this record is the site admin's "Approve <host> and continue" step, not the consent answer. */
+  approveHost?: string;
 };
 
 /** A refresh token unused this long expires, even inside the chain's maximum lifetime. */
@@ -85,7 +90,25 @@ export type EmbeddedIdp = {
   mount: (app: Express) => void;
   /** Sign this account out everywhere: refresh chains, sessions and access tokens. */
   revokeAccount: (sub: string) => Promise<void>;
+  /** Site admin approval of remote https callback hosts. */
+  callbackHosts: CallbackHostAdmin;
 };
+
+export type CallbackHostAdmin = {
+  /** Hosts seen or decided in the app, and the OAUTH_REDIRECT_HOSTS list. */
+  list(): Promise<{ hosts: CallbackHostRecord[]; envHosts: string[] }>;
+  /**
+   * Approve, deny or revoke (deny an approved host). Denying ends the refresh
+   * tokens of every client with a callback on that host. Written to the audit log.
+   */
+  decide(input: {
+    host: string;
+    decision: "approve" | "deny" | "revoke";
+    by: string;
+  }): Promise<{ ok: true; record: CallbackHostRecord; revokedTokens: number } | { ok: false; message: string }>;
+};
+
+export type IdpAuditEvent = { actorSub: string; tool: string; success: boolean; detail: string };
 
 export type EmbeddedIdpOptions = {
   signInLimit?: SignInLimit;
@@ -95,6 +118,8 @@ export type EmbeddedIdpOptions = {
   store?: IdpStore;
   /** Library name for the consent page. */
   libraryName?: (libraryId: string) => Promise<string | undefined>;
+  /** Audit log writer (audit_events in production). */
+  audit?: (event: IdpAuditEvent) => Promise<void>;
 };
 
 type ResolvedClient =
@@ -155,6 +180,19 @@ function resourceLibraryId(resource: string, config: AppConfig): string | undefi
   return LIBRARY_RESOURCE_PATH.exec(url.pathname)?.[1]?.toLowerCase();
 }
 
+function safeHostname(uri: string): string | undefined {
+  try {
+    return new URL(uri).hostname.toLowerCase().slice(0, 253) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Text safe for one log line. */
+function oneLine(value: string): string {
+  return value.replace(/[\r\n\u2028\u2029]/g, " ");
+}
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -173,6 +211,8 @@ function loginPage(input: {
   /** Where the browser goes after sign-in, shown before the password is typed. Omitted for the publisher's own sign-in. */
   returnTo?: string;
   username?: string;
+  /** The callback host is waiting for a site admin. */
+  pendingHost?: string;
 }): string {
   const fields = Object.entries(input.hidden)
     .map(([name, value]) => `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`)
@@ -201,6 +241,11 @@ function loginPage(input: {
           ? `<p class="hint">After you sign in, you will be sent to <strong>${escapeHtml(input.returnTo)}</strong>. Continue only if you started this from an app you trust.</p>`
           : ""
       }
+      ${
+        input.pendingHost
+          ? `<p class="notice" role="status">${escapeHtml(hostNotApprovedText(input.pendingHost))} If you are the site admin, sign in to approve it and continue.</p>`
+          : ""
+      }
       ${input.error ? `<p class="error" role="alert">${escapeHtml(input.error)}</p>` : ""}
       <form method="post" action="/id/authorize">
         ${fields}
@@ -222,6 +267,73 @@ function loginPage(input: {
   </main>
 </body>
 </html>`;
+}
+
+function simplePage(title: string, body: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)} · MCPEncode</title>
+  <link rel="stylesheet" href="${staticUrl("styles.css")}">
+</head>
+<body>
+  <main class="sign-in">
+    <section class="panel">
+      <h1>${escapeHtml(title)}</h1>
+      ${body}
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+/** The text shown wherever a callback host is still waiting. */
+export function hostNotApprovedText(host: string): string {
+  return `This app's callback host ${host} isn't approved yet. A site admin can approve it.`;
+}
+
+function hostDeniedPage(host: string): string {
+  return simplePage(
+    "App not allowed",
+    `<p>This app's callback host <strong>${escapeHtml(host)}</strong> was denied by a site admin, so it cannot sign in here.</p>
+     <p class="hint">Ask your site admin if you think this is a mistake.</p>`,
+  );
+}
+
+function hostWaitingPage(host: string): string {
+  return simplePage(
+    "Waiting for approval",
+    `<p>${escapeHtml(hostNotApprovedText(host))}</p>
+     <p><strong>Waiting for your site admin to approve this app.</strong> Once they have, start the connection again from the app.</p>`,
+  );
+}
+
+/** A site admin signed in on an authorize request whose callback host is pending. */
+function approveHostPage(input: {
+  consentId: string;
+  host: string;
+  clientName: string;
+  selfDeclared: boolean;
+  clientId: string;
+  callback: string;
+}): string {
+  const who = input.selfDeclared
+    ? `An app that says it is <strong>${escapeHtml(input.clientName)}</strong> (unverified: the app chose this name itself)`
+    : `<strong>${escapeHtml(input.clientName)}</strong>`;
+  return simplePage(
+    "Approve this app?",
+    `<p>${escapeHtml(hostNotApprovedText(input.host))}</p>
+     <p>${who} wants to sign in and return to <strong>${escapeHtml(input.host)}</strong>.</p>
+     <p class="hint">Full callback: <code>${escapeHtml(input.callback)}</code><br>Client id: ${escapeHtml(input.clientId)}</p>
+     <p class="hint">Approving lets any app that registers a callback on ${escapeHtml(input.host)} ask people here to sign in (each person still sees the Allow page). You are a site admin, so you can approve it now. You can revoke it later under Settings → Apps.</p>
+     <form method="post" action="/id/approve-host">
+       <input type="hidden" name="consent_id" value="${escapeHtml(input.consentId)}">
+       <button class="btn" type="submit" name="decision" value="approve">Approve ${escapeHtml(input.host)} and continue</button>
+       <button class="btn secondary" type="submit" name="decision" value="cancel">Cancel</button>
+     </form>`,
+  );
 }
 
 /** After sign-in, before any code is issued: who is asking, where the code goes, and for which library. */
@@ -348,10 +460,58 @@ export async function createEmbeddedIdp(
     endSessionEndpoint: `${issuer}/logout`,
   };
 
-  const policy = {
-    allowedHosts: config.oauthRedirectHosts,
-    allowedSchemes: DEFAULT_ALLOWED_SCHEMES,
+  const envHosts = config.oauthRedirectHosts ?? [];
+  /** Approved remote hosts are OAUTH_REDIRECT_HOSTS plus the hosts a site admin approved in the app. */
+  async function currentPolicy() {
+    const approved = await store.approvedHosts();
+    return { allowedHosts: [...envHosts, ...approved], allowedSchemes: DEFAULT_ALLOWED_SCHEMES };
+  }
+  const maxPendingHosts = config.oauthMaxPendingCallbackHosts ?? OAUTH_LIMITS.maxPendingCallbackHosts;
+  const audit = async (event: IdpAuditEvent) => {
+    await options?.audit?.(event).catch((error: unknown) => {
+      console.warn("Could not write the audit log:", error instanceof Error ? error.message : error);
+    });
   };
+
+  // One warning per host and client, so the log names what to approve without flooding.
+  const refusalsLogged = new Set<string>();
+  function logRefusal(rawHost: string, rawClientId: string, rawClientName: string): void {
+    // One log line each: no line breaks from client-chosen values.
+    const host = oneLine(rawHost);
+    const clientId = oneLine(rawClientId);
+    const clientName = oneLine(rawClientName);
+    const key = `${host} ${clientId}`;
+    if (refusalsLogged.has(key)) return;
+    if (refusalsLogged.size >= 5000) refusalsLogged.clear();
+    refusalsLogged.add(key);
+    console.warn(
+      `OAuth callback host not approved: host=${host} client_id=${clientId} client_name=${JSON.stringify(clientName)} (self-reported, unverified). A site admin can approve it under Settings → Apps, or add it to the environment:`,
+    );
+    console.warn(`OAUTH_REDIRECT_HOSTS=${host}`);
+  }
+
+  const callbackHosts: CallbackHostAdmin = {
+    async list() {
+      return { hosts: await store.listHosts(), envHosts: [...envHosts] };
+    },
+    async decide({ host: rawHost, decision, by }) {
+      const host = rawHost.trim().toLowerCase();
+      if (!isApprovableHostname(host)) return { ok: false, message: "That is not a hostname that can be approved." };
+      const status = decision === "approve" ? "approved" : "denied";
+      const record = await store.decideHost({ host, status, by, now: Date.now() });
+      // Denying or revoking ends every refresh chain of clients that return to this host.
+      const revokedTokens = status === "denied" ? await store.revokeHostTokens(host) : 0;
+      await audit({
+        actorSub: by,
+        tool: `callback_host.${decision}`,
+        success: true,
+        detail: `host=${host}${status === "denied" ? ` revoked_refresh_tokens=${revokedTokens}` : ""}`,
+      });
+      console.log(`Callback host ${host} ${status} by ${by}.`);
+      return { ok: true, record, revokedTokens };
+    },
+  };
+
   const maxPendingClients = config.oauthMaxPendingClients ?? OAUTH_LIMITS.maxPendingClients;
 
   async function resolveClient(clientId: string): Promise<ResolvedClient | undefined> {
@@ -369,7 +529,7 @@ export async function createEmbeddedIdp(
   }
 
   /** Exact registered callback, still allowed by the current policy. */
-  function redirectAllowed(client: ResolvedClient, uri: string): boolean {
+  async function redirectAllowed(client: ResolvedClient, uri: string): Promise<boolean> {
     if (client.kind === "web") {
       return isAllowedCallback(uri, {
         clientId: client.clientId,
@@ -377,7 +537,7 @@ export async function createEmbeddedIdp(
         publicBaseUrl: config.publicBaseUrl,
       });
     }
-    return redirectMatches(uri, client.redirectUris) && callbackKind(uri, policy) !== undefined;
+    return redirectMatches(uri, client.redirectUris) && callbackKind(uri, await currentPolicy()) !== undefined;
   }
 
   async function prune(now: number): Promise<void> {
@@ -485,6 +645,30 @@ export async function createEmbeddedIdp(
       ipv6Subnet: 64,
       send: (res) => res.json({ error: "too_many_requests", error_description: "Too many client registrations from this address. Wait and retry (see Retry-After)." }),
     }) ?? pass;
+  // New callback hosts waiting for approval, per address. Registrations that add no new host are not counted.
+  const pendingHostLimit =
+    addressRateLimit({
+      limit: config.oauthPendingHostRateLimit ?? OAUTH_LIMITS.pendingCallbackHostsPerHour,
+      windowMs: 60 * 60 * 1000,
+      identifier: "oauth-callback-host",
+      ipv6Subnet: 64,
+      skip: async (req) => {
+        const uris = (req.body as { redirect_uris?: unknown } | undefined)?.redirect_uris;
+        if (!Array.isArray(uris)) return true;
+        const policy = await currentPolicy();
+        for (const uri of uris.slice(0, MAX_REDIRECT_URIS)) {
+          if (typeof uri !== "string") continue;
+          const host = approvableCallbackHost(uri);
+          if (host && callbackKind(uri, policy) === undefined && !(await store.findHost(host))) return false;
+        }
+        return true;
+      },
+      send: (res) =>
+        res.json({
+          error: "too_many_requests",
+          error_description: "Too many new callback hosts from this address. Wait and retry (see Retry-After).",
+        }),
+    }) ?? pass;
   const authorizeLimit =
     addressRateLimit({
       limit: config.oauthAuthorizeRateLimit ?? OAUTH_LIMITS.authorizePerMinute,
@@ -506,7 +690,7 @@ export async function createEmbeddedIdp(
     });
 
     // Dynamic client registration (RFC 7591). Public clients only: PKCE, no secret.
-    app.post("/id/register", registerLimit, express.json({ limit: REGISTER_BODY_LIMIT }), async (req, res) => {
+    app.post("/id/register", registerLimit, express.json({ limit: REGISTER_BODY_LIMIT }), pendingHostLimit, async (req, res) => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       const requested = body.redirect_uris;
       if (!Array.isArray(requested) || requested.length === 0 || requested.length > MAX_REDIRECT_URIS) {
@@ -516,17 +700,40 @@ export async function createEmbeddedIdp(
         });
         return;
       }
+      const policy = await currentPolicy();
       const accepted: string[] = [];
+      // Remote https hosts not approved yet. The registration is kept, but no
+      // sign-in can finish (and no code is sent) until a site admin approves the host.
+      const pendingHosts: string[] = [];
       for (const entry of requested) {
-        if (typeof entry !== "string" || callbackKind(entry, policy) === undefined) {
-          res.status(400).json({
-            error: "invalid_redirect_uri",
-            error_description:
-              "Callbacks must be loopback (http://127.0.0.1, http://[::1], http://localhost), a reverse-DNS app scheme (com.example.app:/callback) or a known app scheme (cursor, vscode, vscode-insiders, claude). Browser-launcher schemes are refused. A remote https host must be listed in OAUTH_REDIRECT_HOSTS.",
-          });
-          return;
+        if (typeof entry === "string" && callbackKind(entry, policy) !== undefined) {
+          if (!accepted.includes(entry)) accepted.push(entry);
+          continue;
         }
-        if (!accepted.includes(entry)) accepted.push(entry);
+        const host = typeof entry === "string" ? approvableCallbackHost(entry) : undefined;
+        if (host) {
+          const known = await store.findHost(host);
+          if (known?.status === "denied") {
+            res.status(400).json({
+              error: "invalid_redirect_uri",
+              error_description: `The callback host ${host} was denied by this site's admin.`,
+              callback_host: host,
+            });
+            return;
+          }
+          if (!accepted.includes(entry)) accepted.push(entry);
+          if (!pendingHosts.includes(host)) pendingHosts.push(host);
+          continue;
+        }
+        const named = typeof entry === "string" && entry.startsWith("https://") ? safeHostname(entry) : undefined;
+        res.status(400).json({
+          error: "invalid_redirect_uri",
+          error_description: `${
+            named ? `The callback host ${named} cannot be used: only a DNS hostname over https (no IP address, user info or fragment) can be approved. ` : ""
+          }Callbacks must be loopback (http://127.0.0.1, http://[::1], http://localhost), a reverse-DNS app scheme (com.example.app:/callback), a known app scheme (cursor, vscode, vscode-insiders, claude), or https on a host a site admin approves. Browser-launcher schemes are refused.`,
+          ...(named ? { callback_host: named } : {}),
+        });
+        return;
       }
       const authMethod = body.token_endpoint_auth_method;
       if (authMethod !== undefined && authMethod !== "none") {
@@ -574,7 +781,20 @@ export async function createEmbeddedIdp(
         createdAt: now,
         registeredFrom,
       };
+      for (const host of pendingHosts) {
+        const noted = await store.notePendingHost({ host, clientName: client.clientName, now, maxPending: maxPendingHosts });
+        if (noted === "full") {
+          console.warn(`OAuth registration refused: the list of callback hosts waiting for approval is full. Refused host=${oneLine(host)}`);
+          res.status(503).setHeader("Retry-After", "3600").json({
+            error: "temporarily_unavailable",
+            error_description: `${hostNotApprovedText(host)} Too many hosts are waiting for approval right now, so this one was not added to the list. A site admin can set OAUTH_REDIRECT_HOSTS=${host}.`,
+            callback_host: host,
+          });
+          return;
+        }
+      }
       await store.saveClient(client);
+      for (const host of pendingHosts) logRefusal(host, client.clientId, client.clientName);
       res.status(201).json({
         client_id: client.clientId,
         client_id_issued_at: Math.floor(now / 1000),
@@ -589,6 +809,8 @@ export async function createEmbeddedIdp(
     type AuthorizeRequest = {
       client: ResolvedClient;
       hidden: Record<string, string>;
+      /** The registered https callback host is waiting for a site admin. No code may be issued. */
+      pendingHost?: string;
     };
 
     /** Validate the authorize parameters. Sends the error and returns undefined when they are bad. */
@@ -613,9 +835,28 @@ export async function createEmbeddedIdp(
         return undefined;
       }
       // Never redirect to a callback that is not registered: show the error here.
-      if (!redirectAllowed(client, hidden.redirect_uri)) {
-        res.status(400).send("invalid redirect_uri");
-        return undefined;
+      let pendingHost: string | undefined;
+      if (!(await redirectAllowed(client, hidden.redirect_uri))) {
+        const host =
+          client.kind === "registered" && redirectMatches(hidden.redirect_uri, client.redirectUris)
+            ? approvableCallbackHost(hidden.redirect_uri)
+            : undefined;
+        if (!host) {
+          res.status(400).send("invalid redirect_uri");
+          return undefined;
+        }
+        await store.notePendingHost({
+          host,
+          clientName: client.kind === "registered" && client.selfDeclared ? client.name : "",
+          now: Date.now(),
+          maxPending: maxPendingHosts,
+        });
+        logRefusal(host, client.clientId, client.kind === "registered" && client.selfDeclared ? client.name : "");
+        if ((await store.findHost(host))?.status === "denied") {
+          res.status(403).send(hostDeniedPage(host));
+          return undefined;
+        }
+        pendingHost = host;
       }
       if (hidden.code_challenge_method !== "S256" || !hidden.code_challenge) {
         res.status(400).send("PKCE S256 is required");
@@ -625,13 +866,13 @@ export async function createEmbeddedIdp(
         res.status(400).send("invalid resource");
         return undefined;
       }
-      return { client, hidden };
+      return { client, hidden, pendingHost };
     };
 
     const showAuthorize = async (req: Request, res: Response, error?: string, username?: string) => {
       const request = await readAuthorize(req, res);
       if (!request) return;
-      const { client, hidden } = request;
+      const { client, hidden, pendingHost } = request;
       const setup = (await accounts.count()) === 0;
       res.send(
         loginPage({
@@ -641,6 +882,7 @@ export async function createEmbeddedIdp(
           setupCodeRequired: setup && setupCode !== undefined,
           returnTo: client.kind === "web" ? undefined : callbackLabel(hidden.redirect_uri),
           username,
+          pendingHost,
         }),
       );
     };
@@ -746,11 +988,38 @@ export async function createEmbeddedIdp(
         redirectWithCode(res, grant, hidden.state);
         return;
       }
+      if (request.pendingHost) {
+        res.setHeader("Cache-Control", "no-store");
+        if (user.role !== "sa") {
+          res.status(403).send(hostWaitingPage(request.pendingHost));
+          return;
+        }
+        const consentId = await rememberConsent(res, { ...grant, state: hidden.state, approveHost: request.pendingHost });
+        res.send(
+          approveHostPage({
+            consentId,
+            host: request.pendingHost,
+            clientName: client.name,
+            selfDeclared: client.kind === "registered" && client.selfDeclared,
+            clientId: client.clientId,
+            callback: hidden.redirect_uri,
+          }),
+        );
+        return;
+      }
+      await sendConsent(res, client, { ...grant, state: hidden.state }, user.username);
+    });
+
+    /** Keep a single-use record for the next form and set its double-submit cookie. */
+    async function rememberConsent(
+      res: Response,
+      record: Omit<PendingConsent, "browserKey" | "expiresAt">,
+    ): Promise<string> {
       const now = Date.now();
       await prune(now);
       const consentId = randomBytes(32).toString("base64url");
       const browserKey = randomBytes(32).toString("base64url");
-      consents.set(consentId, { ...grant, state: hidden.state, browserKey, expiresAt: now + CONSENT_TTL_MS });
+      consents.set(consentId, { ...record, browserKey, expiresAt: now + CONSENT_TTL_MS });
       res.setHeader(
         "Set-Cookie",
         cookieHeader(CONSENT_COOKIE, browserKey, {
@@ -759,6 +1028,16 @@ export async function createEmbeddedIdp(
           secure: secureCookies,
         }),
       );
+      return consentId;
+    }
+
+    async function sendConsent(
+      res: Response,
+      client: ResolvedClient,
+      record: Omit<PendingConsent, "browserKey" | "expiresAt">,
+      username: string,
+    ): Promise<void> {
+      const consentId = await rememberConsent(res, record);
       res.setHeader("Cache-Control", "no-store");
       res.send(
         consentPage({
@@ -766,18 +1045,16 @@ export async function createEmbeddedIdp(
           clientName: client.name,
           selfDeclared: client.kind === "registered" && client.selfDeclared,
           clientId: client.clientId,
-          callbackHost: callbackHost(hidden.redirect_uri),
-          callback: hidden.redirect_uri,
-          library: await libraryLabel(hidden.resource),
-          username: user.username,
+          callbackHost: callbackHost(record.redirectUri),
+          callback: record.redirectUri,
+          library: await libraryLabel(record.resource),
+          username,
         }),
       );
-    });
+    }
 
-    // Allow or Deny. The consent id is single-use and must arrive with the
-    // cookie set on the page that showed it (double submit), so another site
-    // cannot answer for the person.
-    app.post("/id/consent", async (req, res) => {
+    /** Take a consent record posted back with its cookie. Undefined when missing, expired or from another browser. */
+    function takeConsent(req: Request, res: Response): PendingConsent | undefined {
       const consentId = form(req, "consent_id");
       const pending = consentId ? consents.get(consentId) : undefined;
       if (consentId) consents.delete(consentId);
@@ -786,16 +1063,59 @@ export async function createEmbeddedIdp(
         "Set-Cookie",
         cookieHeader(CONSENT_COOKIE, "", { path: "/id", clear: true, secure: secureCookies }),
       );
-      if (!pending || pending.expiresAt < Date.now() || !sameSecret(browserKey, pending.browserKey)) {
+      if (!pending || pending.expiresAt < Date.now() || !sameSecret(browserKey, pending.browserKey)) return undefined;
+      return pending;
+    }
+
+    // The site admin's "Approve <host> and continue". Same single-use id and
+    // cookie as the consent page, so another site cannot post it. The account
+    // is looked up again: it must still be an enabled SA.
+    app.post("/id/approve-host", async (req, res) => {
+      res.setHeader("Cache-Control", "no-store");
+      const pending = takeConsent(req, res);
+      if (!pending?.approveHost) {
+        res.status(400).send(simplePage("Sign-in expired", "<p>This sign-in expired. Start again from the app.</p>"));
+        return;
+      }
+      const host = pending.approveHost;
+      if (form(req, "decision") !== "approve") {
+        res.send(simplePage("Cancelled", `<p>${escapeHtml(host)} was not approved. You can close this page.</p>`));
+        return;
+      }
+      const current = await accounts.findById(pending.sub);
+      if (!current || current.disabled || current.role !== "sa") {
+        res.status(403).send(simplePage("Not allowed", "<p>Only a site admin can approve an app's callback host.</p>"));
+        return;
+      }
+      const decided = await callbackHosts.decide({ host, decision: "approve", by: current.id });
+      if (!decided.ok) {
+        res.status(400).send(simplePage("Not approved", `<p>${escapeHtml(decided.message)}</p>`));
+        return;
+      }
+      const client = await resolveClient(pending.clientId);
+      if (!client || !(await redirectAllowed(client, pending.redirectUri))) {
+        res.status(400).send("invalid redirect_uri");
+        return;
+      }
+      const { browserKey: _key, expiresAt: _expires, approveHost: _host, ...record } = pending;
+      await sendConsent(res, client, record, current.username);
+    });
+
+    // Allow or Deny. The consent id is single-use and must arrive with the
+    // cookie set on the page that showed it (double submit), so another site
+    // cannot answer for the person.
+    app.post("/id/consent", async (req, res) => {
+      const pending = takeConsent(req, res);
+      if (!pending || pending.approveHost) {
         res.status(400).send("This sign-in expired. Start again from the app.");
         return;
       }
       const client = await resolveClient(pending.clientId);
-      if (!client || !redirectAllowed(client, pending.redirectUri)) {
+      if (!client || !(await redirectAllowed(client, pending.redirectUri))) {
         res.status(400).send("invalid redirect_uri");
         return;
       }
-      const { state, browserKey: _key, expiresAt: _expires, ...grant } = pending;
+      const { state, browserKey: _key, expiresAt: _expires, approveHost: _host, ...grant } = pending;
       if (form(req, "decision") !== "allow") {
         const next = new URL(pending.redirectUri);
         next.searchParams.set("error", "access_denied");
@@ -839,7 +1159,7 @@ export async function createEmbeddedIdp(
         return;
       }
       const client = await resolveClient(record.clientId);
-      if (!client || !redirectAllowed(client, record.redirectUri)) {
+      if (!client || !(await redirectAllowed(client, record.redirectUri))) {
         res.status(400).json({ error: "invalid_client" });
         return;
       }
@@ -948,5 +1268,5 @@ export async function createEmbeddedIdp(
     await accounts.revokeSessions(sub);
   }
 
-  return { endpoints, publicKey, kid, mount, revokeAccount };
+  return { endpoints, publicKey, kid, mount, revokeAccount, callbackHosts };
 }
