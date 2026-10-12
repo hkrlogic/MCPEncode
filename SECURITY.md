@@ -37,5 +37,6 @@ Out of scope: running with the example or placeholder secrets, exposing the buil
 - MCP clients register their own client id. Only loopback and app-scheme callbacks are accepted by default; add hosted clients' hostnames to `OAUTH_REDIRECT_HOSTS` (for example `claude.ai`) rather than turning on `OAUTH_ALLOW_ANY_HTTPS_REDIRECT`. Every MCP sign-in shows a consent page with the client, callback host and library. Once every client has reconnected, set `OAUTH_LEGACY_CLIENT=false` to retire the shared `mpos-mcp` id.
 - Refresh tokens rotate, are stored hashed, and a reused one revokes its sign-in. Sign-out and a password reset sign the account out everywhere. Keep `OAUTH_REFRESH_MAX_DAYS` short for sensitive libraries.
 - Remote Postgres must use `POSTGRES_SSL=required`.
+- Library MCP routes allow `MCP_RATE_LIMIT_PER_MINUTE` requests per client address per minute (default 300, `0` off) and answer `429` with `Retry-After` past that. The address follows `TRUST_PROXY`. See [docs/deploy.md](docs/deploy.md#mcp-rate-limit).
 - Treat each library's Connect link and Reader key as secrets. Rotate them from the publisher UI if they leak. Prefer `X-Library-Token` for clients that can set headers, and keep `/libraries/*/mcp/*` out of proxy logs.
 - With `AUTH_MODE=oidc`, give library MCP its own audience (`AUTH_MCP_AUDIENCE`) so web sign-in tokens cannot open MCP.
