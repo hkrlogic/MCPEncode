@@ -14,7 +14,11 @@ export type Account = {
   disabled: boolean;
 };
 
-export type StoredAccount = Account & { passwordHash: string };
+export type StoredAccount = Account & {
+  passwordHash: string;
+  /** Sessions and access tokens issued before this time (ms) are refused. Set by sign-out and password reset. */
+  sessionsRevokedAt?: number | null;
+};
 
 export type AccountStore = {
   count(): Promise<number>;
@@ -32,6 +36,8 @@ export type AccountStore = {
     role: AccountRole;
   }): Promise<{ ok: true; account: Account } | { ok: false; message: string }>;
   setPassword(id: string, password: string): Promise<{ ok: true } | { ok: false; message: string }>;
+  /** End every session and access token issued before now. Refresh chains are revoked separately. */
+  revokeSessions(id: string): Promise<void>;
   setDisabled(
     id: string,
     disabled: boolean,
@@ -109,6 +115,10 @@ export function memoryAccountStore(): AccountStore {
       if (row.disabled) return { ok: false, message: "Enable the account before resetting the password." };
       row.passwordHash = await hashPassword(password);
       return { ok: true };
+    },
+    async revokeSessions(id) {
+      const row = rows.find((entry) => entry.id === id);
+      if (row) row.sessionsRevokedAt = Date.now();
     },
     async setDisabled(id, disabled) {
       return withSaGuard(async () => {

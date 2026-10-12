@@ -39,9 +39,41 @@ export type AppConfig = {
   setupToken?: string;
   /** True when the first-account page must ask for a setup code (anything but local-only). */
   setupCodeRequired?: boolean;
-  /** OAUTH_REDIRECT_HOSTS. When non-empty, remote web callbacks for MCP clients must use one of these hostnames. */
+  /** OAUTH_REDIRECT_HOSTS. Remote https hostnames an MCP client may register as its callback. */
   oauthRedirectHosts?: string[];
+  /** OAUTH_ALLOW_ANY_HTTPS_REDIRECT. Accept a callback on any https host. Off by default. */
+  oauthAllowAnyHttpsRedirect?: boolean;
+  /**
+   * OAUTH_LEGACY_CLIENT. Keep accepting client_id "mpos-mcp" (the fixed id every
+   * client got before registrations were stored), for loopback and app-scheme
+   * callbacks only. On by default; set false once every client has re-registered.
+   */
+  oauthLegacyClient?: boolean;
+  /** OAUTH_REFRESH_MAX_DAYS. A sign-in's refresh chain ends this many days after sign-in. */
+  refreshMaxLifetimeDays?: number;
 };
+
+/** Default for OAUTH_REFRESH_MAX_DAYS. */
+export const DEFAULT_REFRESH_MAX_DAYS = 30;
+
+/** OAUTH_REFRESH_MAX_DAYS: whole days, 1 to 365. */
+export function parseRefreshMaxDays(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_REFRESH_MAX_DAYS;
+  const days = Number(raw.trim());
+  if (!/^\d+$/.test(raw.trim()) || days < 1 || days > 365) {
+    throw new Error("OAUTH_REFRESH_MAX_DAYS must be a whole number of days from 1 to 365");
+  }
+  return days;
+}
+
+/** true/false env flag. Anything else is an error, so a typo does not silently pick the default. */
+export function parseBooleanEnv(name: string, raw: string | undefined, fallback: boolean): boolean {
+  const value = raw?.trim().toLowerCase();
+  if (!value) return fallback;
+  if (value === "true" || value === "1" || value === "yes") return true;
+  if (value === "false" || value === "0" || value === "no") return false;
+  throw new Error(`${name} must be true or false`);
+}
 
 const DB_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
@@ -289,6 +321,13 @@ export function loadConfig(): AppConfig {
     setupToken,
     setupCodeRequired: isPublicDeployment(bindHost, publicBaseUrl),
     oauthRedirectHosts: parseAllowedHosts(process.env.OAUTH_REDIRECT_HOSTS),
+    oauthAllowAnyHttpsRedirect: parseBooleanEnv(
+      "OAUTH_ALLOW_ANY_HTTPS_REDIRECT",
+      process.env.OAUTH_ALLOW_ANY_HTTPS_REDIRECT,
+      false,
+    ),
+    oauthLegacyClient: parseBooleanEnv("OAUTH_LEGACY_CLIENT", process.env.OAUTH_LEGACY_CLIENT, true),
+    refreshMaxLifetimeDays: parseRefreshMaxDays(process.env.OAUTH_REFRESH_MAX_DAYS),
   };
 }
 

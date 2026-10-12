@@ -67,7 +67,7 @@ test("the sign-in form stops checking passwords after the username limit", async
   const base = `http://127.0.0.1:${port}`;
   const params = {
     client_id: "mpos-mcp",
-    redirect_uri: "https://brand-new-client.example/oauth/callback",
+    redirect_uri: "http://127.0.0.1:8765/oauth/callback",
     response_type: "code",
     code_challenge: "a".repeat(43),
     code_challenge_method: "S256",

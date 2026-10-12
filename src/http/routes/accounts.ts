@@ -155,6 +155,8 @@ export function registerAccountRoutes(app: express.Express, ctx: AppRouteContext
       res.status(page.status).send(page.html);
       return;
     }
+    // A reset password ends every sign-in made with the old one.
+    await ctx.revokeAccount?.(req.params.id);
     res.redirect("/accounts?notice=password");
   });
 

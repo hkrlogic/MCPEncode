@@ -2,7 +2,7 @@
 import type express from "express";
 import type { Role } from "../../auth/rbac.ts";
 import { loginScopes } from "../../auth/scopes.ts";
-import { signSession } from "../../auth/session.ts";
+import { readSession, signSession } from "../../auth/session.ts";
 import { cookieHeader, readCookie } from "../cookies.ts";
 import { OAUTH_COOKIE, SESSION_COOKIE, setCookies } from "../helpers.ts";
 import { errorPage } from "../pages.ts";
@@ -94,7 +94,16 @@ export function registerAuthRoutes(app: express.Express, ctx: AppRouteContext): 
     res.redirect("/");
   });
 
-  app.get("/logout", (_req, res) => {
+  app.get("/logout", async (req, res) => {
+    // Sign-out ends every sign-in of this account: other browser sessions,
+    // MCP access tokens and refresh chains. A stolen copy stops working too.
+    const token = readCookie(req.headers, SESSION_COOKIE);
+    const session = token ? await readSession(token, config.sessionSecret) : undefined;
+    if (session && ctx.revokeAccount) {
+      await ctx.revokeAccount(session.sub).catch((error: unknown) => {
+        console.error("sign-out revocation failed", error);
+      });
+    }
     setCookies(res, [cookieHeader(SESSION_COOKIE, "", { clear: true, secure })]);
     if (authServer.endSessionEndpoint) {
       const logout = new URL(authServer.endSessionEndpoint);

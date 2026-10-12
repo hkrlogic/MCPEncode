@@ -19,6 +19,7 @@ import {
   resolveLibraryMcpAccess,
 } from "../src/mcp/server.ts";
 import { withTestDatabase } from "./db.ts";
+import { signInForCode } from "./oauth-flow.ts";
 
 const PASSWORD = "correct horse battery";
 const SECRET = "test-session-secret-32-bytes-minimum!!";
@@ -108,31 +109,27 @@ type Tokens = { refresh_token: string; scope: string };
 
 async function signIn(base: string, username: string): Promise<Tokens> {
   const verifier = "v".repeat(64);
-  const redirectUri = "https://client.example/callback";
-  const authorize = await fetch(`${base}/id/authorize`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
+  const redirectUri = "http://127.0.0.1:8765/callback";
+  const code = await signInForCode(
+    base,
+    {
       client_id: "mpos-mcp",
       redirect_uri: redirectUri,
       response_type: "code",
       code_challenge: await pkceChallenge(verifier),
       code_challenge_method: "S256",
       state: "s",
-      username,
-      password: PASSWORD,
-    }),
-    redirect: "manual",
-  });
-  assert.equal(authorize.status, 302);
-  const code = new URL(authorize.headers.get("location") ?? "").searchParams.get("code");
-  assert.ok(code);
+    },
+    username,
+    PASSWORD,
+  );
   const token = await fetch(`${base}/id/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code,
+      client_id: "mpos-mcp",
       redirect_uri: redirectUri,
       code_verifier: verifier,
     }),

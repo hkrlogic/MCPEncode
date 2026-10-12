@@ -796,13 +796,14 @@ export async function resolveLibraryMcpAccess(
 ): Promise<LibraryMcpContext | { error: string }> {
   const library = await getLibrary(db, libraryId);
   if (!library) return { error: "Library not found." };
-  const extra = (authInfo.extra ?? {}) as { sub?: string; role?: Role };
+  const extra = (authInfo.extra ?? {}) as { sub?: string; role?: Role; iat?: number };
   const sub = extra.sub || authInfo.clientId;
   let idpRole: Role = extra.role === "sa" ? "sa" : "readonly";
   if (guard) {
-    // A token outlives the account. Disabled or removed means no access, and a
-    // demoted SA is no longer SA, whatever the token still says.
-    const check = await guard(sub);
+    // A token outlives the account. Disabled or removed means no access, a
+    // demoted SA is no longer SA whatever the token still says, and a token
+    // issued before a sign-out everywhere is refused.
+    const check = await guard(sub, extra.iat);
     if (!check.allowed) return { error: ACCOUNT_UNAVAILABLE };
     idpRole = check.role;
   }

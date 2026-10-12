@@ -16,6 +16,7 @@ type AccountRow = {
   password_hash: string;
   role: string;
   disabled?: boolean | number | string;
+  sessions_revoked_at?: number | string | null;
 };
 
 function asRole(value: string): AccountRole {
@@ -34,6 +35,8 @@ function toStored(row: AccountRow): StoredAccount {
     role: asRole(row.role),
     disabled: asDisabled(row.disabled),
     passwordHash: row.password_hash,
+    sessionsRevokedAt:
+      row.sessions_revoked_at === null || row.sessions_revoked_at === undefined ? null : Number(row.sessions_revoked_at),
   };
 }
 
@@ -77,7 +80,7 @@ export function accountStore(db: Database): AccountStore {
     async findByUsername(username: string) {
       const row = await getRow<AccountRow>(
         db,
-        "SELECT id, username, password_hash, role, disabled FROM accounts WHERE username = ?",
+        "SELECT id, username, password_hash, role, disabled, sessions_revoked_at FROM accounts WHERE username = ?",
         normalizeUsername(username),
       );
       return row ? toStored(row) : undefined;
@@ -85,7 +88,7 @@ export function accountStore(db: Database): AccountStore {
     async findById(id: string) {
       const row = await getRow<AccountRow>(
         db,
-        "SELECT id, username, password_hash, role, disabled FROM accounts WHERE id = ?",
+        "SELECT id, username, password_hash, role, disabled, sessions_revoked_at FROM accounts WHERE id = ?",
         id,
       );
       return row ? toStored(row) : undefined;
@@ -167,6 +170,9 @@ export function accountStore(db: Database): AccountStore {
         id,
       );
       return { ok: true };
+    },
+    async revokeSessions(id) {
+      await db.run("UPDATE accounts SET sessions_revoked_at = ? WHERE id = ?", Date.now(), id);
     },
     async setDisabled(id, disabled) {
       return withSaGuard(db, async (tx) => {

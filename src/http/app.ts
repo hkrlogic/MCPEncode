@@ -64,6 +64,8 @@ export function createApp(input: {
   authServer: AuthServerEndpoints;
   verifierKey?: Parameters<typeof createTokenVerifier>[0]["localKey"];
   mountAuthServer?: (app: express.Express) => void;
+  /** Built-in sign-in: sign an account out everywhere. */
+  revokeAccount?: (sub: string) => Promise<void>;
   /** Built-in accounts. When set, sessions and tokens are re-checked against the account on every request. */
   accounts?: AccountStore;
 }) {
@@ -202,7 +204,13 @@ export function createApp(input: {
     jwksUrl,
     localKey: input.verifierKey,
   });
-  const ctx: AppRouteContext = { config, db, authServer, verifier: webVerifier };
+  const ctx: AppRouteContext = {
+    config,
+    db,
+    authServer,
+    verifier: webVerifier,
+    revokeAccount: input.revokeAccount,
+  };
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);
   registerLibraryRoutes(app, ctx);

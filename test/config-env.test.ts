@@ -28,6 +28,10 @@ const KEYS = [
   "POSTGRES_DB",
   "POSTGRES_SSL",
   "POSTGRES_CONNECT_TIMEOUT_SECONDS",
+  "OAUTH_REDIRECT_HOSTS",
+  "OAUTH_ALLOW_ANY_HTTPS_REDIRECT",
+  "OAUTH_LEGACY_CLIENT",
+  "OAUTH_REFRESH_MAX_DAYS",
 ];
 
 /** Run fn with only the given variables set (from the list above). Restores the rest. */
@@ -110,4 +114,33 @@ test("a missing database password names the standard variables", () => {
         /POSTGRES_PASSWORD/.test(error.message),
     );
   });
+});
+
+test("OAuth callback and refresh settings default to the safe choice", () => {
+  withEnv(BASE, () => {
+    const config = loadConfig();
+    assert.deepEqual(config.oauthRedirectHosts, []);
+    assert.equal(config.oauthAllowAnyHttpsRedirect, false);
+    assert.equal(config.oauthLegacyClient, true);
+    assert.equal(config.refreshMaxLifetimeDays, 30);
+  });
+  withEnv(
+    {
+      ...BASE,
+      OAUTH_REDIRECT_HOSTS: "claude.ai, www.perplexity.ai",
+      OAUTH_ALLOW_ANY_HTTPS_REDIRECT: "true",
+      OAUTH_LEGACY_CLIENT: "false",
+      OAUTH_REFRESH_MAX_DAYS: "7",
+    },
+    () => {
+      const config = loadConfig();
+      assert.deepEqual(config.oauthRedirectHosts, ["claude.ai", "www.perplexity.ai"]);
+      assert.equal(config.oauthAllowAnyHttpsRedirect, true);
+      assert.equal(config.oauthLegacyClient, false);
+      assert.equal(config.refreshMaxLifetimeDays, 7);
+    },
+  );
+  for (const bad of [{ OAUTH_REFRESH_MAX_DAYS: "0" }, { OAUTH_REFRESH_MAX_DAYS: "1.5" }, { OAUTH_LEGACY_CLIENT: "maybe" }]) {
+    withEnv({ ...BASE, ...bad }, () => assert.throws(() => loadConfig()));
+  }
 });
