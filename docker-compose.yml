@@ -1,7 +1,7 @@
-# The publisher and its Postgres. Both are published on 127.0.0.1 only; put a
+# MCPEncode and its Postgres. Both are published on 127.0.0.1 only; put a
 # TLS reverse proxy in front for a public address (see docs/deploy.md).
-# Credentials come from .env (scripts/init-env.sh). Postgres reads the password
-# only when this volume is first created.
+# Credentials come from .env (run scripts/init-env.sh first). Postgres reads the
+# password only when this volume is first created.
 #
 #   docker compose up -d --build     # app + Postgres
 #   docker compose up -d postgres    # Postgres only, for npm start during development
@@ -11,9 +11,9 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-mpos}
+      POSTGRES_USER: ${POSTGRES_USER:-mcpencode}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (run scripts/init-env.sh)}
-      POSTGRES_DB: ${POSTGRES_DATABASE:-mpos}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-mcpencode}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +24,7 @@ services:
       start_period: 10s
 
   # Uses the same .env, but reaches Postgres by its service name and listens on
-  # all interfaces inside the container. Port 3000 is still published on 127.0.0.1 only.
+  # all interfaces inside the container. Published on 127.0.0.1:${PORT} only.
   app:
     build: .
     image: mcpencode:local
@@ -42,7 +42,7 @@ services:
       # Set TRUST_PROXY in .env to change it (e.g. false with no proxy in front).
       TRUST_PROXY: ${TRUST_PROXY:-uniquelocal}
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${PORT:-3000}:3000"
     restart: unless-stopped
     depends_on:
       postgres:

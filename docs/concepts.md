@@ -1,0 +1,96 @@
+# Concepts
+
+How MCPEncode works: the words, the roles, the write modes, the MCP tools and the architecture. Setup is in [README.md](../README.md) and [deploy.md](deploy.md).
+
+## Words
+
+Use exactly these words in UI text, docs and code. Do not invent synonyms (vault, notebook, portal, record, document).
+
+| Word | Meaning |
+| --- | --- |
+| **Library** | A named set of items with one schema, one Connect link and one Access list. There are many libraries, not one global pile. |
+| **Item** | One entry in a library: name, labels, summary, and a markdown body or template fields. |
+| **Publish** | A person approves an item. Readers and Reader keys only ever see published items. |
+| **Connect link** | A library's MCP address, with a secret token. One link reaches one library. |
+| **Reader** / **Publisher** | Per-library roles, granted under **Access**. |
+| **Site admin** | The one app-wide admin role: Accounts, add libraries, open every library, hard-delete. The first account is the Site admin. (Shown as "SA" in some UI and logs.) |
+| **Shelf** | A group of libraries searched together. |
+| **Reader key** | A static Reader credential for one library, for a shared agent. |
+| **Entity key** | A stable id (e.g. a hostname) so repeated syncs update one item instead of adding new ones. |
+
+## Roles
+
+- **Site admin**: everything, in every library. Creates accounts (built-in sign-in).
+- **Publisher** (per library): add, edit, Publish and archive items; change the write mode; create the Reader key; see the audit log; may delete their library. Only the Site admin hard-deletes items.
+- **Reader** (per library): read published items.
+- Everyone else can sign in but sees no library until granted Access.
+
+Disabling or demoting an account takes effect at once: sessions, MCP tokens and refreshes are re-checked on every request.
+
+## Status and write modes
+
+Items move `draft` (Pending) → `published` (optionally `archived`). Reader connections see only published items.
+
+Each library has a **write mode**, chosen when it is added and changed later in the UI only (never over MCP):
+
+- **Review Lock** (default, stored as `reviewed`): agent and human saves go to Pending; a person Publishes.
+- **Review Unlock** (stored as `direct`): a successful save is published at once. For trusted automation output.
+
+**Revert to published** (item Diff / ⋯ menu) restores the last published copy; **Revert to previous published** goes one Publish further back. Revert leaves the item Pending until Publish. Details: [revert-to-published.md](revert-to-published.md).
+
+Library schema (starters, Custom tables, agent-proposed fields that a person approves): [library-schema-v1.md](library-schema-v1.md).
+
+## MCP tools
+
+Each Connect link is one library. Tools offered depend on the caller's role in that library.
+
+| Tool | Who | Does |
+| --- | --- | --- |
+| `whoami` | anyone | Identity, library, role |
+| `list_items` | Reader+ | Look up by question (`q`) or browse. One clear match returns the full item. |
+| `open_item` | Reader+ | Full item by id |
+| `search_shelf` | Reader+ | Published summaries across the library's shelf |
+| `create_item` / `update_item` | Publisher | Save: Pending (Review Lock) or published (Review Unlock) |
+| `delete_item` | Publisher | Remove an item |
+| `create_library` / `propose_table` / `propose_field` | Publisher | Design a library; a person approves the schema |
+| `list_audit` | Publisher, Site admin | Who called which tool in this library |
+
+There is **no publish, approve, write-mode or revert tool.** Those stay with people in the web UI. Tool output labels item content as data, not instructions.
+
+**Summaries.** Every item has a summary: the short text lookups return before an item is opened. General libraries build it from the body (text before the first table, up to 500 characters). Policy, Procedure, Custom and extended General libraries take a required one-line `summary` (up to 160 characters).
+
+## Connecting
+
+- **Connect link** (`/libraries/<id>/mcp/<token>`): paste into the MCP client. The client signs in (built-in sign-in: it registers itself, the person enters a password and clicks **Allow** on the consent page).
+- **Header form**: `/libraries/<id>/mcp` with `X-Library-Token: <token>`, which keeps the token out of URLs and logs.
+- **Reader key**: `Authorization: Bearer <key>` for a shared read-only agent, no sign-in.
+
+Rotating the Connect link (**Connect → Rotate**) invalidates the old token in both forms; Access grants stay.
+
+## Architecture
+
+One Node.js 22 process (Express 5, TypeScript run by `tsx`, no build step) and PostgreSQL 16+.
+
+```
+browser ──► web UI (server-rendered HTML + public/*.js)  ┐
+MCP client ─► /libraries/<id>/mcp[/<token>]  (MCP over HTTP) ├─► Express app ─► Postgres
+                /id/*  built-in OAuth 2.1 sign-in (or external OIDC) ┘
+```
+
+- `src/index.ts`: startup (config, database + migrations, sign-in, HTTP server).
+- `src/config.ts`: reads and validates the environment; [`src/env-schema.ts`](../src/env-schema.ts) lists every variable.
+- `src/auth/`: built-in OAuth server (`embedded-idp.ts`), token verification, roles, sessions, sign-in throttle.
+- `src/http/`: Express app, routes, pages, rate limits, `/healthz`.
+- `src/mcp/`: MCP server and tools.
+- `src/db/`: Postgres client, migrations runner, queries. `migrations/` holds the SQL, applied in order at startup.
+- `src/items/`, `src/markdown/`: item schemas and templates; Markdown sanitising and tables.
+- `public/`: browser scripts and styles (strict CSP: no inline script).
+
+State that is **not** in Postgres: pending sign-ins, consent answers, authorization codes and rate-limit counters (memory, one process). See [known-limitations.md](known-limitations.md).
+
+## Not built yet
+
+- Library starters / schema integrity follow-ups: fork-with-items, retire source ([library-schema-v1.md](library-schema-v1.md)).
+- Site admin break-glass recovery (today: reset through Postgres).
+- Sign-in domain allow/deny lists; TOTP for built-in accounts.
+- Usage dashboard; whole-library export (item Markdown export exists).

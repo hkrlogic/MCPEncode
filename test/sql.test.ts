@@ -94,7 +94,7 @@ test("a DATABASE_URL with no database name uses the default database", () => {
   try {
     const config = loadDatabaseConfig();
     assert.equal(config.host, "db.example.internal");
-    assert.equal(config.database, "mpos");
+    assert.equal(config.database, "mcpencode");
     assert.equal(config.user, "postgres");
     assert.equal(config.password, "s3cret");
     assert.equal(config.ssl, false);

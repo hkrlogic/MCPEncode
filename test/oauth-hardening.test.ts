@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { memoryAccountStore } from "../src/auth/accounts.ts";
 import { createEmbeddedIdp } from "../src/auth/embedded-idp.ts";
 import type { AppConfig } from "../src/config.ts";
-import { answerConsent, readConsent } from "./oauth-flow.ts";
+import { answerConsent, readConsent, registeredClientId } from "./oauth-flow.ts";
 
 const LIBRARY_RESOURCE = `http://127.0.0.1:3000/libraries/00000000-0000-4000-8000-000000000001/mcp/${"t".repeat(43)}`;
 const PASSWORD = "correct horse battery";
@@ -19,7 +19,7 @@ async function startIdp(overrides: Partial<AppConfig> = {}) {
     publicBaseUrl: "http://127.0.0.1:3000",
     authIssuer: "http://127.0.0.1:3000/id",
     authAudience: "http://127.0.0.1:3000",
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     ...overrides,
   } as AppConfig;
   const idp = await createEmbeddedIdp(config, accounts);
@@ -29,11 +29,16 @@ async function startIdp(overrides: Partial<AppConfig> = {}) {
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
-  return { base: `http://127.0.0.1:${port}`, close: () => server.close() };
+  const base = `http://127.0.0.1:${port}`;
+  const callbacks = [mcpParams.redirect_uri];
+  if (overrides.oauthRedirectHosts?.includes("claude.ai")) callbacks.push("https://claude.ai/cb");
+  mcpParams.client_id = await registeredClientId(base, callbacks);
+  return { base, close: () => server.close() };
 }
 
+/** client_id is the one the latest startIdp registered. */
 const mcpParams = {
-  client_id: "mpos-mcp",
+  client_id: "",
   redirect_uri: "http://127.0.0.1:8765/oauth/callback",
   response_type: "code",
   code_challenge: "a".repeat(43),
@@ -58,7 +63,7 @@ test("the publisher's own sign-in does not show a destination", async () => {
   try {
     const params = {
       ...mcpParams,
-      client_id: "mpos-web",
+      client_id: "mcpencode-web",
       redirect_uri: "http://127.0.0.1:3000/callback",
     };
     const page = await fetch(`${idp.base}/id/authorize?${new URLSearchParams(params)}`);

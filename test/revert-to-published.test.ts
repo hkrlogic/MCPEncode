@@ -45,14 +45,14 @@ function testConfig(port: number): AppConfig {
     authIssuer: `${origin}/id`,
     authJwksUrl: `${origin}/id/jwks`,
     authAudience: origin,
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     sessionSecret: SESSION_SECRET,
     database: {
       host: "127.0.0.1",
       port: 5432,
-      user: "mpos",
+      user: "mcpencode",
       password: "stub-not-a-real-password",
-      database: "mpos",
+      database: "mcpencode",
       ssl: false,
     },
   };
@@ -472,8 +472,8 @@ test("HTTP revert-published: success, CSRF, and reader denied", async () => {
     const { port } = server.address() as AddressInfo;
     const base = `http://127.0.0.1:${port}`;
     const csrf = "csrf-revert";
-    const cookie = `mpos_session=${await signSession(
-      { sub: "publisher-ada", clientId: "mpos-web", role: "sa", csrf },
+    const cookie = `mcpencode_session=${await signSession(
+      { sub: "publisher-ada", clientId: "mcpencode-web", role: "sa", csrf },
       SESSION_SECRET,
     )}`;
 
@@ -513,8 +513,8 @@ test("HTTP revert-published: success, CSRF, and reader denied", async () => {
       });
       assert.equal(badCsrf.status, 403);
 
-      const readerCookie = `mpos_session=${await signSession(
-        { sub: "reader-riley", clientId: "mpos-web", role: "readonly", csrf: "csrf-reader" },
+      const readerCookie = `mcpencode_session=${await signSession(
+        { sub: "reader-riley", clientId: "mcpencode-web", role: "readonly", csrf: "csrf-reader" },
         SESSION_SECRET,
       )}`;
       const readerDenied = await fetch(`${base}/items/${item.id}/revert-published`, {

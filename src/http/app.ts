@@ -150,9 +150,8 @@ export function createApp(input: {
       resourceServerUrl: resourceUrl,
       resourceName: "MCPEncode library",
       scopesSupported: loginScopes(config),
-      dangerouslyAllowInsecureIssuerUrl:
-        resourceUrl.protocol === "http:" ||
-        process.env.MCP_DANGEROUSLY_ALLOW_INSECURE_ISSUER_URL === "true",
+      // An http issuer only passes assertSecureBaseUrl on loopback or with ALLOW_INSECURE_HTTP.
+      dangerouslyAllowInsecureIssuerUrl: resourceUrl.protocol === "http:",
     });
     res.json(metadata);
   };

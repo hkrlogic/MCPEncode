@@ -1,0 +1,25 @@
+# MCPEncode
+
+> Self-hosted web app and MCP server. People keep Libraries of Items and Publish them; AI agents connect to one Library through its Connect link (MCP over HTTP) to look Items up and draft changes. Node.js 22 + PostgreSQL 16+, one container, built-in OAuth 2.1 sign-in or external OIDC.
+
+To deploy: `scripts/init-env.sh` then `docker compose up -d --build`, check `GET /healthz` returns `{"status":"ok","database":"ok"}`, open the URL and create the first account with `SETUP_TOKEN` from `.env`. Settings are validated by `npm run check-env`.
+
+## Start here
+
+- [AGENTS.md](https://github.com/hkrlogic/MCPEncode/blob/main/AGENTS.md): canonical guide for AI agents: deploy commands, required settings, verification, common failures, tests, contribution rules
+- [README.md](https://github.com/hkrlogic/MCPEncode/blob/main/README.md): what it is and the 4-step quick start
+
+## Docs
+
+- [docs/deploy.md](https://github.com/hkrlogic/MCPEncode/blob/main/docs/deploy.md): production, reverse proxy and TRUST_PROXY, every environment variable with defaults, upgrades, backups
+- [docs/concepts.md](https://github.com/hkrlogic/MCPEncode/blob/main/docs/concepts.md): words, roles, Review Lock / Unlock, MCP tools, architecture
+- [docs/oidc.md](https://github.com/hkrlogic/MCPEncode/blob/main/docs/oidc.md): external sign-in (Zitadel or another OIDC issuer)
+- [docs/known-limitations.md](https://github.com/hkrlogic/MCPEncode/blob/main/docs/known-limitations.md): what v0.1 does not do yet
+- [docs/develop.md](https://github.com/hkrlogic/MCPEncode/blob/main/docs/develop.md): running from source, tests, security notes
+
+## Optional
+
+- [src/env-schema.ts](https://github.com/hkrlogic/MCPEncode/blob/main/src/env-schema.ts): machine-readable list of every environment variable
+- [CHANGELOG.md](https://github.com/hkrlogic/MCPEncode/blob/main/CHANGELOG.md): releases and breaking changes
+- [docs/library-schema-v1.md](https://github.com/hkrlogic/MCPEncode/blob/main/docs/library-schema-v1.md): library starters and schema changes
+- [docs/revert-to-published.md](https://github.com/hkrlogic/MCPEncode/blob/main/docs/revert-to-published.md): overwrite recovery

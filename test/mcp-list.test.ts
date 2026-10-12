@@ -16,8 +16,8 @@ import {
 function authFor(role: "sa" | "readonly", sub?: string): AuthInfo {
   return {
     token: "test",
-    clientId: "mpos-mcp",
-    scopes: role === "sa" ? ["openid", "mpos:edit", "mpos:sa"] : ["openid", "mpos:readonly"],
+    clientId: "test-client",
+    scopes: role === "sa" ? ["openid", "mcpencode:edit", "mcpencode:sa"] : ["openid", "mcpencode:readonly"],
     expiresAt: Math.floor(Date.now() / 1000) + 3600,
     extra: {
       sub: sub ?? (role === "sa" ? "mpos-editor" : "mpos-reader"),

@@ -19,7 +19,10 @@ import {
   resolveLibraryMcpAccess,
 } from "../src/mcp/server.ts";
 import { withTestDatabase } from "./db.ts";
-import { signInForCode } from "./oauth-flow.ts";
+import { registeredClientId, signInForCode } from "./oauth-flow.ts";
+
+/** Client id registered by the latest startIdp (tests in this file run one at a time). */
+let mcpClientId = "";
 
 const PASSWORD = "correct horse battery";
 const SECRET = "test-session-secret-32-bytes-minimum!!";
@@ -59,7 +62,7 @@ test("a session stops working the moment its account is disabled", async () => {
   const { accounts, ada } = await twoSas();
   const guard = createAccountGuard(accounts);
   const config = { sessionSecret: SECRET } as AppConfig;
-  const token = await signSession({ sub: ada.id, clientId: "mpos-web", role: "sa", csrf: "c" }, SECRET);
+  const token = await signSession({ sub: ada.id, clientId: "mcpencode-web", role: "sa", csrf: "c" }, SECRET);
 
   const before = await sessionAccess(requestWithSession(token, guard), config);
   assert.equal(before?.sub, ada.id);
@@ -73,7 +76,7 @@ test("a session takes the account's current role, not the one in the cookie", as
   const { accounts, ada } = await twoSas();
   const guard = createAccountGuard(accounts);
   const config = { sessionSecret: SECRET } as AppConfig;
-  const token = await signSession({ sub: ada.id, clientId: "mpos-web", role: "sa", csrf: "c" }, SECRET);
+  const token = await signSession({ sub: ada.id, clientId: "mcpencode-web", role: "sa", csrf: "c" }, SECRET);
   await accounts.setSa(ada.id, false);
   const access = await sessionAccess(requestWithSession(token, guard), config);
   assert.equal(access?.role, "readonly");
@@ -84,11 +87,11 @@ test("a sign-in in the same second as a sign-out still counts as after it", asyn
   const { accounts, ada } = await twoSas();
   const guard = createAccountGuard(accounts);
   const config = { sessionSecret: SECRET } as AppConfig;
-  const before = await signSession({ sub: ada.id, clientId: "mpos-web", role: "sa", csrf: "c" }, SECRET);
+  const before = await signSession({ sub: ada.id, clientId: "mcpencode-web", role: "sa", csrf: "c" }, SECRET);
   await new Promise((resolve) => setTimeout(resolve, 5));
   await accounts.revokeSessions(ada.id);
   await new Promise((resolve) => setTimeout(resolve, 5));
-  const after = await signSession({ sub: ada.id, clientId: "mpos-web", role: "sa", csrf: "c" }, SECRET);
+  const after = await signSession({ sub: ada.id, clientId: "mcpencode-web", role: "sa", csrf: "c" }, SECRET);
   // Whole-second iat would put both in the same second; the guard must still tell them apart.
   assert.equal(await sessionAccess(requestWithSession(before, guard), config), undefined);
   assert.ok(await sessionAccess(requestWithSession(after, guard), config));
@@ -107,7 +110,7 @@ async function startIdp(accounts: ReturnType<typeof memoryAccountStore>) {
     publicBaseUrl: "http://127.0.0.1:3000",
     authIssuer: "http://127.0.0.1:3000/id",
     authAudience: "http://127.0.0.1:3000",
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
   } as AppConfig;
   const idp = await createEmbeddedIdp(config, accounts);
   const app = express();
@@ -116,7 +119,9 @@ async function startIdp(accounts: ReturnType<typeof memoryAccountStore>) {
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
-  return { base: `http://127.0.0.1:${port}`, close: () => server.close() };
+  const base = `http://127.0.0.1:${port}`;
+  mcpClientId = await registeredClientId(base, ["http://127.0.0.1:8765/callback"]);
+  return { base, close: () => server.close() };
 }
 
 type Tokens = { refresh_token: string; scope: string };
@@ -127,7 +132,7 @@ async function signIn(base: string, username: string): Promise<Tokens> {
   const code = await signInForCode(
     base,
     {
-      client_id: "mpos-mcp",
+      client_id: mcpClientId,
       redirect_uri: redirectUri,
       response_type: "code",
       code_challenge: await pkceChallenge(verifier),
@@ -143,7 +148,7 @@ async function signIn(base: string, username: string): Promise<Tokens> {
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      client_id: "mpos-mcp",
+      client_id: mcpClientId,
       redirect_uri: redirectUri,
       code_verifier: verifier,
     }),
@@ -159,7 +164,7 @@ function refresh(base: string, refreshToken: string) {
     body: new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
-      client_id: "mpos-mcp",
+      client_id: mcpClientId,
     }),
   });
 }
@@ -187,12 +192,12 @@ test("a refreshed token carries the account's current role", async () => {
   const idp = await startIdp(accounts);
   try {
     const tokens = await signIn(idp.base, "ada");
-    assert.match(tokens.scope, /mpos:sa/);
+    assert.match(tokens.scope, /mcpencode:sa/);
     await accounts.setSa(ada.id, false);
     const renewed = await refresh(idp.base, tokens.refresh_token);
     assert.equal(renewed.status, 200);
     const body = (await renewed.json()) as Tokens;
-    assert.equal(body.scope, "openid mpos:readonly");
+    assert.equal(body.scope, "openid mcpencode:readonly");
   } finally {
     idp.close();
   }
@@ -201,8 +206,8 @@ test("a refreshed token carries the account's current role", async () => {
 function saToken(sub: string): AuthInfo {
   return {
     token: "test",
-    clientId: "mpos-mcp",
-    scopes: ["openid", "mpos:edit", "mpos:sa"],
+    clientId: "test-client",
+    scopes: ["openid", "mcpencode:edit", "mcpencode:sa"],
     expiresAt: Math.floor(Date.now() / 1000) + 3600,
     extra: { sub, role: "sa" },
   };

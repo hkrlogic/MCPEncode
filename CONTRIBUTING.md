@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest. MCPEncode is maintained in spare time, so a little coordination goes a long way.
+Thanks for your interest. MCPEncode is early (0.1), so a little coordination goes a long way. AI coding agents: start with [AGENTS.md](AGENTS.md).
 
 ## Before you start
 
@@ -27,7 +27,7 @@ npm run lint
 npm test
 ```
 
-Product vocabulary (Library, Item, Publish, Review Lock) is defined in [AGENTS.md](AGENTS.md). Please use those words in code, UI text and docs.
+Product vocabulary (Library, Item, Publish, Connect link, Reader, Publisher, Site admin, Review Lock) is defined in [docs/concepts.md](docs/concepts.md). Please use those words in code, UI text and docs.
 
 ## Privacy and secrets
 

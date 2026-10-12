@@ -21,7 +21,7 @@ async function startIdp(overrides: Partial<AppConfig>, store: IdpStore = memoryI
     publicBaseUrl: "http://127.0.0.1:3000",
     authIssuer: "http://127.0.0.1:3000/id",
     authAudience: "http://127.0.0.1:3000",
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     oauthRegisterRateLimit: 0,
     ...overrides,
   } as AppConfig;

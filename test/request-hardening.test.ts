@@ -22,22 +22,22 @@ test("a malformed %-escape skips that cookie instead of throwing", () => {
 
 test("a malformed cookie does not turn a page into a 500", async () => {
   const config = { publicBaseUrl: "http://127.0.0.1:3000", sessionSecret: "x".repeat(32) } as AppConfig;
-  const req = { headers: { cookie: "mpos_session=%E0%A4%A" }, app: { locals: {} } } as unknown as Request;
+  const req = { headers: { cookie: "mcpencode_session=%E0%A4%A" }, app: { locals: {} } } as unknown as Request;
   assert.equal(await sessionAccess(req, config), undefined);
 });
 
 test("on HTTPS cookies get the __Host- prefix (or __Secure- when path-scoped)", () => {
-  assert.equal(cookieName("mpos_session", { secure: false }), "mpos_session");
-  assert.equal(cookieName("mpos_session", { secure: true }), "__Host-mpos_session");
-  assert.equal(cookieName("mpos_consent", { secure: true, path: "/id" }), "__Secure-mpos_consent");
-  const header = cookieHeader("mpos_session", "v", { secure: true });
-  assert.match(header, /^__Host-mpos_session=v; Path=\/; SameSite=Lax; HttpOnly; Secure/);
+  assert.equal(cookieName("mcpencode_session", { secure: false }), "mcpencode_session");
+  assert.equal(cookieName("mcpencode_session", { secure: true }), "__Host-mcpencode_session");
+  assert.equal(cookieName("mcpencode_consent", { secure: true, path: "/id" }), "__Secure-mcpencode_consent");
+  const header = cookieHeader("mcpencode_session", "v", { secure: true });
+  assert.match(header, /^__Host-mcpencode_session=v; Path=\/; SameSite=Lax; HttpOnly; Secure/);
   assert.doesNotMatch(header, /Domain=/);
   // Reading uses the same name, so a bare cookie planted by a subdomain is ignored.
-  const headers = { cookie: "mpos_session=planted; __Host-mpos_session=real" };
-  assert.equal(readCookie(headers, "mpos_session", { secure: true }), "real");
-  assert.equal(readCookie({ cookie: "mpos_session=planted" }, "mpos_session", { secure: true }), undefined);
-  assert.equal(readCookie(headers, "mpos_session"), "planted");
+  const headers = { cookie: "mcpencode_session=planted; __Host-mcpencode_session=real" };
+  assert.equal(readCookie(headers, "mcpencode_session", { secure: true }), "real");
+  assert.equal(readCookie({ cookie: "mcpencode_session=planted" }, "mcpencode_session", { secure: true }), undefined);
+  assert.equal(readCookie(headers, "mcpencode_session"), "planted");
 });
 
 test("CSRF tokens compare in constant time and never match when empty", () => {
@@ -124,7 +124,7 @@ test("Express trusts X-Forwarded-For only when TRUST_PROXY is set", () => {
     authIssuer: "https://library.example.org/id",
     authJwksUrl: "https://library.example.org/id/jwks",
     authAudience: "https://library.example.org",
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     sessionSecret: "x".repeat(32),
   } as unknown as AppConfig;
   const db = {} as Parameters<typeof createApp>[0]["db"];

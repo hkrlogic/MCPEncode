@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { createEmbeddedIdp } from "./auth/embedded-idp.ts";
 import { setHashConcurrency } from "./auth/passwords.ts";
-import { legacySqliteFilePresent, loadConfig } from "./config.ts";
+import { legacySqliteFilePresent, loadConfig, OAUTH_LIMITS } from "./config.ts";
 import { accountStore } from "./db/accounts.ts";
 import { openDatabase } from "./db/client.ts";
 import { postgresIdpStore, postgresKnownGoodStore } from "./db/idp-store.ts";
@@ -11,7 +11,7 @@ import { loadAuthServer } from "./http/discovery.ts";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  if (config.passwordHashConcurrency) setHashConcurrency(config.passwordHashConcurrency);
+  setHashConcurrency(OAUTH_LIMITS.passwordHashConcurrency);
   const db = await openDatabase(config.database);
 
   const accounts = config.authMode === "embedded" ? accountStore(db) : undefined;

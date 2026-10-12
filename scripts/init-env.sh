@@ -1,7 +1,12 @@
 #!/usr/bin/env sh
-# Create .env from .env.example with fresh random secrets.
-# Run again on an existing .env to add a SETUP_TOKEN if it has none. A value that
-# is already set is never changed. Secrets are written to .env only, never printed.
+# Create or complete .env. Safe to re-run: a value that is already set is never
+# changed; only missing secrets are added. Secrets go to .env only, never printed.
+#
+#   SESSION_SECRET     random, signs sessions and encrypts the token signing key
+#   SETUP_TOKEN        random, the code the first-account page asks for
+#   POSTGRES_PASSWORD  random (skipped when .env sets DATABASE_URL)
+#
+# Every other setting has a working default (docs/deploy.md).
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -34,18 +39,32 @@ fill_value() {
 }
 
 if [ -e .env ]; then
-  if has_value SETUP_TOKEN; then
-    echo ".env already exists and has a SETUP_TOKEN. Nothing changed."
-  else
-    fill_value SETUP_TOKEN "$(random_base64url 18)"
-    echo ".env already exists. Added a random SETUP_TOKEN; other values were left alone."
-  fi
+  created=no
 else
   cp .env.example .env
-  fill_value SESSION_SECRET "$(random_base64url 48)"
-  fill_value POSTGRES_PASSWORD "$(openssl rand -hex 24)"
-  fill_value SETUP_TOKEN "$(random_base64url 18)"
-  echo "Wrote .env with new random secrets (permissions 600)."
+  chmod 600 .env
+  created=yes
 fi
 
-echo "Reminder: the first-account page asks for SETUP_TOKEN (it is in .env; keep it secret)."
+added=""
+if ! has_value SESSION_SECRET; then
+  fill_value SESSION_SECRET "$(random_base64url 48)"
+  added="$added SESSION_SECRET"
+fi
+if ! has_value SETUP_TOKEN; then
+  fill_value SETUP_TOKEN "$(random_base64url 18)"
+  added="$added SETUP_TOKEN"
+fi
+if ! has_value POSTGRES_PASSWORD && ! has_value DATABASE_URL; then
+  fill_value POSTGRES_PASSWORD "$(openssl rand -hex 24)"
+  added="$added POSTGRES_PASSWORD"
+fi
+
+if [ "$created" = yes ]; then
+  echo "Wrote .env with new random secrets:$added (permissions 600)."
+elif [ -n "$added" ]; then
+  echo ".env already existed. Added:$added. Other values were left alone."
+else
+  echo ".env already has every secret. Nothing changed."
+fi
+echo "The first-account page asks for SETUP_TOKEN (in .env; keep it secret)."

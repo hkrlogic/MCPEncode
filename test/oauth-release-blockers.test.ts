@@ -8,13 +8,13 @@ import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { memoryAccountStore } from "../src/auth/accounts.ts";
-import { createEmbeddedIdp, LEGACY_CLIENT_ID } from "../src/auth/embedded-idp.ts";
+import { createEmbeddedIdp } from "../src/auth/embedded-idp.ts";
 import { memoryIdpStore } from "../src/auth/idp-store.ts";
-import { callbackKind, isLauncherScheme, parseAllowedSchemes } from "../src/auth/redirect.ts";
+import { callbackKind, isLauncherScheme } from "../src/auth/redirect.ts";
 import { addressKey, MAX_ENTRIES, SignInLimit } from "../src/auth/signin-limit.ts";
 import type { AppConfig } from "../src/config.ts";
 import { pkceChallenge } from "../src/http/pkce.ts";
-import { answerConsent, readConsent, registerClient } from "./oauth-flow.ts";
+import { answerConsent, readConsent, registerClient, registeredClientId } from "./oauth-flow.ts";
 
 const PASSWORD = "correct horse battery";
 const VERIFIER = "v".repeat(64);
@@ -64,14 +64,10 @@ test("browser-launcher, OS-handler and smuggled-URL callbacks are refused", () =
   assert.equal(isLauncherScheme("cursor"), false);
 });
 
-test("OAUTH_ALLOWED_SCHEMES adds single-word app schemes but never a launcher", () => {
+test("only the built-in single-word app schemes are accepted; reverse-DNS schemes always are", () => {
   assert.equal(callbackKind("windsurf://cb/oauth", {}), undefined);
-  const allowedSchemes = parseAllowedSchemes("windsurf");
-  assert.equal(callbackKind("windsurf://cb/oauth", { allowedSchemes }), "custom-scheme");
-  assert.equal(callbackKind("cursor://anysphere.cursor-mcp/oauth/callback", { allowedSchemes }), "custom-scheme");
-  assert.throws(() => parseAllowedSchemes("microsoft-edge"), /OAUTH_ALLOWED_SCHEMES/);
-  assert.throws(() => parseAllowedSchemes("x-safari-https"), /OAUTH_ALLOWED_SCHEMES/);
-  assert.throws(() => parseAllowedSchemes("firefox"), /OAUTH_ALLOWED_SCHEMES/);
+  assert.equal(callbackKind("cursor://anysphere.cursor-mcp/oauth/callback", {}), "custom-scheme");
+  assert.equal(callbackKind("com.example.app:/oauth2redirect", {}), "custom-scheme");
 });
 
 async function startIdp(overrides: Partial<AppConfig> = {}) {
@@ -81,7 +77,7 @@ async function startIdp(overrides: Partial<AppConfig> = {}) {
     publicBaseUrl: "http://127.0.0.1:3000",
     authIssuer: "http://127.0.0.1:3000/id",
     authAudience: "http://127.0.0.1:3000",
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     ...overrides,
   } as AppConfig;
   const idp = await createEmbeddedIdp(config, accounts, { store: memoryIdpStore() });
@@ -111,25 +107,16 @@ async function authorizeParams(clientId: string, redirectUri: string) {
   };
 }
 
-test("register and authorize refuse launcher callbacks for registered and legacy clients", async () => {
-  const s = await startIdp();
+test("register and authorize refuse launcher callbacks", async () => {
+  const s = await startIdp({ oauthRegisterRateLimit: 0 });
   try {
+    const clientId = await registeredClientId(s.base, ["http://127.0.0.1:33418/callback"]);
     for (const uri of LAUNCHER_CALLBACKS) {
       const res = await registerClient(s.base, [uri]);
       assert.equal(res.status, 400, uri);
       assert.equal(((await res.json()) as { error: string }).error, "invalid_redirect_uri");
-      const page = await fetch(`${s.base}/id/authorize?${new URLSearchParams(await authorizeParams(LEGACY_CLIENT_ID, uri))}`);
+      const page = await fetch(`${s.base}/id/authorize?${new URLSearchParams(await authorizeParams(clientId, uri))}`);
       assert.equal(page.status, 400, uri);
-    }
-    // The shared legacy id never takes a reverse-DNS scheme: anyone can claim one.
-    const dotted = await fetch(
-      `${s.base}/id/authorize?${new URLSearchParams(await authorizeParams(LEGACY_CLIENT_ID, "com.example.app:/cb"))}`,
-    );
-    assert.equal(dotted.status, 400);
-    // ...but Cursor and loopback keep working on it.
-    for (const uri of ["cursor://anysphere.cursor-mcp/oauth/callback", "http://127.0.0.1:33418/callback"]) {
-      const ok = await fetch(`${s.base}/id/authorize?${new URLSearchParams(await authorizeParams(LEGACY_CLIENT_ID, uri))}`);
-      assert.equal(ok.status, 200, uri);
     }
   } finally {
     await s.close();
@@ -215,7 +202,8 @@ test("registration takes at most 8 callbacks and 8 KB", async () => {
 test("authorize is rate limited per address", async () => {
   const s = await startIdp({ oauthAuthorizeRateLimit: 2 });
   try {
-    const url = `${s.base}/id/authorize?${new URLSearchParams(await authorizeParams(LEGACY_CLIENT_ID, "http://127.0.0.1:1/cb"))}`;
+    const clientId = await registeredClientId(s.base, ["http://127.0.0.1:1/cb"]);
+    const url = `${s.base}/id/authorize?${new URLSearchParams(await authorizeParams(clientId, "http://127.0.0.1:1/cb"))}`;
     const statuses = [];
     for (let i = 0; i < 3; i += 1) statuses.push((await fetch(url)).status);
     assert.deepEqual(statuses, [200, 200, 429]);

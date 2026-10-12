@@ -20,8 +20,8 @@ import {
 import { combineSummaryAndBody } from "../markdown/table.ts";
 import { readCookie } from "./cookies.ts";
 
-export const SESSION_COOKIE = "mpos_session";
-export const OAUTH_COOKIE = "mpos_oauth";
+export const SESSION_COOKIE = "mcpencode_session";
+export const OAUTH_COOKIE = "mcpencode_oauth";
 
 export function setCookies(res: Response, headers: string[]): void {
   res.setHeader("Set-Cookie", headers);

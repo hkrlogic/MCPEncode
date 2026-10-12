@@ -43,7 +43,7 @@ async function startIdp(overrides: Partial<AppConfig>) {
     publicBaseUrl: "http://127.0.0.1:3000",
     authIssuer: "http://127.0.0.1:3000/id",
     authAudience: "http://127.0.0.1:3000",
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     ...overrides,
   } as AppConfig;
   const idp = await createEmbeddedIdp(config, accounts);
@@ -166,7 +166,7 @@ test("with no SETUP_TOKEN a one-time code is printed to the log and works", asyn
   }
 });
 
-test("ALLOW_OPEN_SETUP=true is the only way to skip the setup code", async () => {
+test("only the test-only setupCodeRequired=false skips the setup code", async () => {
   const idp = await startIdp({ setupCodeRequired: false });
   try {
     const page = await fetch(`${idp.base}/id/authorize?${new URLSearchParams(oauth)}`);

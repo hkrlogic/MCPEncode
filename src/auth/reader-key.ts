@@ -23,7 +23,7 @@ const VISIBLE_PREFIX_LENGTH = 12;
 export const READER_KEY_CLIENT_ID = "library-reader-key";
 
 /** Cookie that carries the one-time reveal id. The secret is not in the cookie. */
-export const READER_REVEAL_COOKIE = "mpos_reader_reveal";
+export const READER_REVEAL_COOKIE = "mcpencode_reader_reveal";
 
 const REVEAL_TTL_MS = 2 * 60 * 1000;
 

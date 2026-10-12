@@ -13,7 +13,7 @@ test("accepts an audience-bound token with the editor role", async () => {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
   const token = await new SignJWT({
     sub: "editor-1",
-    azp: "mpos-web",
+    azp: "mcpencode-web",
     realm_access: { roles: ["mpos-editor"] },
   })
     .setProtectedHeader({ alg: "RS256", kid: "test" })

@@ -24,9 +24,9 @@ function config(authMode: AppConfig["authMode"]): AppConfig {
     database: {
       host: "127.0.0.1",
       port: 5432,
-      user: "mpos",
+      user: "mcpencode",
       password: "local-test-only",
-      database: "mpos",
+      database: "mcpencode",
       ssl: false,
     },
   };

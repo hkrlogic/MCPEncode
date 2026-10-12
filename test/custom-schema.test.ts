@@ -24,14 +24,14 @@ function testConfig(port: number): AppConfig {
     authIssuer: `${origin}/id`,
     authJwksUrl: `${origin}/id/jwks`,
     authAudience: origin,
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
     sessionSecret: SESSION_SECRET,
     database: {
       host: "127.0.0.1",
       port: 5432,
-      user: "mpos",
+      user: "mcpencode",
       password: "stub-not-a-real-password",
-      database: "mpos",
+      database: "mcpencode",
       ssl: false,
     },
   };
@@ -178,10 +178,10 @@ test("Add library Custom posts a locked schema and General ignores those fields"
     const base = `http://127.0.0.1:${port}`;
     const csrf = "csrf-token-ada";
     const token = await signSession(
-      { sub: "publisher-ada", clientId: "mpos-web", role: "sa", csrf },
+      { sub: "publisher-ada", clientId: "mcpencode-web", role: "sa", csrf },
       SESSION_SECRET,
     );
-    const cookie = `mpos_session=${token}`;
+    const cookie = `mcpencode_session=${token}`;
     try {
       const page = await fetch(`${base}/libraries/new`, { headers: { cookie } });
       const html = await page.text();

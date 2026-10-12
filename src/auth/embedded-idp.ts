@@ -10,9 +10,9 @@
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import express, { type Express, type Request, type RequestHandler, type Response } from "express";
-import { rateLimit } from "express-rate-limit";
 import { calculateJwkThumbprint, exportJWK, generateKeyPair, importJWK, SignJWT, type JWK } from "jose";
-import { DEFAULT_REFRESH_MAX_DAYS, type AppConfig } from "../config.ts";
+import { OAUTH_LIMITS, type AppConfig } from "../config.ts";
+import { addressRateLimit } from "../http/rate-limit.ts";
 import type { AuthServerEndpoints } from "../http/discovery.ts";
 import { cookieHeader, readCookie } from "../http/cookies.ts";
 import { pkceChallenge } from "../http/pkce.ts";
@@ -60,24 +60,18 @@ type PendingConsent = Omit<AuthCode, "expiresAt"> & {
   expiresAt: number;
 };
 
-/** The client_id every MCP client was handed before registrations were stored. */
-export const LEGACY_CLIENT_ID = "mpos-mcp";
-
 /** A refresh token unused this long expires, even inside the chain's maximum lifetime. */
 const REFRESH_IDLE_MS = 12 * 60 * 60 * 1000;
 const CODE_TTL_MS = 5 * 60 * 1000;
 const CONSENT_TTL_MS = 10 * 60 * 1000;
-/** Registrations that never completed a sign-in are dropped after this (OAUTH_PENDING_CLIENT_TTL_MINUTES). */
-const DEFAULT_PENDING_CLIENT_TTL_MINUTES = 60;
-const DEFAULT_MAX_PENDING_PER_ADDRESS = 20;
-const CONSENT_COOKIE = "mpos_consent";
+const CONSENT_COOKIE = "mcpencode_consent";
 const MAX_REDIRECT_URIS = 8;
 const REGISTER_BODY_LIMIT = "8kb";
 /** How often unused registrations are swept, besides on each registration. */
 const CLIENT_SWEEP_MS = 60 * 60 * 1000;
 
 function scopeFor(realmRole: string): string {
-  return realmRole === "mpos-editor" ? "openid mpos:edit mpos:sa" : "openid mpos:readonly";
+  return realmRole === "mpos-editor" ? "openid mcpencode:edit mcpencode:sa" : "openid mcpencode:readonly";
 }
 
 type VerifyKey = Awaited<ReturnType<typeof importJWK>>;
@@ -105,7 +99,6 @@ export type EmbeddedIdpOptions = {
 
 type ResolvedClient =
   | { kind: "web"; clientId: string; name: string }
-  | { kind: "legacy"; clientId: string; name: string }
   | { kind: "registered"; clientId: string; name: string; selfDeclared: boolean; redirectUris: string[] };
 
 function q(req: Request, key: string): string {
@@ -238,7 +231,6 @@ function consentPage(input: {
   /** The name came from the client's own registration and nobody checked it. */
   selfDeclared: boolean;
   clientId: string;
-  legacy: boolean;
   callbackHost: string;
   callback: string;
   library: string;
@@ -263,11 +255,6 @@ function consentPage(input: {
       } wants to use your account <strong>${escapeHtml(input.username)}</strong> for <strong>${escapeHtml(input.library)}</strong>.</p>
       <p>If you allow it, the sign-in is sent to <strong>${escapeHtml(input.callbackHost)}</strong>.</p>
       <p class="hint">Full callback: <code>${escapeHtml(input.callback)}</code><br>Client id: ${escapeHtml(input.clientId)}</p>
-      ${
-        input.legacy
-          ? `<p class="hint">This app connected before apps registered their own client id. Reconnect it to register; this shared id will be retired.</p>`
-          : ""
-      }
       <p class="hint">Allow only if you started this from an app you trust. It can do what your account can do in this library.</p>
       <form method="post" action="/id/consent">
         <input type="hidden" name="consent_id" value="${escapeHtml(input.consentId)}">
@@ -310,15 +297,15 @@ export async function createEmbeddedIdp(
       console.warn("Could not load known-good sign-in addresses:", error instanceof Error ? error.message : error);
     });
   }
-  const unusedClientTtlMs = (config.oauthPendingClientTtlMinutes ?? DEFAULT_PENDING_CLIENT_TTL_MINUTES) * 60 * 1000;
-  const maxPendingPerAddress = config.oauthMaxPendingClientsPerAddress ?? DEFAULT_MAX_PENDING_PER_ADDRESS;
+  const unusedClientTtlMs = OAUTH_LIMITS.pendingClientTtlMinutes * 60 * 1000;
+  const maxPendingPerAddress = config.oauthMaxPendingClientsPerAddress ?? OAUTH_LIMITS.maxPendingClientsPerAddress;
   const store = options?.store ?? memoryIdpStore();
-  const refreshMaxMs = (config.refreshMaxLifetimeDays ?? DEFAULT_REFRESH_MAX_DAYS) * 24 * 60 * 60 * 1000;
+  const refreshMaxMs = (config.refreshMaxLifetimeDays ?? OAUTH_LIMITS.refreshMaxDays) * 24 * 60 * 60 * 1000;
   const secureCookies = config.publicBaseUrl.startsWith("https://");
   // The first-account page needs a code only the operator has, wherever the
   // request seems to come from (a proxy on loopback makes everyone look local).
   // SETUP_TOKEN if set, otherwise a random one printed once to the log.
-  // Only ALLOW_OPEN_SETUP=true (setupCodeRequired false) skips it.
+  // setupCodeRequired=false (tests only, never from the environment) skips it.
   const setupCode = config.setupCodeRequired !== false ? (config.setupToken ?? newSetupCode()) : undefined;
   if (setupCode !== undefined && (await accounts.count()) === 0) {
     console.log(
@@ -350,7 +337,7 @@ export async function createEmbeddedIdp(
       registration_endpoint: `${issuer}/register`,
       response_types_supported: ["code"],
       code_challenge_methods_supported: ["S256"],
-      scopes_supported: ["openid", "mpos:readonly", "mpos:edit", "mpos:sa"],
+      scopes_supported: ["openid", "mcpencode:readonly", "mcpencode:edit", "mcpencode:sa"],
       token_endpoint_auth_methods_supported: ["none"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       subject_types_supported: ["public"],
@@ -363,19 +350,13 @@ export async function createEmbeddedIdp(
 
   const policy = {
     allowedHosts: config.oauthRedirectHosts,
-    allowAnyHttps: config.oauthAllowAnyHttpsRedirect === true,
-    allowedSchemes: config.oauthAllowedSchemes ?? DEFAULT_ALLOWED_SCHEMES,
+    allowedSchemes: DEFAULT_ALLOWED_SCHEMES,
   };
-  const maxPendingClients = config.oauthMaxPendingClients ?? 1000;
+  const maxPendingClients = config.oauthMaxPendingClients ?? OAUTH_LIMITS.maxPendingClients;
 
   async function resolveClient(clientId: string): Promise<ResolvedClient | undefined> {
     if (!clientId) return undefined;
     if (clientId === config.webClientId) return { kind: "web", clientId, name: "MCPEncode" };
-    if (clientId === LEGACY_CLIENT_ID) {
-      return config.oauthLegacyClient === false
-        ? undefined
-        : { kind: "legacy", clientId, name: "MCP client (shared legacy id)" };
-    }
     const found = await store.findClient(clientId);
     if (!found) return undefined;
     return {
@@ -395,17 +376,6 @@ export async function createEmbeddedIdp(
         webClientId: config.webClientId,
         publicBaseUrl: config.publicBaseUrl,
       });
-    }
-    if (client.kind === "legacy") {
-      // Never registered a callback, so anyone can use this id with any
-      // callback the policy accepts. Keep it to loopback, an operator-listed
-      // host, or a known app's own single-word scheme (cursor:, vscode:, ...),
-      // which only that app receives. No reverse-DNS schemes, never any-https.
-      const kind = callbackKind(uri, { allowedHosts: policy.allowedHosts, allowedSchemes: policy.allowedSchemes });
-      if (kind === "loopback" || kind === "listed-host") return true;
-      if (kind !== "custom-scheme") return false;
-      const scheme = new URL(uri).protocol.slice(0, -1).toLowerCase();
-      return policy.allowedSchemes.includes(scheme);
     }
     return redirectMatches(uri, client.redirectUris) && callbackKind(uri, policy) !== undefined;
   }
@@ -506,37 +476,22 @@ export async function createEmbeddedIdp(
   }, CLIENT_SWEEP_MS);
   sweep.unref();
 
-  /** Per-address limit for the unauthenticated OAuth endpoints. Undefined when turned off (0). */
-  function addressLimit(
-    limit: number | undefined,
-    windowMs: number,
-    identifier: string,
-    send: (res: Response) => void,
-  ): RequestHandler | undefined {
-    if (!limit || limit <= 0) return undefined;
-    return rateLimit({
-      windowMs,
-      limit,
-      standardHeaders: "draft-8",
-      legacyHeaders: false,
-      identifier,
-      // IPv6 grouped per /64 (one customer's prefix), IPv4 per address.
-      ipv6Subnet: 64,
-      validate: { xForwardedForHeader: false, forwardedHeader: false },
-      handler: (_req, res, _next, options) => {
-        res.status(options.statusCode);
-        send(res);
-      },
-    });
-  }
   const pass: RequestHandler = (_req, _res, next) => next();
   const registerLimit =
-    addressLimit(config.oauthRegisterRateLimit ?? 20, 60 * 60 * 1000, "oauth-register", (res) => {
-      res.json({ error: "too_many_requests", error_description: "Too many client registrations from this address. Wait and retry (see Retry-After)." });
+    addressRateLimit({
+      limit: config.oauthRegisterRateLimit ?? OAUTH_LIMITS.registerPerHour,
+      windowMs: 60 * 60 * 1000,
+      identifier: "oauth-register",
+      ipv6Subnet: 64,
+      send: (res) => res.json({ error: "too_many_requests", error_description: "Too many client registrations from this address. Wait and retry (see Retry-After)." }),
     }) ?? pass;
   const authorizeLimit =
-    addressLimit(config.oauthAuthorizeRateLimit ?? 60, 60 * 1000, "oauth-authorize", (res) => {
-      res.type("text/plain").send("Too many sign-in requests from this address. Wait a minute and try again.");
+    addressRateLimit({
+      limit: config.oauthAuthorizeRateLimit ?? OAUTH_LIMITS.authorizePerMinute,
+      windowMs: 60 * 1000,
+      identifier: "oauth-authorize",
+      ipv6Subnet: 64,
+      send: (res) => res.type("text/plain").send("Too many sign-in requests from this address. Wait a minute and try again."),
     }) ?? pass;
 
   function mount(app: Express): void {
@@ -567,7 +522,7 @@ export async function createEmbeddedIdp(
           res.status(400).json({
             error: "invalid_redirect_uri",
             error_description:
-              "Callbacks must be loopback (http://127.0.0.1, http://[::1], http://localhost), a reverse-DNS app scheme (com.example.app:/callback) or a known app scheme (cursor, vscode, claude, or OAUTH_ALLOWED_SCHEMES). Browser-launcher schemes are refused. A remote https host must be listed in OAUTH_REDIRECT_HOSTS.",
+              "Callbacks must be loopback (http://127.0.0.1, http://[::1], http://localhost), a reverse-DNS app scheme (com.example.app:/callback) or a known app scheme (cursor, vscode, vscode-insiders, claude). Browser-launcher schemes are refused. A remote https host must be listed in OAUTH_REDIRECT_HOSTS.",
           });
           return;
         }
@@ -593,7 +548,7 @@ export async function createEmbeddedIdp(
       const now = Date.now();
       await store.pruneClients(now - unusedClientTtlMs);
       if ((await store.countPendingClients(now - unusedClientTtlMs)) >= maxPendingClients) {
-        console.warn("OAuth registration refused: the OAUTH_MAX_PENDING_CLIENTS limit of unused registrations is reached.");
+        console.warn("OAuth registration refused: the limit of unused registrations is reached.");
         res.status(503).setHeader("Retry-After", "3600").json({
           error: "temporarily_unavailable",
           error_description: "Too many pending client registrations. Try again later.",
@@ -811,7 +766,6 @@ export async function createEmbeddedIdp(
           clientName: client.name,
           selfDeclared: client.kind === "registered" && client.selfDeclared,
           clientId: client.clientId,
-          legacy: client.kind === "legacy",
           callbackHost: callbackHost(hidden.redirect_uri),
           callback: hidden.redirect_uri,
           library: await libraryLabel(hidden.resource),

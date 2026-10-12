@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import { parseAllowedSchemes } from "./auth/redirect.ts";
 import { SETUP_TOKEN_MIN_LENGTH } from "./auth/setup-code.ts";
+import { REMOVED_ENV_VARS } from "./env-schema.ts";
 
 /**
  * Runtime configuration. Leave AUTH_MODE unset to use the built-in accounts.
@@ -36,8 +36,7 @@ export type AppConfig = {
   /**
    * AUTH_MCP_AUDIENCE (oidc mode): the audience library MCP tokens must carry,
    * kept apart from AUTH_AUDIENCE so a token for the web app cannot open MCP
-   * and the other way round. Required in oidc mode unless
-   * AUTH_MCP_AUDIENCE_SHARED=true, which reuses AUTH_AUDIENCE (with a warning).
+   * and the other way round. Always required in oidc mode.
    * Embedded mode ignores it; each library link is its own audience.
    */
   authMcpAudience?: string;
@@ -46,40 +45,21 @@ export type AppConfig = {
   database: DatabaseConfig;
   /** Operator-chosen code for creating the first account (SETUP_TOKEN). */
   setupToken?: string;
-  /**
-   * True when the first-account page must ask for a setup code. Always, unless
-   * ALLOW_OPEN_SETUP=true: a reverse proxy can make any request look like it
-   * comes from loopback, so the address is not a safe reason to skip it.
-   */
-  setupCodeRequired?: boolean;
   /** TRUST_PROXY, already parsed for Express "trust proxy". Undefined: trust no proxy. */
   trustProxy?: number | string[];
   /** OAUTH_REDIRECT_HOSTS. Remote https hostnames an MCP client may register as its callback. */
   oauthRedirectHosts?: string[];
-  /** OAUTH_ALLOW_ANY_HTTPS_REDIRECT. Accept a callback on any https host. Off by default. */
-  oauthAllowAnyHttpsRedirect?: boolean;
   /**
-   * OAUTH_LEGACY_CLIENT. Keep accepting client_id "mpos-mcp" (the fixed id every
-   * client got before registrations were stored), for loopback and app-scheme
-   * callbacks only. On by default; set false once every client has re-registered.
+   * The fields below are not read from the environment; production always uses
+   * the constants in OAUTH_LIMITS. Tests set them to exercise the limits.
    */
-  oauthLegacyClient?: boolean;
-  /** OAUTH_REFRESH_MAX_DAYS. A sign-in's refresh chain ends this many days after sign-in. */
+  /** False skips the first-account setup code. Tests only. */
+  setupCodeRequired?: boolean;
   refreshMaxLifetimeDays?: number;
-  /** PASSWORD_HASH_CONCURRENCY: scrypt hashes run at once (64 MiB each). Default 2. */
-  passwordHashConcurrency?: number;
-  /** OAUTH_ALLOWED_SCHEMES plus the defaults: single-word app schemes a client may register. */
-  oauthAllowedSchemes?: string[];
-  /** OAUTH_REGISTER_RATE_LIMIT: client registrations per address per hour. 0 turns it off. Default 20. */
   oauthRegisterRateLimit?: number;
-  /** OAUTH_AUTHORIZE_RATE_LIMIT: /id/authorize requests per address per minute. 0 turns it off. Default 60. */
   oauthAuthorizeRateLimit?: number;
-  /** OAUTH_MAX_PENDING_CLIENTS: registrations not yet used for a sign-in, kept at once. Default 1000. */
   oauthMaxPendingClients?: number;
-  /** OAUTH_MAX_PENDING_CLIENTS_PER_ADDRESS: unused registrations from one address (IPv6 per /64). Default 20. */
   oauthMaxPendingClientsPerAddress?: number;
-  /** OAUTH_PENDING_CLIENT_TTL_MINUTES: a registration never used for a sign-in is dropped after this. Default 60. */
-  oauthPendingClientTtlMinutes?: number;
   /** MCP_RATE_LIMIT_PER_MINUTE: library MCP requests per client address per minute. 0 turns it off. Default 300. */
   mcpRateLimitPerMinute?: number;
 };
@@ -115,19 +95,29 @@ export function parseTrustProxy(raw: string | undefined): number | string[] | un
   return entries;
 }
 
-/** Default for OAUTH_REFRESH_MAX_DAYS. */
-export const DEFAULT_REFRESH_MAX_DAYS = 30;
+/**
+ * Fixed limits for the built-in sign-in. These used to be environment variables;
+ * the defaults suit every deployment we know of, so they are constants now.
+ */
+export const OAUTH_LIMITS = {
+  /** Client registrations per address per hour. */
+  registerPerHour: 20,
+  /** /id/authorize requests per address per minute. */
+  authorizePerMinute: 60,
+  /** Registrations not yet used for a sign-in, kept at once. */
+  maxPendingClients: 1000,
+  /** Unused registrations from one address (IPv6 per /64). */
+  maxPendingClientsPerAddress: 20,
+  /** A registration never used for a sign-in is dropped after this many minutes. */
+  pendingClientTtlMinutes: 60,
+  /** A sign-in's refresh chain ends this many days after sign-in. */
+  refreshMaxDays: 30,
+  /** scrypt password hashes run at once (64 MiB each). */
+  passwordHashConcurrency: 2,
+} as const;
 
-/** OAUTH_REFRESH_MAX_DAYS: whole days, 1 to 365. */
-/** PASSWORD_HASH_CONCURRENCY: 1 to 16 scrypt hashes at once; default 2. */
-export function parseHashConcurrency(raw: string | undefined): number {
-  const value = raw?.trim();
-  if (!value) return 2;
-  if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 16) {
-    throw new Error("PASSWORD_HASH_CONCURRENCY must be a whole number from 1 to 16");
-  }
-  return Number(value);
-}
+/** Default refresh chain lifetime in days. */
+export const DEFAULT_REFRESH_MAX_DAYS = OAUTH_LIMITS.refreshMaxDays;
 
 /** Default for MCP_RATE_LIMIT_PER_MINUTE. */
 export const DEFAULT_MCP_RATE_LIMIT_PER_MINUTE = 300;
@@ -138,16 +128,6 @@ export function parseMcpRateLimit(raw: string | undefined): number {
   if (!value) return DEFAULT_MCP_RATE_LIMIT_PER_MINUTE;
   if (!/^\d+$/.test(value) || Number(value) > 100_000) {
     throw new Error("MCP_RATE_LIMIT_PER_MINUTE must be a whole number from 0 (off) to 100000");
-  }
-  return Number(value);
-}
-
-/** Whole number env value from 0 to max, with a default. */
-export function parseWholeNumber(name: string, raw: string | undefined, fallback: number, min: number, max: number): number {
-  const value = raw?.trim();
-  if (!value) return fallback;
-  if (!/^\d+$/.test(value) || Number(value) < min || Number(value) > max) {
-    throw new Error(`${name} must be a whole number from ${min} to ${max}`);
   }
   return Number(value);
 }
@@ -171,15 +151,6 @@ export function assertSecureBaseUrl(publicBaseUrl: string, allowInsecureHttp: bo
   throw new Error(
     `PUBLIC_BASE_URL is plain http on a non-loopback host (${url.host}). Passwords, cookies and sign-in codes would travel unencrypted. Put a TLS proxy in front and use https://, or set ALLOW_INSECURE_HTTP=true to accept the risk (docs/deploy.md).`,
   );
-}
-
-export function parseRefreshMaxDays(raw: string | undefined): number {
-  if (raw === undefined || raw.trim() === "") return DEFAULT_REFRESH_MAX_DAYS;
-  const days = Number(raw.trim());
-  if (!/^\d+$/.test(raw.trim()) || days < 1 || days > 365) {
-    throw new Error("OAUTH_REFRESH_MAX_DAYS must be a whole number of days from 1 to 365");
-  }
-  return days;
 }
 
 /** true/false env flag. Anything else is an error, so a typo does not silently pick the default. */
@@ -353,12 +324,12 @@ export function loadDatabaseConfig(): DatabaseConfig {
     throw new Error(`Database host is invalid. ${DATABASE_HELP}`);
   }
   const user = assertDbIdentifier(
-    firstDefined(envValue("POSTGRES_USER"), envValue("PGUSER"), fromUrl?.user) || "mpos",
+    firstDefined(envValue("POSTGRES_USER"), envValue("PGUSER"), fromUrl?.user) || "mcpencode",
     "POSTGRES_USER",
   );
   const databaseName =
     firstDefined(envValue("POSTGRES_DATABASE"), envValue("PGDATABASE"), envValue("POSTGRES_DB"), fromUrl?.database) ||
-    "mpos";
+    "mcpencode";
   const database = assertDbIdentifier(databaseName, "POSTGRES_DATABASE");
   const password = firstDefined(envValue("POSTGRES_PASSWORD"), envValue("PGPASSWORD"), fromUrl?.password);
   if (!password) {
@@ -411,13 +382,8 @@ export function loadConfig(): AppConfig {
   const authAudience = process.env.AUTH_AUDIENCE?.trim() || publicBaseUrl;
   const authMcpAudience = authMode === "oidc" ? process.env.AUTH_MCP_AUDIENCE?.trim() || undefined : undefined;
   if (authMode === "oidc" && !authMcpAudience) {
-    if (!parseBooleanEnv("AUTH_MCP_AUDIENCE_SHARED", process.env.AUTH_MCP_AUDIENCE_SHARED, false)) {
-      throw new Error(
-        "AUTH_MCP_AUDIENCE is required when AUTH_MODE=oidc: give library MCP tokens their own audience, apart from AUTH_AUDIENCE (docs/deploy.md). To keep sharing AUTH_AUDIENCE, set AUTH_MCP_AUDIENCE_SHARED=true.",
-      );
-    }
-    console.warn(
-      "AUTH_MCP_AUDIENCE_SHARED=true: library MCP accepts tokens for AUTH_AUDIENCE, the same audience as web sign-in. Give MCP its own audience (docs/deploy.md).",
+    throw new Error(
+      "AUTH_MCP_AUDIENCE is required when AUTH_MODE=oidc: give library MCP tokens their own audience, apart from AUTH_AUDIENCE (docs/oidc.md).",
     );
   }
   assertSecureBaseUrl(publicBaseUrl, parseBooleanEnv("ALLOW_INSECURE_HTTP", process.env.ALLOW_INSECURE_HTTP, false));
@@ -430,12 +396,7 @@ export function loadConfig(): AppConfig {
   }
   // Containers set BIND_HOST=0.0.0.0 (the Dockerfile does). Everything else stays on loopback.
   const bindHost = process.env.BIND_HOST?.trim() || "127.0.0.1";
-  const allowOpenSetup = parseBooleanEnv("ALLOW_OPEN_SETUP", process.env.ALLOW_OPEN_SETUP, false);
-  if (allowOpenSetup && isPublicDeployment(bindHost, publicBaseUrl)) {
-    console.warn(
-      "ALLOW_OPEN_SETUP=true on an address others can reach: whoever opens the page first becomes SA. Remove it once the first account exists.",
-    );
-  }
+  warnIgnoredEnv();
 
   return {
     port: Number(process.env.PORT ?? "3000"),
@@ -451,41 +412,24 @@ export function loadConfig(): AppConfig {
         : `${authIssuer}/protocol/openid-connect/certs`),
     authAudience,
     authMcpAudience,
-    webClientId: process.env.WEB_CLIENT_ID ?? "mpos-web",
+    webClientId: process.env.WEB_CLIENT_ID?.trim() || "mcpencode-web",
     sessionSecret,
     database: loadDatabaseConfig(),
     setupToken,
-    setupCodeRequired: !allowOpenSetup,
     trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
     oauthRedirectHosts: parseAllowedHosts(process.env.OAUTH_REDIRECT_HOSTS),
-    oauthAllowAnyHttpsRedirect: parseBooleanEnv(
-      "OAUTH_ALLOW_ANY_HTTPS_REDIRECT",
-      process.env.OAUTH_ALLOW_ANY_HTTPS_REDIRECT,
-      false,
-    ),
-    oauthLegacyClient: parseBooleanEnv("OAUTH_LEGACY_CLIENT", process.env.OAUTH_LEGACY_CLIENT, true),
-    refreshMaxLifetimeDays: parseRefreshMaxDays(process.env.OAUTH_REFRESH_MAX_DAYS),
-    passwordHashConcurrency: parseHashConcurrency(process.env.PASSWORD_HASH_CONCURRENCY),
     mcpRateLimitPerMinute: parseMcpRateLimit(process.env.MCP_RATE_LIMIT_PER_MINUTE),
-    oauthAllowedSchemes: parseAllowedSchemes(process.env.OAUTH_ALLOWED_SCHEMES),
-    oauthRegisterRateLimit: parseWholeNumber("OAUTH_REGISTER_RATE_LIMIT", process.env.OAUTH_REGISTER_RATE_LIMIT, 20, 0, 100_000),
-    oauthAuthorizeRateLimit: parseWholeNumber("OAUTH_AUTHORIZE_RATE_LIMIT", process.env.OAUTH_AUTHORIZE_RATE_LIMIT, 60, 0, 100_000),
-    oauthMaxPendingClients: parseWholeNumber("OAUTH_MAX_PENDING_CLIENTS", process.env.OAUTH_MAX_PENDING_CLIENTS, 1000, 1, 1_000_000),
-    oauthMaxPendingClientsPerAddress: parseWholeNumber(
-      "OAUTH_MAX_PENDING_CLIENTS_PER_ADDRESS",
-      process.env.OAUTH_MAX_PENDING_CLIENTS_PER_ADDRESS,
-      20,
-      1,
-      1_000_000,
-    ),
-    oauthPendingClientTtlMinutes: parseWholeNumber(
-      "OAUTH_PENDING_CLIENT_TTL_MINUTES",
-      process.env.OAUTH_PENDING_CLIENT_TTL_MINUTES,
-      60,
-      5,
-      7 * 24 * 60,
-    ),
   };
+}
+
+/**
+ * Settings that were removed. A deployment that still sets one keeps working;
+ * the value is ignored and startup says so once per variable.
+ */
+export function warnIgnoredEnv(env: NodeJS.ProcessEnv = process.env, warn: (line: string) => void = console.warn): string[] {
+  const found = REMOVED_ENV_VARS.filter((name) => env[name] !== undefined && env[name]?.trim() !== "");
+  for (const name of found) warn(`${name} is no longer supported and is ignored (see CHANGELOG.md). Remove it from your environment.`);
+  return found;
 }
 
 /** Placeholder values that have appeared in docs or examples. Never valid. */

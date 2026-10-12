@@ -16,7 +16,7 @@ import {
 
 const check = {
   clientId: "mcp_test",
-  webClientId: "mpos-web",
+  webClientId: "mcpencode-web",
   publicBaseUrl: "http://127.0.0.1:3000",
 };
 
@@ -47,10 +47,9 @@ test("OAUTH_REDIRECT_HOSTS lets a listed https host through, and nothing like it
   assert.equal(callbackKind("https://claude.ai/cb", listed), "listed-host");
 });
 
-test("any https host needs the explicit opt-in", () => {
-  assert.equal(isAllowedCallback("https://anything.example/cb", { ...check, allowAnyHttps: true }), true);
-  assert.equal(callbackKind("https://anything.example/cb", { allowAnyHttps: true }), "any-https");
-  assert.equal(isAllowedCallback("http://anything.example/cb", { ...check, allowAnyHttps: true }), false);
+test("an unlisted https host is never accepted (there is no any-https switch)", () => {
+  assert.equal(isAllowedCallback("https://anything.example/cb", check), false);
+  assert.equal(callbackKind("https://anything.example/cb", {}), undefined);
 });
 
 test("browser schemes and credentialed URLs are rejected", () => {
@@ -64,12 +63,12 @@ test("browser schemes and credentialed URLs are rejected", () => {
     "http://127.0.0.1/callback#code",
     "not a url",
   ]) {
-    assert.equal(isAllowedCallback(uri, { ...check, allowAnyHttps: true }), false, uri);
+    assert.equal(isAllowedCallback(uri, { ...check, allowedHosts: ["127.0.0.1", "x"] }), false, uri);
   }
 });
 
 test("the publisher sign-in returns only to this app", () => {
-  const web = { ...check, clientId: "mpos-web" };
+  const web = { ...check, clientId: "mcpencode-web" };
   assert.equal(isAllowedCallback("http://127.0.0.1:3000/callback", web), true);
   assert.equal(isAllowedCallback("https://evil.example/callback", web), false);
   assert.equal(isAllowedCallback("http://127.0.0.1:3000/callback?next=https://evil.example", web), false);
@@ -110,7 +109,7 @@ test("authorize and register turn away a remote callback by default", async () =
     publicBaseUrl: "http://127.0.0.1:3000",
     authIssuer: "http://127.0.0.1:3000/id",
     authAudience: "http://127.0.0.1:3000",
-    webClientId: "mpos-web",
+    webClientId: "mcpencode-web",
   } as AppConfig;
   const idp = await createEmbeddedIdp(config, memoryAccountStore());
   const app = express();
@@ -129,11 +128,10 @@ test("authorize and register turn away a remote callback by default", async () =
         code_challenge: "a".repeat(43),
         code_challenge_method: "S256",
       });
-    const evil = await fetch(`${base}/id/authorize?${params("mpos-mcp", "https://evil.example/cb")}`);
+    const evil = await fetch(`${base}/id/authorize?${params("mcp_unregistered", "https://evil.example/cb")}`);
     assert.equal(evil.status, 400);
-    assert.match(await evil.text(), /invalid redirect_uri/);
 
-    const web = await fetch(`${base}/id/authorize?${params("mpos-web", "https://evil.example/cb")}`);
+    const web = await fetch(`${base}/id/authorize?${params("mcpencode-web", "https://evil.example/cb")}`);
     assert.equal(web.status, 400);
 
     for (const uris of [["https://evil.example/cb"], ["http://127.0.0.1:1/cb", "javascript:alert(1)"], [], "x"]) {
