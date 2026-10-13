@@ -35,6 +35,8 @@ import { renderMarkdown } from "../../markdown/render.ts";
 import { formAliases, parseLibraryItem, requireCsrf, sessionAccess, tokensMatch } from "../helpers.ts";
 import { editPage, errorPage, itemPage } from "../pages.ts";
 import { readItemUpload } from "../upload.ts";
+import { itemFreshness } from "../../db/freshness.ts";
+import { itemFreshnessBlock } from "../pages/freshness.ts";
 import type { AppRouteContext } from "./context.ts";
 
 function downloadName(name: string): string {
@@ -164,8 +166,19 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       : undefined;
     const files = await listItemFiles(db, item.id);
     const shell = await itemShell(db, access, library.id);
+    const fresh = await itemFreshness(db, item.id);
+    const freshness = itemFreshnessBlock({
+      itemId: item.id,
+      csrf: access.csrf,
+      canWrite: can(libraryAccess, "records.write"),
+      live: item.status === "published" || item.has_pending_changes === true,
+      reviewBy: fresh?.reviewBy ?? null,
+      reviewedAt: fresh?.reviewedAt ?? null,
+      reviewedByName: fresh?.reviewedByName ?? null,
+    });
     res.send(
       itemPage({
+        freshness,
         access: libraryAccess,
         csrf: access.csrf,
         item,

@@ -4,6 +4,7 @@
  * Readers see), never a Pending draft.
  */
 import type { Database } from "./types.ts";
+import { isPastReview } from "./freshness.ts";
 import { allRows } from "./query-helpers.ts";
 
 export type Citation = {
@@ -13,6 +14,16 @@ export type Citation = {
   published_by: string | null;
   url: string | null;
   cite_as: string;
+  /** Review-by date of the published copy (YYYY-MM-DD), or null when the library does not track it. */
+  review_by: string | null;
+  /** True when review_by is before today: the item may be out of date. */
+  stale: boolean;
+  /** Who to ask: the Policy owner field, else whoever published it. */
+  owner: string | null;
+  /** Short line for the agent to relay to the user. Only when stale. */
+  warning?: string;
+  /** Set (true) only when the library refuses stale items to agents. */
+  strict_freshness?: true;
 };
 
 type CitationRow = {
@@ -23,7 +34,20 @@ type CitationRow = {
   published_by_name: string | null;
   published_snapshot: string | null;
   live_updated_at: number | string;
+  review_by: string | null;
+  strict_freshness: boolean | null;
+  details: string | null;
 };
+
+function policyOwner(details: string | null): string | null {
+  if (!details) return null;
+  try {
+    const owner = (JSON.parse(details) as { owner?: unknown }).owner;
+    return typeof owner === "string" && owner.trim() ? owner.trim() : null;
+  } catch {
+    return null;
+  }
+}
 
 function isoDate(ms: number): string {
   return new Date(ms).toISOString();
@@ -62,7 +86,8 @@ export async function citationsFor(
     db,
     `SELECT live.id, live.name, l.name AS library_name, i.published_version,
             a.username AS published_by_name, i.published_snapshot,
-            live.updated_at AS live_updated_at
+            live.updated_at AS live_updated_at, i.review_by::text AS review_by,
+            l.strict_freshness, live.details
      FROM items_live live
      JOIN items i ON i.id = live.id
      JOIN libraries l ON l.id = live.library_id
@@ -79,14 +104,24 @@ export async function citationsFor(
     const url = itemUrl(publicBaseUrl, row.id);
     const day = isoDate(publishedAt).slice(0, 10);
     const by = row.published_by_name ? ` by ${row.published_by_name}` : "";
-    out.set(row.id, {
+    const stale = isPastReview(row.review_by);
+    const owner = policyOwner(row.details) ?? row.published_by_name;
+    const citation: Citation = {
       version,
       published_at: isoDate(publishedAt),
       updated_at: isoDate(Math.max(liveUpdated, publishedAt)),
       published_by: row.published_by_name,
       url,
       cite_as: `"${row.name}" (${row.library_name}), version ${version}, published ${day}${by}.${url ? ` ${url}` : ""} [item ${row.id} v${version}]`,
-    });
+      review_by: row.review_by,
+      stale,
+      owner,
+    };
+    if (stale) {
+      citation.warning = `Past its review date (${row.review_by}); it may be out of date. Tell the user, and suggest checking with ${owner ?? "the library owner"}.`;
+    }
+    if (row.strict_freshness === true) citation.strict_freshness = true;
+    out.set(row.id, citation);
   }
   return out;
 }
@@ -102,5 +137,8 @@ export function citationLines(citation: Citation | undefined): string[] {
     citation.published_by ? `  published_by: ${citation.published_by}` : "",
     citation.url ? `  url: ${citation.url}` : "",
     `  cite_as: ${citation.cite_as}`,
+    `  review_by: ${citation.review_by ?? "none"}`,
+    `  stale: ${citation.stale}`,
+    citation.warning ? `  warning: ${citation.warning}` : "",
   ].filter((line) => line !== "");
 }

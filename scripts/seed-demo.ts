@@ -46,6 +46,8 @@ type Lib = {
   archived?: Doc;
   pendingEdit?: { name: string; fields: Record<string, string> };
   readerKey?: boolean;
+  /** Review every N days (freshness). Unset = type default. */
+  reviewDays?: number;
 };
 
 const jar = new Map<string, string>();
@@ -196,6 +198,7 @@ Actively exploited vulnerabilities are patched within 72 hours, outside the norm
   {
     name: "Help Desk Runbooks",
     mode: "reviewed",
+    reviewDays: 90,
     items: [
       {
         name: "Incident Response Runbook",
@@ -440,6 +443,9 @@ for (const lib of LIBRARIES) {
     await post("/libraries", { name: lib.name, template: lib.template ?? "general", write_mode: lib.mode }),
     "libraries",
   );
+  if (lib.reviewDays !== undefined) {
+    await post(`/libraries/${libraryId}/freshness`, { review_days: String(lib.reviewDays) });
+  }
   const ids: Record<string, string> = {};
   for (const doc of lib.items) ids[doc.name] = await addItem(libraryId, doc);
   if (lib.mode === "reviewed") {

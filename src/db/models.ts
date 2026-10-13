@@ -41,6 +41,10 @@ export type LibraryRow = {
   readerKeyCreatedAt?: number | null;
   /** Shelf this library is searched with. Null when it stands alone. */
   shelfId?: string | null;
+  /** Days after publish until review is due. null = type default (90 Policy/Procedure, else off); 0 = off. */
+  reviewDays?: number | null;
+  /** Strict freshness: agents are refused items past their review date. */
+  strictFreshness?: boolean;
   shelfName?: string | null;
   created_by: string;
   updated_by: string;

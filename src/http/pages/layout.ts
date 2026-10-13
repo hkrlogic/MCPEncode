@@ -63,6 +63,12 @@ export function statusBadge(status: ItemStatus): string {
  * the status pill already covers standing state.
  */
 export function noticeMessage(notice: string | undefined, _status?: ItemStatus): string {
+  if (notice === "confirmed") {
+    return "Confirmed still accurate. The review-by date moved forward; content and version did not change.";
+  }
+  if (notice === "review_by") {
+    return "Review-by date saved.";
+  }
   if (notice === "created") {
     return "Item saved as Pending. Publish it when it is ready for the kiosk.";
   }

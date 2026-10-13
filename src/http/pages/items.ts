@@ -169,6 +169,8 @@ export function itemPage(input: {
   files?: ItemFileMeta[];
   notice?: string;
   shell?: AppShell;
+  /** Pre-rendered review-by block (itemFreshnessBlock). */
+  freshness?: string;
 }): string {
   const canWrite = can(input.access, "records.write");
   const canDelete = can(input.access, "records.delete");
@@ -316,6 +318,7 @@ export function itemPage(input: {
           }
           ${labels ? `<p class="meta">${labels}</p>` : ""}
           ${aliases ? `<p class="meta">Also searched as: ${aliases}</p>` : ""}
+          ${input.freshness ?? ""}
         </header>
         ${review}
         ${publishAction}
