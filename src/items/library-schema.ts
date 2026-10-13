@@ -6,6 +6,7 @@ import { z } from "zod/v4";
 import {
   entityKeySchema,
   itemInputSchema,
+  excerptOf,
   normalizeEntityKey,
   type ItemInput,
 } from "./schema.ts";
@@ -212,7 +213,7 @@ export function schemaFieldMessage(schema: LibrarySchema): string {
     : schema.starter === "table" && schema.tableName
       ? `table "${schema.tableName}"`
       : `${schema.starter} schema`;
-  const needsSummary = !isPlainGeneral(schema);
+  const needsSummary = !summaryIsDerived(schema);
   const parts = [
     `This library uses the ${kind}.`,
     `Send name${needsSummary ? ", summary" : ""}`,
@@ -238,6 +239,15 @@ export function generalHasExtraFields(schema: LibrarySchema): boolean {
  */
 export function isPlainGeneral(schema: LibrarySchema): boolean {
   return schema.starter === "general" && schema.custom !== true && !generalHasExtraFields(schema);
+}
+
+/**
+ * General (not custom) derives its summary from the body, before and after an
+ * approved add-on field. Approving an optional field must not make summary
+ * required, or every existing agent write without one would start failing.
+ */
+export function summaryIsDerived(schema: LibrarySchema): boolean {
+  return schema.starter === "general" && schema.custom !== true;
 }
 
 /**
@@ -305,7 +315,16 @@ export function mcpItemWriteShape(schema: LibrarySchema): Record<string, z.ZodTy
       .optional()
       .describe("Labels (optional)"),
   };
-  if (!isPlainGeneral(schema)) {
+  if (summaryIsDerived(schema)) {
+    if (!isPlainGeneral(schema)) {
+      shape.summary = z
+        .string()
+        .trim()
+        .max(160)
+        .optional()
+        .describe("Optional one-line summary (list/search excerpt). Derived from the body when omitted");
+    }
+  } else {
     shape.summary = z
       .string()
       .trim()
@@ -367,7 +386,7 @@ export function mcpWriteToolDescription(
       : kind === "create"
         ? "Add a library item as a draft (Pending). Not visible to readers or the kiosk until a human Publishes it in the publisher UI. Optional entity_key is a stable id for later updates."
         : "Replace one library item. Saves as draft: if published, it becomes Pending until a human Publishes again in the publisher UI. Optional entity_key is a stable id for later updates.";
-  const summaryBit = isPlainGeneral(schema) ? "" : ", summary";
+  const summaryBit = summaryIsDerived(schema) ? "" : ", summary";
   const shape = schema.custom ? "custom" : schema.starter;
   return `${head} This library uses the ${shape} schema. Send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}. Optional: entity_key, labels. Do not invent fields. To add a field, propose_field after the human confirms — they Approve in the publisher. Use only when the human asked.`;
 }
@@ -475,11 +494,13 @@ export function itemForLibrarySchema(
 
   const shape: Record<string, z.ZodType> = {
     name: z.string().trim().min(1, "Name is required").max(200, "Name must be 200 characters or fewer"),
-    summary: z
-      .string()
-      .trim()
-      .min(1, "Summary is required")
-      .max(160, "Summary must be 160 characters or fewer"),
+    summary: summaryIsDerived(schema)
+      ? z.string().trim().max(160, "Summary must be 160 characters or fewer")
+      : z
+          .string()
+          .trim()
+          .min(1, "Summary is required")
+          .max(160, "Summary must be 160 characters or fewer"),
     labels: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   };
   for (const field of schema.fields) {
@@ -566,7 +587,7 @@ export function itemForLibrarySchema(
         name: data.name,
         body: formatSchemaFields(title, schema.fields, values),
         labels: data.labels,
-        summary: data.summary,
+        summary: data.summary || (schema.custom ? "" : excerptOf(values.body ?? "")),
         details: JSON.stringify({ _kind: "fields", values }),
       },
       input,
