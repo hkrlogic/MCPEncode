@@ -2,14 +2,22 @@
 
 ## Unreleased
 
-### Changed
+### Changed: new look ([#23](https://github.com/hkrlogic/MCPEncode/issues/23))
 
-- **Restyle phase 4: sign-in and consent pages** ([#23](https://github.com/hkrlogic/MCPEncode/issues/23)). Sign in, Create account (first run), Allow access and the host-approval / denied pages share the landing hero look: the logo mark above a centred card on a faint CSS-only grid, with full-width primary and secondary buttons. No scripts added.
-- **Restyle phase 3: header, nav and sidebar** ([#23](https://github.com/hkrlogic/MCPEncode/issues/23)). The top bar shows the landing page's logo mark next to the name and uses lighter, smaller nav text; the library sidebar marks the open library with a white raised row and an indigo bar; Connect, Reader key and the item ⋯ menu look like secondary buttons, with indigo while open. Class names are unchanged (one new class, `brand-mark`, on the logo SVG).
-- **Restyle phase 2: components** ([#23](https://github.com/hkrlogic/MCPEncode/issues/23)). Buttons (ink primary, secondary, ghost, danger, danger-ghost), tags, status pills (with a leading dot) and badges, panels and notices, item lists and tables, the diff/review view, the schema segmented control, the write-mode switch and the slide-up sheet follow the landing page. Transitions use one easing curve; a reduced-motion catch-all turns them off. Class names are unchanged.
-- **Restyle phase 1: base elements and color tokens** ([#23](https://github.com/hkrlogic/MCPEncode/issues/23)). Body, links, headings, labels, fieldsets, inputs, selects and textareas use the new tokens (shadow-sm, 8px radius, indigo focus ring); `code`/`pre` use JetBrains Mono; one global `:focus-visible` rule replaces the duplicated per-element ones. Every remaining hard-coded hex colour in `public/styles.css` now uses a token (beige → ink, amber → warn, green → success, red → danger), all at WCAG AA or better. Class names are unchanged.
-- **Restyle phase 0: design tokens and fonts** ([#23](https://github.com/hkrlogic/MCPEncode/issues/23)). `public/styles.css` gains design tokens shared with the landing page (ink neutrals, indigo accent, danger/warn/success, `--font-sans`/`--font-mono`, radius, shadows, spacing, easing). The original `--bg`, `--ink`, `--muted`, `--line`, `--panel`, `--accent`, `--danger` and `--focus` now point at them, so the app turns indigo-on-stone. Class names are unchanged.
-- Fonts: Inter and JetBrains Mono (SIL OFL 1.1, self-hosted in `public/fonts`) replace Source Sans 3 and Source Serif 4; body text is now sans-serif. `scripts/fetch-fonts.sh` fetches the new pair.
+The web app now matches the MCPEncode landing page: Inter and JetBrains Mono, stone neutrals, an indigo accent, softer cards and one easing curve. This release changes only CSS, fonts and a few lines of markup. Class names, routes, settings and the database are unchanged.
+
+- **Design tokens** in `public/styles.css`: ink neutrals, indigo accent, danger / warn / success, `--font-sans` / `--font-mono`, radius, shadows, spacing and easing. The original `--bg`, `--ink`, `--muted`, `--line`, `--panel`, `--accent`, `--danger` and `--focus` point at them, and no hard-coded hex colours remain outside `:root`.
+- **Fonts:** Inter and JetBrains Mono (SIL OFL 1.1) are self-hosted in `public/fonts` and replace Source Sans 3 and Source Serif 4. Body text is now sans-serif. `scripts/fetch-fonts.sh` fetches the new pair, and `NOTICE` is updated.
+- **Base elements and components:** inputs get an indigo focus ring. Buttons (ink primary, secondary, ghost, danger), tags and status pills (with a leading dot), panels, notices, lists, tables, the diff view, the schema segmented control, the write-mode switch and the slide-up sheet are all restyled.
+- **Header and sidebar:** the logo mark sits beside the name. The open library has a white raised row with an indigo bar. Connect, Reader key and the ⋯ menu look like secondary buttons.
+- **Sign-in, first-run and consent pages:** a centred card under the logo on a faint CSS-only grid, with full-width buttons. No scripts were added and the CSP is unchanged.
+- **Accessibility:**
+  - Every text colour pair meets WCAG AA (small text never lighter than ink-600, 7.3:1 or more on the app background).
+  - The write-mode switch's off state meets 3:1 for UI components.
+  - One global `:focus-visible` ring is used throughout, and checkboxes and radios keep a visible focus outline.
+  - Pending-item checkboxes now have an accessible name, and the Connect link box can be reached with the keyboard.
+  - `prefers-reduced-motion` turns off every transition and animation.
+- **Screenshots:** `docs/assets/*.png` were regenerated from `npm run seed-demo` in the new look.
 
 ## v0.2.1
 

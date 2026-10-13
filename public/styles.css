@@ -397,7 +397,7 @@ pre { background: var(--ink-50); border: 1px solid var(--line); border-radius: v
 }
 .schema-field-name { font-weight: 600; color: var(--muted); }
 .schema-field-req {
-  color: color-mix(in srgb, var(--muted) 78%, var(--white));
+  color: var(--ink-600); /* was a 78% tint of --muted: 4.1:1, below AA */
   font-weight: 450;
   flex-shrink: 0;
 }
@@ -1165,6 +1165,9 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 fieldset { border: 1px solid var(--line); border-radius: var(--radius-lg); }
 legend { font-family: var(--font-sans); font-weight: 600; color: var(--ink-800); padding: 0 0.35rem; }
 @media (prefers-reduced-motion: reduce) { input, textarea, select { transition: none; } }
+/* Checkboxes and radios draw no border ring, so keep the outline for keyboard focus. */
+input[type="checkbox"]:focus, input[type="radio"]:focus { box-shadow: none; }
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 dl.details { display: grid; gap: 0.35rem; margin: 0.75rem 0 1rem; }
 dl.details div { display: grid; grid-template-columns: 11rem 1fr; gap: 0.75rem; }
 dl.details dt { color: var(--muted); }
