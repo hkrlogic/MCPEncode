@@ -844,12 +844,12 @@ export function libraryPage(input: {
     : "";
   const connectBox = connectReveal
     ? `<div class="mcp-link-box">
-          <code class="mcp-link" id="mcp-url">${esc(connectReveal)}</code>
+          <code class="mcp-link" tabindex="0" id="mcp-url">${esc(connectReveal)}</code>
           <button type="button" class="btn mcp-copy" data-copy="#mcp-url">Copy</button>
         </div>
         <p class="mcp-panel-note"><strong>Copy this link now. You won't see it again.</strong> To get a link later, rotate it.</p>`
     : `<div class="mcp-link-box">
-          <code class="mcp-link mcp-link-masked" id="mcp-url">${esc(input.mcpUrl)}</code>
+          <code class="mcp-link mcp-link-masked" tabindex="0" id="mcp-url">${esc(input.mcpUrl)}</code>
         </div>
         <p class="mcp-panel-note">${
           canWrite

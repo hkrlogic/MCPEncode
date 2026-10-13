@@ -235,6 +235,7 @@ function loginPage(input: {
 </head>
 <body>
   <main class="sign-in">
+    <p class="sign-in-brand"><svg class="brand-mark" viewBox="0 0 32 32" width="32" height="32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" fill="#1c1917"/><path d="M10 9.5h3.5v13H10zM15 9.5h3.5v13H15zM20.2 10.2l3.2-.9 3 12.5-3.2.9z" fill="#fff"/></svg><span>MCPEncode</span></p>
     <section class="panel">
       <h1>${title}</h1>
       ${lead ? `<p class="hint">${lead}</p>` : ""}
@@ -282,6 +283,7 @@ function simplePage(title: string, body: string): string {
 </head>
 <body>
   <main class="sign-in">
+    <p class="sign-in-brand"><svg class="brand-mark" viewBox="0 0 32 32" width="32" height="32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" fill="#1c1917"/><path d="M10 9.5h3.5v13H10zM15 9.5h3.5v13H15zM20.2 10.2l3.2-.9 3 12.5-3.2.9z" fill="#fff"/></svg><span>MCPEncode</span></p>
     <section class="panel">
       <h1>${escapeHtml(title)}</h1>
       ${body}
@@ -360,6 +362,7 @@ function consentPage(input: {
 </head>
 <body>
   <main class="sign-in">
+    <p class="sign-in-brand"><svg class="brand-mark" viewBox="0 0 32 32" width="32" height="32" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" fill="#1c1917"/><path d="M10 9.5h3.5v13H10zM15 9.5h3.5v13H15zM20.2 10.2l3.2-.9 3 12.5-3.2.9z" fill="#fff"/></svg><span>MCPEncode</span></p>
     <section class="panel">
       <h1>Allow access?</h1>
       <p>${
