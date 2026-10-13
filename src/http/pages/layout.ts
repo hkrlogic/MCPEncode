@@ -257,7 +257,7 @@ export function itemListMarkup(
         if (selectable) {
           return `
       <li class="item-row">
-        <input type="checkbox" name="item_id" value="${esc(row.id)}" id="pick-${esc(row.id)}" class="item-pick">
+        <input type="checkbox" name="item_id" value="${esc(row.id)}" id="pick-${esc(row.id)}" class="item-pick" aria-label="Select ${esc(row.name)}">
         <a href="/items/${esc(row.id)}?library=${esc(libraryId)}" class="item-link">
           ${body}
         </a>
