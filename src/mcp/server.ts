@@ -23,6 +23,8 @@ import {
   listItems,
   lookupItems,
   updateItem,
+  ItemConflictError,
+  getItem,
   writeAudit,
 } from "../db/queries.ts";
 import { libraryMcpUrl } from "../http/library-url.ts";
@@ -253,6 +255,12 @@ export function buildMcpServer(
           status: item.status,
           has_pending_changes: item.has_pending_changes === true,
           version: item.status === "published" ? ("published" as const) : ("draft" as const),
+          // Revision of the working row (what update_item replaces), even when
+          // this is the live published view of an item with a Pending edit.
+          revision:
+            item.view === "live" || item.has_pending_changes
+              ? ((await getItem(db, item.id, { publishedOnly: false }))?.updated_at ?? item.updated_at)
+              : item.updated_at,
         };
     return labeledItemData({
       id: item.id,
@@ -691,7 +699,7 @@ export function buildMcpServer(
         inputSchema: updateItemSchema,
         annotations: { readOnlyHint: false },
       },
-      async ({ id, ...input }) => {
+      async ({ id, expected_revision, ...input }) => {
         // Scoped to this link's library: an id from another library is not found.
         const existing = await getLibraryItem(db, library.libraryId, id, { publishedOnly: false });
         if (!existing) {
@@ -718,7 +726,10 @@ export function buildMcpServer(
           return deny(saved.message);
         }
         try {
-          const row = await updateItem(db, id, saved.item, access.sub, { libraryId: library.libraryId });
+          const row = await updateItem(db, id, saved.item, access.sub, {
+            libraryId: library.libraryId,
+            expectedRevision: typeof expected_revision === "number" ? expected_revision : undefined,
+          });
           if (!row) {
             await writeAudit(db, {
               actorSub: access.sub,
@@ -739,14 +750,19 @@ export function buildMcpServer(
           return ok(await itemWire(row));
         } catch (error) {
           const message = error instanceof Error ? error.message : "Update failed.";
+          const conflict = error instanceof ItemConflictError;
           await writeAudit(db, {
             actorSub: access.sub,
             libraryId: library.libraryId,
             tool: "update_item",
             success: false,
-            detail: id,
+            detail: conflict ? `${id} conflict` : id,
           });
-          return deny(message);
+          return deny(
+            conflict
+              ? `${message}\nid: ${id}\nexpected_revision: ${expected_revision}\ncurrent_revision: ${error.currentRevision}`
+              : message,
+          );
         }
       },
     );
