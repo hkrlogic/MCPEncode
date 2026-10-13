@@ -1001,14 +1001,67 @@ pre { background: var(--ink-50); border: 1px solid var(--line); border-radius: v
   .lib-nav-toggle:checked ~ .lib-sidebar { display: flex; }
   .app-main { padding: 1.15rem 1.1rem 3rem; }
 }
+/* Sign-in, consent and first-run pages: the landing hero (grid wash, centred card). CSS only. */
 .sign-in {
+  position: relative;
+  isolation: isolate;
   min-height: 100dvh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem 1.25rem;
+  gap: var(--space-6);
+  padding: var(--space-12) var(--space-5);
+  background: var(--white);
+  font-family: var(--font-sans);
 }
-.sign-in .panel { width: min(28rem, 100%); margin: 0; }
+.sign-in::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(28, 25, 23, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(28, 25, 23, 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+.sign-in-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  color: var(--ink-900);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.sign-in-brand .brand-mark { width: 2rem; height: 2rem; }
+.sign-in .panel {
+  width: min(28rem, 100%);
+  margin: 0;
+  padding: var(--space-8);
+  border-color: var(--ink-200);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl), 0 0 0 1px rgba(28, 25, 23, 0.02);
+  animation: sign-in-rise 0.6s var(--ease-out) both;
+}
+.sign-in .panel h1 { margin: 0 0 var(--space-2); font-size: 1.75rem; line-height: 1.15; letter-spacing: -0.035em; text-align: center; }
+.sign-in .panel > .hint { text-align: center; font-size: 0.9rem; line-height: 1.55; }
+.sign-in .panel > .hint code { word-break: break-all; }
+.sign-in form { margin-top: var(--space-5); }
+.sign-in form .btn { width: 100%; min-height: 2.75rem; margin-top: var(--space-3); font-size: 0.9rem; }
+.sign-in form .btn + .btn { margin-top: var(--space-2); }
+.sign-in .error { padding: 0.65rem 0.85rem; border: 1px solid var(--danger-200); border-radius: var(--radius); background: var(--danger-50); color: var(--danger-800); font-size: 0.9rem; }
+@keyframes sign-in-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sign-in .panel { animation: none; }
+}
 .nav {
   display: flex;
   align-items: center;
