@@ -3,5 +3,5 @@ Copyright 2026 hkrlogic and MCPEncode contributors
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
-Fonts: Source Sans 3 and Source Serif 4 are licensed under the SIL Open Font License 1.1.
+Fonts: Inter and JetBrains Mono are licensed under the SIL Open Font License 1.1.
 scripts/fetch-fonts.sh copies them, with their licenses, into public/fonts.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Restyle phase 0: design tokens and fonts** ([#23](https://github.com/hkrlogic/MCPEncode/issues/23)). `public/styles.css` gains design tokens shared with the landing page (ink neutrals, indigo accent, danger/warn/success, `--font-sans`/`--font-mono`, radius, shadows, spacing, easing). The original `--bg`, `--ink`, `--muted`, `--line`, `--panel`, `--accent`, `--danger` and `--focus` now point at them, so the app turns indigo-on-stone. Class names are unchanged.
+- Fonts: Inter and JetBrains Mono (SIL OFL 1.1, self-hosted in `public/fonts`) replace Source Sans 3 and Source Serif 4; body text is now sans-serif. `scripts/fetch-fonts.sh` fetches the new pair.
+
 ## v0.2.1
 
 ### Security
