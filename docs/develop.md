@@ -74,3 +74,14 @@ See the repo map in [AGENTS.md](../AGENTS.md#repo-map) and the architecture in [
 ## Later
 
 Optimistic concurrency, soft-delete, first-class sections (Table, Checklist, Details, Description), MFA, export whole library, Site admin break-glass.
+
+## Demo data
+
+`npm run seed-demo` fills a fresh install with fictional demo Libraries (IT policies, help desk runbooks, customer support, a biology course, product docs, HR, sales), two extra accounts and two example apps, using the app's own web forms. It is what the README screenshots show.
+
+```bash
+DEMO_ADMIN_USER=admin DEMO_ADMIN_PASSWORD='<12+ chars>' SETUP_TOKEN='<from .env>' npm run seed-demo
+```
+
+`SETUP_TOKEN` is only needed while no account exists (the admin is created then). Run it once, on an empty install.
+

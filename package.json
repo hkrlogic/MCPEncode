@@ -19,7 +19,8 @@
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint",
-    "check-env": "tsx scripts/check-env.ts"
+    "check-env": "tsx scripts/check-env.ts",
+    "seed-demo": "tsx scripts/seed-demo.ts"
   },
   "engines": {
     "node": ">=22"
