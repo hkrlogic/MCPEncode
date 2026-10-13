@@ -1,33 +1,98 @@
 /* Fonts are served from this app (public/fonts), never from a third party.
    Run scripts/fetch-fonts.sh once to add the files; until then the system fonts below are used. */
 @font-face {
-  font-family: "Source Sans 3";
+  font-family: "Inter";
   font-style: normal;
-  font-weight: 200 900;
+  font-weight: 100 900;
   font-display: swap;
-  src: local("Source Sans 3"), local("Source Sans 3 Regular"), url("fonts/source-sans-3-latin-wght-normal.woff2") format("woff2");
+  src: url("fonts/inter-latin-wght-normal.woff2") format("woff2");
 }
 @font-face {
-  font-family: "Source Serif 4";
+  font-family: "JetBrains Mono";
   font-style: normal;
-  font-weight: 200 900;
+  font-weight: 100 800;
   font-display: swap;
-  src: local("Source Serif 4"), local("Source Serif 4 Regular"), url("fonts/source-serif-4-latin-wght-normal.woff2") format("woff2");
+  src: url("fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
 }
 
+/* Design tokens, shared with the landing page (issue #23).
+   Phase 0 only adds tokens and remaps the original names below; later phases move rules onto them. */
 :root {
-  --bg: #f4f1ea;
-  --ink: #1c1916;
-  --muted: #5c564e;
-  --line: #d9d2c5;
-  --panel: #fffcf7;
-  --accent: #1f4d3a;
-  --danger: #8b2e1f;
-  --focus: #0b57d0;
+  /* Neutrals ("ink", warm stone) */
+  --ink-50: #fafaf9;
+  --ink-100: #f5f5f4;
+  --ink-200: #e7e5e4;
+  --ink-300: #d6d3d1;
+  --ink-400: #a8a29e; /* decorative only: below AA for text */
+  --ink-500: #78716c; /* large text only on white (4.8:1) */
+  --ink-600: #57534e; /* smallest text colour allowed: 7.6:1 on white, 7.3:1 on ink-50 */
+  --ink-700: #44403c;
+  --ink-800: #292524;
+  --ink-900: #1c1917;
+
+  /* Accent (indigo) */
+  --accent-50: #eef2ff;
+  --accent-100: #e0e7ff;
+  --accent-200: #c7d2fe;
+  --accent-300: #a5b4fc;
+  --accent-500: #6366f1;
+  --accent-600: #4f46e5; /* 6.3:1 on white; white text on it 6.3:1 */
+  --accent-700: #4338ca;
+
+  /* Status (text-safe 700s on light 50s) */
+  --danger-50: #fef2f2;
+  --danger-600: #dc2626;
+  --danger-700: #b91c1c; /* 6.5:1 on white */
+  --warn-50: #fffbeb;
+  --warn-600: #d97706;
+  --warn-700: #b45309; /* 5.0:1 on white */
+  --success-50: #f0fdf4;
+  --success-600: #16a34a;
+  --success-700: #15803d; /* 5.0:1 on white */
+
+  /* Type */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", var(--font-mono);
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.05);
+  --shadow-md: 0 1px 2px rgba(28, 25, 23, 0.05), 0 4px 16px -8px rgba(28, 25, 23, 0.12);
+  --shadow-xl: 0 20px 25px -5px rgba(28, 25, 23, 0.05), 0 8px 10px -6px rgba(28, 25, 23, 0.05);
+
+  /* Spacing (4px scale) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* Original names, remapped onto the tokens */
+  --bg: var(--ink-50);
+  --ink: var(--ink-900);
+  --muted: var(--ink-600);
+  --line: var(--ink-200);
+  --panel: #fff;
+  --accent: var(--accent-600);
+  --danger: var(--danger-700);
+  --focus: var(--accent-600);
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, serif; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font-sans); }
 a { color: var(--accent); }
 .wrap { max-width: 1080px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
 
@@ -56,7 +121,7 @@ a { color: var(--accent); }
   flex-direction: column;
   border-right: 1px solid var(--line);
   background: color-mix(in srgb, var(--panel) 88%, #fff);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   min-height: 0;
   overflow: hidden;
 }
@@ -99,7 +164,7 @@ a { color: var(--accent); }
   border-radius: 6px;
   background: #fff;
   color: var(--accent);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 1.1rem;
   font-weight: 600;
   line-height: 1;
@@ -143,7 +208,7 @@ a { color: var(--accent); }
   min-width: 0;
 }
 .schema-choices legend {
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.8rem;
   font-weight: 650;
   padding: 0;
@@ -171,7 +236,7 @@ a { color: var(--accent); }
   border-right: 1px solid var(--line);
   background: transparent;
   color: var(--muted);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.95rem;
   font-weight: 650;
   text-align: center;
@@ -217,7 +282,7 @@ a { color: var(--accent); }
 }
 .schema-prompt-label {
   margin: 0.85rem 0 0.4rem;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.85rem;
   font-weight: 650;
   color: var(--muted);
@@ -284,7 +349,7 @@ a { color: var(--accent); }
 .write-mode-choices .schema-fields { grid-column: 1 / -1; }
 .schema-blurb {
   margin: 0;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.9rem;
   font-weight: 450;
   line-height: 1.45;
@@ -303,7 +368,7 @@ a { color: var(--accent); }
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.85rem;
   line-height: 1.35;
   padding: 0.4rem 0;
@@ -323,7 +388,7 @@ a { color: var(--accent); }
   align-items: center;
   gap: 0.55rem;
   margin: 0;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 .write-mode-toggle-label {
   font-size: 0.9rem;
@@ -653,7 +718,7 @@ a { color: var(--accent); }
 .home-idle { align-items: flex-start; }
 .home-kicker {
   margin: 0 0 0.45rem;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -708,7 +773,7 @@ a { color: var(--accent); }
   border-radius: 8px;
   background: #fff;
   color: var(--accent);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.9rem;
   font-weight: 650;
   line-height: 1;
@@ -748,7 +813,7 @@ a { color: var(--accent); }
     0 1px 0 rgba(255, 252, 247, 0.8) inset,
     0 14px 36px rgba(28, 25, 22, 0.12);
   overflow: hidden;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 .mcp-panel-head {
   padding: 1rem 1.15rem 0.85rem;
@@ -794,7 +859,7 @@ a { color: var(--accent); }
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg) 55%, #fff);
   color: var(--ink);
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78rem;
   line-height: 1.35;
   white-space: nowrap;
@@ -840,7 +905,7 @@ a { color: var(--accent); }
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg) 55%, #fff);
   color: var(--ink);
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78rem;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -880,7 +945,7 @@ a { color: var(--accent); }
     padding: 0.65rem 1rem;
     border-bottom: 1px solid var(--line);
     background: color-mix(in srgb, var(--panel) 88%, #fff);
-    font-family: "Source Sans 3", "Segoe UI", sans-serif;
+    font-family: var(--font-sans);
     cursor: pointer;
   }
   .lib-nav-kicker {
@@ -936,7 +1001,7 @@ a { color: var(--accent); }
   padding: 0.65rem 1.5rem;
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--panel) 92%, #fff);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   position: sticky;
   top: 0;
   z-index: 20;
@@ -1008,22 +1073,22 @@ a { color: var(--accent); }
   color: var(--accent);
 }
 .nav-signout:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-h1, h2, h3 { font-family: "Source Sans 3", "Segoe UI", sans-serif; letter-spacing: -0.02em; }
+h1, h2, h3 { font-family: var(--font-sans); letter-spacing: -0.02em; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1.25rem; margin-bottom: 2rem; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-label { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.75rem 0; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-size: 0.9rem; font-weight: 650; }
+label { display: flex; flex-direction: column; gap: 0.35rem; margin: 0.75rem 0; font-family: var(--font-sans); font-size: 0.9rem; font-weight: 650; }
 input, textarea, select { font: inherit; padding: 0.55rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 input:focus, textarea:focus, select:focus, button:focus { outline: 2px solid var(--focus); outline-offset: 2px; }
 dl.details { display: grid; gap: 0.35rem; margin: 0.75rem 0 1rem; }
 dl.details div { display: grid; grid-template-columns: 11rem 1fr; gap: 0.75rem; }
 dl.details dt { color: var(--muted); }
 fieldset.policy-group { border: 1px solid var(--line); border-radius: 10px; margin: 1.25rem 0; padding: 0.35rem 1rem 0.85rem; }
-fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; padding: 0 0.35rem; }
+fieldset.policy-group legend { font-family: var(--font-sans); font-weight: 650; padding: 0 0.35rem; }
 .editor { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; min-height: 16rem; }
 .editor textarea, .preview { min-height: 16rem; }
 .section-data .editor textarea, .section-data .preview { min-height: 22rem; }
 .preview { border: 1px dashed var(--line); border-radius: 8px; padding: 0.75rem; overflow: auto; background: #fff; font-weight: 400; }
-.btn { display: inline-block; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 0.55rem 1.1rem; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; cursor: pointer; text-decoration: none; }
+.btn { display: inline-block; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 0.55rem 1.1rem; font-family: var(--font-sans); font-weight: 650; cursor: pointer; text-decoration: none; }
 .btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
 .btn.danger { background: var(--danger); }
 .btn.danger-ghost {
@@ -1037,7 +1102,7 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 .cards a:hover { background: rgba(31, 77, 58, 0.05); }
 .cards h2 { margin: 0; font-size: 1.15rem; font-weight: 650; }
 .excerpt { color: var(--muted); }
-.tag { display: inline-block; margin-right: 0.35rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #ebe4d6; font-size: 0.8rem; font-family: "Source Sans 3", "Segoe UI", sans-serif; }
+.tag { display: inline-block; margin-right: 0.35rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #ebe4d6; font-size: 0.8rem; font-family: var(--font-sans); }
 .error { color: var(--danger); }
 .empty, .hint { color: var(--muted); }
 .hint code { font-size: 0.85em; word-break: break-all; }
@@ -1048,18 +1113,18 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 .prose :first-child { margin-top: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .sheet-wrap { margin: 0.85rem 0 1rem; overflow: auto; }
-.sheet-label { margin: 0 0 0.25rem; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; }
+.sheet-label { margin: 0 0 0.25rem; font-family: var(--font-sans); font-weight: 650; }
 .section { margin: 0.5rem 0 0.25rem; }
 .sheet-wrap .jss_container,
 .sheet-wrap .jexcel_container,
-.sheet-wrap .jexcel { font-family: "Source Sans 3", "Segoe UI", sans-serif; }
+.sheet-wrap .jexcel { font-family: var(--font-sans); }
 .sheet-wrap .preview,
 .table-block .preview { margin-top: 0.75rem; min-height: 8rem; }
 .prose table, .preview table { width: 100%; border-collapse: collapse; }
 .prose th, .prose td, .preview th, .preview td { border: 1px solid var(--line); padding: 0.45rem 0.6rem; text-align: left; }
 .prose thead, .preview thead { background: #f7f3ea; }
 .library-view {
-  font-family: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-sans);
 }
 .library-head {
   display: flex;
@@ -1132,7 +1197,7 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   overflow-x: auto;
   min-width: 0;
   flex: 1 1 auto;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 .library-toolbar .write-mode-toggle {
   flex: 0 0 auto;
@@ -1171,7 +1236,7 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 .library-tab-hint { margin: 0 0 0.85rem; }
 /* Accounts — standard users admin surface */
 .users-page {
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   width: 100%;
   max-width: none;
 }
@@ -1436,12 +1501,12 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
 }
 .access-person-name {
   font-weight: 600;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 .access-person-role {
   color: var(--muted);
   font-size: 0.9rem;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 .access-person-detail {
   font-size: 0.85rem;
@@ -1468,7 +1533,7 @@ fieldset.policy-group legend { font-family: "Source Sans 3", "Segoe UI", sans-se
   align-items: center;
   gap: 0.65rem;
   margin: 0 0 0.35rem;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 .viewer-sub .btn {
   box-sizing: border-box;
@@ -1520,7 +1585,7 @@ button.linkish {
 .search-meta {
   margin: -0.35rem 0 1rem;
   color: var(--muted);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 .search-meta a { font-weight: 650; }
 .empty-block { margin: 0.35rem 0 1rem; }
@@ -1540,7 +1605,7 @@ button.linkish {
   border-radius: 6px;
   background: transparent;
   color: var(--accent);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-weight: 650;
   min-height: 44px;
   padding: 0 1rem;
@@ -1554,7 +1619,7 @@ button.linkish {
   gap: 0.5rem;
 }
 .back { margin: 0 0 1rem; }
-.back a { text-decoration: none; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; }
+.back a { text-decoration: none; font-family: var(--font-sans); font-weight: 650; }
 .item-head {
   display: flex;
   flex-direction: column;
@@ -1597,7 +1662,7 @@ button.linkish {
 .item-head h1 { margin: 0.15rem 0 0; }
 .item-files {
   margin-top: 2rem;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 .item-files h2 {
   margin: 0 0 0.35rem;
@@ -1664,7 +1729,7 @@ button.linkish {
   border-radius: 8px;
   padding: 0.55rem 0.7rem;
   font: inherit;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   color: inherit;
   text-decoration: none;
   cursor: pointer;
@@ -1869,7 +1934,7 @@ button.linkish {
   border-radius: 999px;
   background: #f3e6c8;
   color: #6a4f12;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.75rem;
   font-weight: 650;
 }
@@ -1891,7 +1956,7 @@ button.linkish {
 }
 .review-change { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; }
 .review-field {
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.82rem;
   font-weight: 650;
 }
@@ -1904,7 +1969,7 @@ button.linkish {
   display: inline-block;
   min-width: 5.6rem;
   margin-right: 0.35rem;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -1928,7 +1993,7 @@ button.linkish {
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
   font-size: 0.75rem;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-weight: 650;
   letter-spacing: 0.02em;
 }
@@ -1961,14 +2026,14 @@ button.linkish {
 .proposal-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .proposal-actions form { margin: 0; }
 fieldset.field-group { border: 1px solid var(--line); border-radius: 10px; margin: 1.25rem 0; padding: 0.35rem 1rem 0.85rem; }
-fieldset.field-group legend { font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; padding: 0 0.35rem; }
+fieldset.field-group legend { font-family: var(--font-sans); font-weight: 650; padding: 0 0.35rem; }
 .notice {
   margin: 0.5rem 0 0.75rem;
   padding: 0.65rem 0.85rem;
   border-radius: 8px;
   background: #efe8d8;
   color: var(--ink);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.95rem;
 }
 .gate-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0 0.25rem; }
@@ -2076,10 +2141,10 @@ fieldset.field-group legend { font-family: "Source Sans 3", "Segoe UI", sans-ser
 .diff-list { list-style: none; padding: 0; margin: 0; }
 .diff-list li { margin-bottom: 1rem; }
 .diff-list li:last-child { margin-bottom: 0; }
-.diff-field { margin: 0 0 0.35rem; font-family: "Source Sans 3", "Segoe UI", sans-serif; font-weight: 650; }
+.diff-field { margin: 0 0 0.35rem; font-family: var(--font-sans); font-weight: 650; }
 .diff-label {
   margin: 0.45rem 0 0.2rem;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -2089,7 +2154,7 @@ fieldset.field-group legend { font-family: "Source Sans 3", "Segoe UI", sans-ser
 .diff-before, .diff-after {
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85rem;
   line-height: 1.45;
   background: #fff;
