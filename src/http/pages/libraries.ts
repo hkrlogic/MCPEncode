@@ -585,6 +585,8 @@ export function libraryPage(input: {
   items: ItemSummary[];
   error?: string;
   q?: string;
+  /** Publishers: items due for review within 14 days or overdue (Review tab badge). */
+  reviewDue?: number;
   /** Publisher section. Readers always see published items. */
   tab?: LibraryTab;
   mcpUrl: string;
@@ -815,6 +817,7 @@ export function libraryPage(input: {
           <a href="${libraryTabHref(input.library.id, "pending", input.q)}"${tab === "pending" ? ' aria-current="page"' : ""}>Pending${tabBadge(pending.length, "pending")}</a>
           <a href="${libraryTabHref(input.library.id, "archives", input.q)}"${tab === "archives" ? ' aria-current="page"' : ""}>Archives${tabBadge(archived.length, "archive")}</a>
           <a href="${libraryTabHref(input.library.id, "access", input.q)}"${tab === "access" ? ' aria-current="page"' : ""}>Access</a>
+          <a href="/libraries/${esc(input.library.id)}/review">Review${tabBadge(input.reviewDue ?? 0, "pending")}</a>
         </nav>
         ${writeModePanel(input.library, input.csrf)}
       </div>`

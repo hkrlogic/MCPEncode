@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added: freshness: review-by dates, stale warnings, strict mode, review queue ([#37](https://github.com/hkrlogic/MCPEncode/issues/37))
+
+- **Review-by dates.**
+  - Publishing sets an item's review-by date. It is on by default for Policy and Procedure libraries (90 days after publish) and off for the other types.
+  - Each library can set its own period, or 0 to turn it off, under **Review → Freshness settings**.
+  - Policy items reuse their own **Review date** field, so there is no second date to maintain.
+  - Publishers can set or clear an item's date on the item page.
+- **Stale flag for agents.** Citations from `list_items`, `open_item` and `search_shelf` now carry `review_by`, `stale`, `owner`, and a `warning` line when the item is past review. The agent instructions ask agents to relay that line.
+- **Strict mode** (per library, off by default). Items past review are not returned as answers. Agents get `Refused: … ask <owner> to review it (<url>)`, and lists and shelf hits leave those items out with a `withheld` note. The owner is the Policy **owner** field, otherwise the publisher. A Publisher reading `version: "draft"` is not refused.
+- **Review queue** (library **Review** tab, with a count badge). It lists published items due within 14 days or overdue. **Still accurate** moves the date to today plus the library period (90 days if the library has none) and records who confirmed it, logged as `ui.still_accurate`. It does **not** change content, the revision or the citation version, because nothing that agents cite changed. Settings changes and date edits are logged as `ui.set_freshness` and `ui.set_review_by`.
+- **Migration `022_freshness.sql`:**
+  - Adds `libraries.review_days` and `libraries.strict_freshness`, plus `items.review_by`, `reviewed_at` and `reviewed_by`.
+  - A trigger sets `review_by` whenever the published copy changes.
+  - Existing published items are backfilled from their last publish date.
+- The demo seed sets Help Desk Runbooks (a General library) to a 90-day review period.
+
 ### Added: item aliases and agent label suggestions ([#35](https://github.com/hkrlogic/MCPEncode/issues/35))
 
 - **Aliases.** Items have an editable **Aliases** field: other words people use, such as `phished, phishing, suspicious email`. `list_items q=`, typo correction and `search_shelf` match and rank aliases the same way as labels. Item pages show them as "Also searched as". `open_item` prints an `aliases:` line, and Markdown export adds `Aliases:`.

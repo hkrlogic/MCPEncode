@@ -52,6 +52,7 @@ import { libraryMcpUrl, maskedLibraryMcpUrl } from "../library-url.ts";
 import { CONNECT_REVEAL_COOKIE, stashConnectReveal, takeConnectReveal } from "../../auth/connect-reveal.ts";
 import { addItemPage, addLibraryPage, errorPage, librariesPage, libraryPage } from "../pages.ts";
 import { loadAppShell } from "../shell.ts";
+import { reviewQueue } from "../../db/freshness.ts";
 import type { AppRouteContext } from "./context.ts";
 
 type SessionUser = Access & { csrf: string };
@@ -238,7 +239,7 @@ function listLibraryItems(
   );
 }
 
-async function libraryContext(
+export async function libraryContext(
   db: AppRouteContext["db"],
   libraryId: string,
   access: SessionUser,
@@ -570,6 +571,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         publishedCount,
         notice,
         itemCount,
+        reviewDue: can(ctxLib.libraryAccess, "records.write") ? (await reviewQueue(db, ctxLib.library.id)).length : 0,
         canAddLibrary: can(access, "libraries.create"),
         shelfChoices,
         ...shell,

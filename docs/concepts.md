@@ -82,6 +82,16 @@ A word that is only a label several items share (for example `runbook`) returns 
 
 Never-published drafts say `citation: none`. Items published before this release start at version 1, with no recorded publisher.
 
+**Freshness.**
+- **Review-by date.** Each published item can have a review-by date, set on every publish (and on Review Unlock saves) to the publish day plus the library's review period.
+  - The period defaults to 90 days for Policy and Procedure libraries and is off for other types. Publishers change it under **Review → Freshness settings** (blank means the type default, 0 means off).
+  - Policy items use their own **Review date** field instead.
+  - A publisher can set or clear the date on the item page.
+  - The date lives outside the published copy (`items.review_by`). Changing it is not an edit: it does not go Pending, change the revision, or bump the citation version.
+- **Stale answers.** Citations include `review_by` and `stale` (true when the date is before today, UTC). A stale item also gets a `warning` line naming the `owner` (the Policy owner field, otherwise the publisher), which agents relay to the user.
+- **Strict mode** (per library, off by default). Items past review are not given as answers. `open_item` and a single-match `list_items` return a refusal telling the user who should review it and where. Lists and `search_shelf` leave those items out and add a `withheld` note.
+- **Review queue.** The library's **Review** tab lists published items due within 14 days or overdue. **Still accurate** re-confirms an item: review-by becomes today plus the period (90 days if the library has none), and who confirmed it and when are recorded and audit-logged (`ui.still_accurate`). Content and version stay the same.
+
 **Edit conflicts.** Publisher results that return a full item (`open_item`, a single-match `list_items`, `create_item`, `update_item`) include `revision`. Pass it back as `expected_revision` on `update_item`: if anyone saved the item since, nothing is saved and the tool returns a conflict with `current_revision`, so the agent can re-read and reapply. Without `expected_revision` the last save wins, as before. The web edit form does the same check and shows the latest copy when it fails.
 
 There is **no publish, approve, write-mode or revert tool.** Those stay with people in the web UI. Tool output labels item content as data, not instructions.

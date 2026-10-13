@@ -55,6 +55,7 @@ import { registerEditorRoutes } from "./routes/editor.ts";
 import { registerItemRoutes } from "./routes/items.ts";
 import { registerLibraryRoutes } from "./routes/libraries.ts";
 import { registerShelfRoutes } from "./routes/shelves.ts";
+import { registerFreshnessRoutes } from "./routes/freshness.ts";
 import { originAllowed } from "./origin.ts";
 import { mcpRateLimit } from "./mcp-rate-limit.ts";
 import { formActionSource, securityHeaders } from "./security-headers.ts";
@@ -247,6 +248,7 @@ export function createApp(input: {
   registerLibraryRoutes(app, ctx);
   registerShelfRoutes(app, ctx);
   registerItemRoutes(app, ctx);
+  registerFreshnessRoutes(app, ctx);
   registerEditorRoutes(app, ctx);
 
   // Global /mcp is retired. Agents connect with a library link only.
