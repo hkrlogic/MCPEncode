@@ -21,6 +21,8 @@ type ToolResult = { content?: { type: string; text: string }[]; isError?: boolea
 type Tool = { handler: (args: unknown, extra: unknown) => Promise<ToolResult> };
 
 const BASE = "https://library.example.org";
+/** BASE for use inside a RegExp (dots escaped). */
+const BASE_RE = BASE.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
 const DANA = "151ecd6c-77bd-4998-b7af-58c0447904c8";
 
 const auth: AuthInfo = {
@@ -94,10 +96,10 @@ test("Reader open_item carries version, dates, publisher, URL and cite_as", asyn
     assert.match(text, /^ {2}published_at: \d{4}-\d{2}-\d{2}T/m);
     assert.match(text, /^ {2}updated_at: \d{4}-\d{2}-\d{2}T/m);
     assert.match(text, /^ {2}published_by: dana\.publisher$/m);
-    assert.match(text, new RegExp(`^  url: ${BASE}/items/${item.id}$`, "m"));
+    assert.match(text, new RegExp(`^  url: ${BASE_RE}/items/${item.id}$`, "m"));
     assert.match(
       text,
-      new RegExp(`cite_as: "VPN Troubleshooting" \\(Help Desk Runbooks\\), version 1, published \\d{4}-\\d{2}-\\d{2} by dana\\.publisher\\. ${BASE}/items/${item.id} \\[item ${item.id} v1\\]`),
+      new RegExp(`cite_as: "VPN Troubleshooting" \\(Help Desk Runbooks\\), version 1, published \\d{4}-\\d{2}-\\d{2} by dana\\.publisher\\. ${BASE_RE}/items/${item.id} \\[item ${item.id} v1\\]`),
     );
   });
 });
