@@ -365,6 +365,7 @@ export function editPage(input: {
         ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
         <form method="post" action="/items/${esc(input.item.id)}" class="capture">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+          <input type="hidden" name="expected_revision" value="${esc(String(input.item.updated_at))}">
           ${
             schemaForm
               ? schemaItemFields({

@@ -360,16 +360,54 @@ export async function createItem(
   return created;
 }
 
+/** Message for a save that lost a race with another save. */
+export const ITEM_CONFLICT_MESSAGE =
+  "Conflict: this item changed since you read it, so this edit was not saved. Read it again (open_item version \"draft\"), reapply your change, and pass the new revision as expected_revision.";
+
+/** The guarded UPDATE matched no row: a newer save won, or the item is gone. */
+async function conflictOrMissing(
+  db: Database,
+  id: string,
+  expected: number | undefined,
+): Promise<undefined> {
+  if (expected === undefined) return undefined;
+  const current = await getItem(db, id, { publishedOnly: false });
+  if (current) throw new ItemConflictError(current.updated_at);
+  return undefined;
+}
+
+/** update_item was given an expected revision that is no longer current. */
+export class ItemConflictError extends Error {
+  readonly currentRevision: number;
+  constructor(currentRevision: number) {
+    super(ITEM_CONFLICT_MESSAGE);
+    this.name = "ItemConflictError";
+    this.currentRevision = currentRevision;
+  }
+}
+
 export async function updateItem(
   db: Database,
   id: string,
   input: ItemSave,
   actorSub: string,
-  /** When set, the item must belong to this library or nothing is changed. */
-  scope: { libraryId?: string } = {},
+  /**
+   * libraryId: the item must belong to this library or nothing is changed.
+   * expectedRevision: the working row's updated_at the caller last read. When
+   * set and no longer current, nothing is saved and ItemConflictError is thrown.
+   */
+  scope: { libraryId?: string; expectedRevision?: number } = {},
 ): Promise<ItemRow | undefined> {
   const existing = await getItem(db, id, { publishedOnly: false, libraryId: scope.libraryId });
   if (!existing) return undefined;
+  const expected = scope.expectedRevision;
+  if (expected !== undefined && existing.updated_at !== expected) {
+    throw new ItemConflictError(existing.updated_at);
+  }
+  // Same check inside the UPDATE, so two saves that both passed the read above
+  // cannot both win.
+  const guard = expected === undefined ? "" : " AND updated_at = ?";
+  const guardParams = expected === undefined ? [] : [expected];
   const library = await getLibrary(db, existing.library_id);
   const writeMode = library?.writeMode ?? "reviewed";
   const now = Date.now();
@@ -393,19 +431,21 @@ export async function updateItem(
       details: input.details ?? null,
     };
     const snapshot = snapshotFromItem({ ...nextFields, published_at: now });
+    let changed: { id: string }[] = [];
     const previous = previousSnapshotAfterPublish(
       existing.published_snapshot,
       nextFields,
       existing.previous_published_snapshot,
     );
     try {
-      await runSql(
+      changed = await allRows<{ id: string }>(
         db,
         `UPDATE items
          SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
              status = 'published', published_snapshot = ?, previous_published_snapshot = ?,
              published_live = false, updated_by = ?, updated_at = ?
-         WHERE id = ? AND library_id = ?`,
+         WHERE id = ? AND library_id = ?${guard}
+         RETURNING id`,
         input.name,
         keyed.key,
         JSON.stringify(input.labels),
@@ -418,6 +458,7 @@ export async function updateItem(
         now,
         id,
         existing.library_id,
+        ...guardParams,
       );
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -427,6 +468,7 @@ export async function updateItem(
       }
       throw error;
     }
+    if (changed.length === 0) return conflictOrMissing(db, id, expected);
     if (fromStatus !== "published") {
       await writePublishAudit(db, {
         libraryId: existing.library_id,
@@ -443,15 +485,17 @@ export async function updateItem(
   // published copy stays live for Readers and agents until Publish or Cancel.
   const unpublish = existing.status === "published";
   const keepLive = unpublish && existing.published_snapshot !== null;
+  let changed: { id: string }[] = [];
   try {
-    await runSql(
+    changed = await allRows<{ id: string }>(
       db,
       `UPDATE items
        SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
            status = CASE WHEN status = 'published' THEN 'draft' ELSE status END,
            published_live = CASE WHEN status = 'published' THEN ? ELSE published_live END,
            updated_by = ?, updated_at = ?
-       WHERE id = ? AND library_id = ?`,
+       WHERE id = ? AND library_id = ?${guard}
+       RETURNING id`,
       input.name,
       keyed.key,
       JSON.stringify(input.labels),
@@ -463,6 +507,7 @@ export async function updateItem(
       now,
       id,
       existing.library_id,
+      ...guardParams,
     );
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -472,6 +517,7 @@ export async function updateItem(
     }
     throw error;
   }
+  if (changed.length === 0) return conflictOrMissing(db, id, expected);
   if (unpublish) {
     await writePublishAudit(db, {
       libraryId: existing.library_id,
