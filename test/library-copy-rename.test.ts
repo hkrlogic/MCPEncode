@@ -33,7 +33,7 @@ test("rename library changes only the name", async () => {
     assert.equal(renamed.library.id, library.id);
     assert.equal(renamed.library.writeMode, "direct");
     assert.equal(renamed.library.template, "policy");
-    assert.equal(renamed.library.connectToken, library.connectToken);
+    assert.equal(renamed.library.connectTokenLast4, library.connectTokenLast4);
     assert.deepEqual(
       renamed.library.schema.fields.map((field) => field.key),
       library.schema.fields.map((field) => field.key),
@@ -108,7 +108,7 @@ test("library page offers copy and rename only to publishers", () => {
     tableProposalUnreadable: false,
     fieldProposal: null,
     fieldProposalUnreadable: false,
-    connectToken: "test-connect-token-dddddddddddddddddd",
+    connectTokenLast4: "dddd",
     created_by: "alice",
     updated_by: "alice",
     created_at: 0,

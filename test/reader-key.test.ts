@@ -25,7 +25,6 @@ import {
   copyLibraryTemplate,
   createItem,
   createLibrary,
-  getLibrary,
   getLibraryReaderKeyHash,
   grantLibraryAccess,
   issueLibraryReaderKey,
@@ -146,7 +145,7 @@ test("the publisher page offers a Reader key and a reader page does not", () => 
     tableProposalUnreadable: false,
     fieldProposal: null,
     fieldProposalUnreadable: false,
-    connectToken: "test-connect-token-aaaaaaaaaaaaaaaaaa",
+    connectTokenLast4: "aaaa",
     created_by: "alice",
     updated_by: "alice",
     created_at: 0,
@@ -315,7 +314,7 @@ test("HTTP: Reader key is shown once, stays Reader, and rejects a leaked key", a
       });
       assert.equal(badCsrf.status, 403);
 
-      const mcpPath = new URL(libraryMcpUrl(base, library.id, (await getLibrary(db, library.id))!.connectToken)).pathname;
+      const mcpPath = new URL(libraryMcpUrl(base, library.id, library.connectToken)).pathname;
       const initBody = {
         jsonrpc: "2.0",
         id: 1,

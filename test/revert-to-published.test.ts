@@ -90,7 +90,7 @@ function library(partial: Partial<LibraryRow> = {}): LibraryRow {
     tableProposalUnreadable: false,
     fieldProposal: null,
     fieldProposalUnreadable: false,
-    connectToken: "test-connect-token-aaaaaaaaaaaaaaaaaa",
+    connectTokenLast4: "aaaa",
     created_by: "alice",
     updated_by: "alice",
     created_at: 0,

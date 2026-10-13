@@ -11,7 +11,7 @@ Use exactly these words in UI text, docs and code. Do not invent synonyms (vault
 | **Library** | A named set of items with one schema, one Connect link and one Access list. There are many libraries, not one global pile. |
 | **Item** | One entry in a library: name, labels, summary, and a markdown body or template fields. |
 | **Publish** | A person approves an item. Readers and Reader keys only ever see published items. |
-| **Connect link** | A library's MCP address, with a secret token. One link reaches one library. |
+| **Connect link** | A library's MCP address, with a secret token. One link reaches one library. The token is stored only as a SHA-256 hash, so the full link is shown once; to get a new one, rotate it. |
 | **Reader** / **Publisher** | Per-library roles, granted under **Access**. |
 | **Site admin** | The one app-wide admin role: Accounts, add libraries, open every library, hard-delete. The first account is the Site admin. (Shown as "SA" in some UI and logs.) |
 | **Shelf** | A group of libraries searched together. |
@@ -68,6 +68,8 @@ There is **no publish, approve, write-mode or revert tool.** Those stay with peo
 - **Reader key**: `Authorization: Bearer <key>` for a shared read-only agent, no sign-in.
 
 Rotating the Connect link (**Connect → Rotate**) invalidates the old token in both forms; Access grants stay.
+
+The token is stored only as a SHA-256 hash (plus its last four characters for display). The full link appears once: after **Create**, **Copy template** or **Rotate**, on the next page load, with a **Copy** button. Afterwards Connect shows the masked link (`…/mcp/…a1b2`) and a **Rotate** button. Lost the link? Rotate to get a new one; clients using the old link must be updated. Readers never see the full link; a Publisher hands it out. Plain SHA-256 (not an HMAC with `SESSION_SECRET`) is used because tokens are 32 random bytes, and rotating `SESSION_SECRET` must not break every link.
 
 ## Approving apps
 

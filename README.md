@@ -30,7 +30,7 @@ Needs Docker with Compose, and `openssl`.
 
 ## Connect from Cursor or Claude
 
-Open a Library → **Connect** → copy the Connect link.
+Open a Library → **Connect** → copy the Connect link. The full link is shown once (when the Library is created, or after **Rotate**); later the dialog shows it masked (`…a1b2`). To get a link again, **Rotate**.
 
 - **Cursor**: Settings → Tools & MCP → add a server with the link as `url` (example: [`.cursor/mcp.example.json`](.cursor/mcp.example.json)).
 - **Claude Code**: `claude mcp add --transport http my-library <Connect link>`
@@ -52,7 +52,6 @@ All data below is fictional demo content (`npm run seed-demo`).
 ## Known limitations
 
 - Run a single app instance; pending sign-ins and rate limits live in memory.
-- Connect tokens are stored in plain text (hashing planned for v0.2); treat backups as secret.
 
 Full list: [docs/known-limitations.md](docs/known-limitations.md).
 

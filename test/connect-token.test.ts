@@ -4,14 +4,13 @@
  */
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { readFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import type { AppConfig } from "../src/config.ts";
-import { createLibrary, getLibrary, issueLibraryReaderKey, rotateLibraryConnectToken } from "../src/db/queries.ts";
+import { createLibrary, issueLibraryReaderKey, rotateLibraryConnectToken } from "../src/db/queries.ts";
 import { createApp } from "../src/http/app.ts";
 import type { AuthServerEndpoints } from "../src/http/discovery.ts";
-import { isConnectToken, libraryMcpBaseUrl } from "../src/http/library-url.ts";
+import { libraryMcpBaseUrl } from "../src/http/library-url.ts";
 import { withTestDatabase } from "./db.ts";
 
 function testConfig(): AppConfig {
@@ -78,7 +77,7 @@ test("X-Library-Token opens the library on the bare MCP path; the link form keep
       const library = await createLibrary(db, "Windows patching", "alice", "general");
       const issued = await issueLibraryReaderKey(db, library.id, "alice");
       assert.ok(issued);
-      const token = (await getLibrary(db, library.id))!.connectToken;
+      const token = library.connectToken;
       const bare = `${base}/libraries/${library.id}/mcp`;
 
       // No header: still the retired-link answer.
@@ -118,21 +117,5 @@ test("X-Library-Token opens the library on the bare MCP path; the link form keep
     } finally {
       server.close();
     }
-  });
-});
-
-test("migration 015 replaces the md5 Connect tokens from 007 and leaves app-made ones", async () => {
-  await withTestDatabase(async (db) => {
-    const legacy = await createLibrary(db, "Old library", "alice", "general");
-    const modern = await createLibrary(db, "New library", "alice", "general");
-    const md5Token = "0123456789abcdef".repeat(4);
-    await db.run("UPDATE libraries SET connect_token = ? WHERE id = ?", md5Token, legacy.id);
-    const modernToken = (await getLibrary(db, modern.id))!.connectToken;
-    await db.exec(await readFile(new URL("../migrations/015_rotate_legacy_connect_tokens.sql", import.meta.url), "utf8"));
-    const rotated = (await getLibrary(db, legacy.id))!.connectToken;
-    assert.notEqual(rotated, md5Token);
-    assert.equal(isConnectToken(rotated), true);
-    assert.match(rotated, /^[A-Za-z0-9_-]{43}$/);
-    assert.equal((await getLibrary(db, modern.id))!.connectToken, modernToken);
   });
 });

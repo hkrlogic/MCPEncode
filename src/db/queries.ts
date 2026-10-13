@@ -17,6 +17,7 @@ export {
   suggestedCopyName,
   rotateLibraryConnectToken,
   getLibraryReaderKeyHash,
+  getLibraryConnectTokenHash,
   issueLibraryReaderKey,
   clearLibraryReaderKey,
   setLibraryWriteMode,

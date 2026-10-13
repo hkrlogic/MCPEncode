@@ -15,7 +15,8 @@ import {
 } from "../src/db/queries.ts";
 import { DEFAULT_LIBRARY_ID } from "../src/db/migrate.ts";
 import { withTestDatabase } from "./db.ts";
-import { connectTokensMatch, libraryMcpUrl, isLibraryId } from "../src/http/library-url.ts";
+import { connectTokenMatchesHash, connectTokensMatch, libraryMcpUrl, isLibraryId } from "../src/http/library-url.ts";
+import { getLibraryConnectTokenHash } from "../src/db/libraries.ts";
 
 test("library MCP URL includes the connect token and id is validated", () => {
   const token = "test-connect-token-cccccccccccccccccc";
@@ -111,7 +112,13 @@ test("rotating the connect token kills the old URL and keeps access grants", asy
     assert.equal(connectTokensMatch(before, rotated.connectToken), false);
 
     const fresh = await getLibrary(db, library.id);
-    assert.equal(fresh?.connectToken, rotated.connectToken);
+    assert.equal(fresh?.connectTokenLast4, rotated.connectToken.slice(-4));
+    assert.equal(Object.hasOwn(fresh ?? {}, "connectToken"), false);
+    assert.equal(
+      connectTokenMatchesHash(await getLibraryConnectTokenHash(db, library.id), rotated.connectToken),
+      true,
+    );
+    assert.equal(connectTokenMatchesHash(await getLibraryConnectTokenHash(db, library.id), before), false);
 
     const subjects = await listLibrariesForSubject(db, "bob");
     assert.equal(subjects.some((row) => row.id === library.id), true);

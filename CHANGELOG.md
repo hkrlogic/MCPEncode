@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.2.1
+
+### Security
+
+- **Connect tokens are no longer stored in plain text.** Postgres keeps only a SHA-256 hash of each Connect token and its last four characters for display. Lookups (link path and `X-Library-Token`) hash the presented token and compare in constant time. Reader keys were already hashed; OAuth refresh tokens were already hashed; `SETUP_TOKEN` stays in the environment.
+- No page, log line, audit entry or API response returns a full Connect link after it was shown once. The MCP `create_library` result still includes `mcp_url` for the library it just created.
+
+### Changed (behavior)
+
+- **Owners can no longer re-view an existing Connect link.** The full link is shown once, with **Copy** and a "you won't see this again" note, after Create, Copy template or Rotate. Afterwards **Connect** shows a masked link (`…/mcp/…a1b2`) and a **Rotate** button. To get a link again, rotate it (old links stop working).
+- Readers see only the masked link; a Publisher hands out the link.
+- The LibreChat config shown with a new Reader key has a placeholder for the URL unless a Connect link was just revealed.
+
+### Migration
+
+- 019 hashes every existing `connect_token` in place into `connect_token_hash` (and `connect_token_last4`), then drops the plaintext column and its index. **Links already handed out keep working.** Idempotent: a second run changes nothing. No downgrade: v0.2.0 cannot read the hashed column, so back up before upgrading if you might roll back.
+- On a fresh install nobody has seen the **Main** library's link yet: open Main → **Connect** → **Rotate** to get one.
+
 ## v0.2.0
 
 ### Changed
@@ -81,4 +99,4 @@ First tagged release.
 
 ### Known limitations
 
-See [docs/known-limitations.md](docs/known-limitations.md): single instance only, Connect tokens stored in plain text (hashing planned for v0.2), Review Lock hides edited items until published again (fix planned for v0.2).
+See [docs/known-limitations.md](docs/known-limitations.md): single instance only, Connect tokens stored in plain text (hashed since v0.2.1), Review Lock hides edited items until published again (fix planned for v0.2).
