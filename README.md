@@ -39,6 +39,16 @@ Open a Library → **Connect** → copy the Connect link.
 
 The client opens a browser: sign in, then **Allow** on the consent page. That connection sees this one Library only. Use `127.0.0.1`, not `localhost`, consistently.
 
+## Screenshots
+
+All data below is fictional demo content (`npm run seed-demo`).
+
+| | |
+| --- | --- |
+| <img src="docs/assets/landing.png" alt="Libraries list with demo Libraries for IT policies, help desk runbooks, customer support, a biology course, product docs, HR and sales" width="440" /> | <img src="docs/assets/item.png" alt="A published Policy Item with owner, version, effective and review dates" width="440" /> |
+| <img src="docs/assets/pending-changes.png" alt="An Item with a Pending edit: banner says agents still see the published version, with a diff of what changed" width="440" /> | <img src="docs/assets/apps.png" alt="Settings, Apps: one hosted app waiting for approval and one approved" width="440" /> |
+| <img src="docs/assets/consent.png" alt="Allow access page asking whether an app may use this account for one Library" width="440" /> | |
+
 ## Known limitations
 
 - Run a single app instance; pending sign-ins and rate limits live in memory.
