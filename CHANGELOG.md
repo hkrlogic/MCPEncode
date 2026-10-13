@@ -19,6 +19,16 @@ The web app now matches the MCPEncode landing page: Inter and JetBrains Mono, st
   - `prefers-reduced-motion` turns off every transition and animation.
 - **Screenshots:** `docs/assets/*.png` were regenerated from `npm run seed-demo` in the new look.
 
+### Changed: better search recall for agents ([#30](https://github.com/hkrlogic/MCPEncode/issues/30))
+
+- **Results.** `list_items q=` no longer needs every word of a natural question to appear in an item. Validation questions against the demo Help Desk library: **16 of 18** now find the right runbook (was 6), including all 5 typos. The Biology tutor questions that were refused ("when is homework due…", "how is the lab report graded") now find the course material. Out-of-scope questions are still refused.
+- **How it works.**
+  - Every word must match first. Otherwise any word may match: a clear winner anchored on its name or labels is returned, and weaker candidates come back as **"Did you mean"** suggestions (a new result shape with a notice telling the agent to open and check before citing).
+  - Otherwise typos are corrected against the library's own name, summary and label words (edit distance 1–2) and the search runs again. A match found this way says which spelling it used.
+  - Labels are now scored, so a label shared by several items ("runbook") returns a list instead of one confident answer. Conversational filler words are ignored.
+- **`search_shelf`** falls back from the exact phrase to "every word somewhere in name, summary or labels".
+- **No migration and no new extension**: typo correction runs in the app over the library's names, summaries and labels (capped at 2,000 items), so `pg_trgm` is not required.
+
 ## v0.2.1
 
 ### Security

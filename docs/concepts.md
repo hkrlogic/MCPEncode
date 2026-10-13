@@ -57,6 +57,13 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 | `create_library` / `propose_table` / `propose_field` | Publisher | Design a library; a person approves the schema |
 | `list_audit` | Publisher, Site admin | Who called which tool in this library |
 
+**How `list_items q=` searches.**
+1. Every word must match (name, labels, summary, then body; the full-text index applies English stemming).
+2. If nothing matches every word, any word may match. A clear winner that matched on its name or labels, and on most of the words, is returned as the one answer. Weaker candidates come back as **"Did you mean"** suggestions, which the agent must open and check before citing.
+3. Still nothing: words that appear nowhere in the library's names, summaries or labels are corrected to the closest library word (1–2 typos), and steps 1–2 run again.
+
+A word that is only a label several items share (for example `runbook`) returns those items as a list, not one of them as "the" answer. Questions with no word in common with the library are still refused. `search_shelf` falls back from the exact phrase to "every word somewhere in name, summary or labels".
+
 There is **no publish, approve, write-mode or revert tool.** Those stay with people in the web UI. Tool output labels item content as data, not instructions.
 
 **Summaries.** Every item has a summary: the short text lookups return before an item is opened. General libraries build it from the body (text before the first table, up to 500 characters). Policy, Procedure, Custom and extended General libraries take a required one-line `summary` (up to 160 characters).
