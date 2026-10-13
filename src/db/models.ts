@@ -49,7 +49,7 @@ export type LibraryRow = {
 
 export type ItemStatus = "draft" | "published" | "archived";
 
-/** Last published copy. Used for Diff after an edit unpublishes; MCP still reads live columns. */
+/** Last published copy. Live for Readers while an edit is Pending (published_live); also used for Diff and Revert. */
 export type PublishedSnapshot = {
   name: string;
   labels: string[];
@@ -77,6 +77,14 @@ export type ItemRow = {
    * Lets Revert undo an accidental publish. One deep — not full history.
    */
   previous_published_snapshot: PublishedSnapshot | null;
+  /**
+   * Review Lock: an edit is Pending while the last published copy stays live
+   * for Readers and agents. On the working row, status is draft; on the live
+   * view, status is published and the text is the published copy.
+   */
+  has_pending_changes?: boolean;
+  /** "working" = the row as edited; "live" = what Readers and agents see. */
+  view?: "working" | "live";
   policy?: PolicyDetails;
   procedure?: ProcedureDetails;
   created_by: string;
@@ -94,6 +102,8 @@ export type ItemSummary = {
   summary: string;
   status: ItemStatus;
   updated_at: number;
+  /** Pending edit on a live item. Set only for editor (non-Reader) lists. */
+  has_pending_changes?: boolean;
   /**
    * Column values for a table library. Set only when a list asks for them.
    * Absent on the normal catalog list so MCP stays a summary.
@@ -116,6 +126,14 @@ export type AuditRow = {
 };
 
 export type ReadScope = {
-  /** Reader path: only status = 'published'. Editors pass false and can see drafts. */
+  /**
+   * Reader path: only what is live (published, or the published copy of an
+   * item whose edit is Pending). Editors pass false and can see drafts.
+   */
   publishedOnly: boolean;
+  /**
+   * Editors only: read what Readers see (published copy while an edit is
+   * Pending) instead of the working row. Never-published drafts stay visible.
+   */
+  live?: boolean;
 };

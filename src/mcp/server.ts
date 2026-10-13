@@ -2,6 +2,7 @@ import type { AccountGuard } from "../auth/account-guard.ts";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { McpServer } from "@modelcontextprotocol/server";
 import type { Database } from "../db/types.ts";
+import type { ItemRow } from "../db/models.ts";
 import { z } from "zod/v4";
 import { readerKeySubject } from "../auth/reader-key.ts";
 import { accessForLibrary, can, type LibraryRole, type Role } from "../auth/rbac.ts";
@@ -87,7 +88,7 @@ export function agentInstructions(
   const writeBlurb =
     writeMode === "direct"
       ? directHandoffGuide()
-      : "create_item and update_item save drafts only. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call. Reverting an item to its last published version is also a publisher UI action only — do not invent a revert tool call.";
+      : "create_item and update_item save drafts only. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call. Reverting an item to its last published version is also a publisher UI action only — do not invent a revert tool call. When a published item has an edit waiting (has_pending_changes: true), Readers and agents keep seeing the published version until a human Publishes; list_items and open_item show that published version. To read the Pending draft, call open_item with version \"draft\".";
 
   return `You look up human-authored items in the library "${libraryName}". Cite an item or say it is not in the library. Do not invent.
 
@@ -236,18 +237,34 @@ export function buildMcpServer(
     },
   );
 
-  /** Item text plus file names. Bytes stay in Postgres and are not sent to the agent. */
-  async function itemWire(item: {
-    id: string;
-    library_id?: string;
-    entity_key?: string | null;
-    name: string;
-    labels: string[];
-    summary?: string;
-    body: string;
-  }): Promise<string> {
+  const isReader = libraryRole === "reader";
+  /** Readers read what is live; editors too unless they ask for the draft. */
+  const lookupScope = isReader ? { publishedOnly: true } : { publishedOnly: false, live: true };
+
+  /**
+   * Item text plus file names. Bytes stay in Postgres and are not sent to the agent.
+   * Editor connections also get status, has_pending_changes, and which version this is.
+   */
+  async function itemWire(item: ItemRow): Promise<string> {
     const files = await listItemFiles(db, item.id);
-    return labeledItemData({ ...item, files });
+    const meta = isReader
+      ? {}
+      : {
+          status: item.status,
+          has_pending_changes: item.has_pending_changes === true,
+          version: item.status === "published" ? ("published" as const) : ("draft" as const),
+        };
+    return labeledItemData({
+      id: item.id,
+      library_id: item.library_id,
+      entity_key: item.entity_key,
+      name: item.name,
+      labels: item.labels,
+      summary: item.summary,
+      body: item.body,
+      files,
+      ...meta,
+    });
   }
 
   server.registerPrompt(
@@ -373,11 +390,8 @@ export function buildMcpServer(
         annotations: { readOnlyHint: true },
       },
       async (query) => {
-        const publishedOnly = libraryRole === "reader";
         if (query.entity_key) {
-          const row = await getItemByEntityKey(db, library.libraryId, query.entity_key, {
-            publishedOnly,
-          });
+          const row = await getItemByEntityKey(db, library.libraryId, query.entity_key, lookupScope);
           await writeAudit(db, {
             actorSub: access.sub,
             libraryId: library.libraryId,
@@ -401,7 +415,7 @@ export function buildMcpServer(
           const items = await listItems(
             db,
             { library_id: library.libraryId, limit: query.limit ?? 40 },
-            { publishedOnly },
+            lookupScope,
           );
           await writeAudit(db, {
             actorSub: access.sub,
@@ -426,7 +440,7 @@ export function buildMcpServer(
         const result = await lookupItems(
           db,
           { library_id: library.libraryId, q: query.q },
-          { publishedOnly },
+          lookupScope,
         );
         await writeAudit(db, {
           actorSub: access.sub,
@@ -467,16 +481,29 @@ export function buildMcpServer(
       {
         title: "Open item",
         description:
-          "Open one item by id only when list_items returned several matches. Readers only receive published items. File names on the item are included; file bytes are not. If there is no item, say so; do not invent.",
-        inputSchema: z.object({
-          id: z.string().uuid(),
-        }),
+          isReader
+            ? "Open one item by id only when list_items returned several matches. Readers only receive published items. File names on the item are included; file bytes are not. If there is no item, say so; do not invent."
+            : "Open one item by id only when list_items returned several matches. Returns the published version (what Readers see) with status and has_pending_changes. Pass version \"draft\" to read a Pending edit instead; that does not change what Readers see. File names on the item are included; file bytes are not. If there is no item, say so; do not invent.",
+        inputSchema: isReader
+          ? z.object({ id: z.string().uuid() })
+          : z.object({
+              id: z.string().uuid(),
+              version: z
+                .enum(["published", "draft"])
+                .optional()
+                .describe("published (default) = what Readers see; draft = the Pending edit, if any"),
+            }),
         annotations: { readOnlyHint: true },
       },
-      async ({ id }) => {
-        const row = await getLibraryItem(db, library.libraryId, id, {
-          publishedOnly: libraryRole === "reader",
-        });
+      async (input: { id: string; version?: "published" | "draft" }) => {
+        const id = input.id;
+        const wantsDraft = !isReader && input.version === "draft";
+        const row = await getLibraryItem(
+          db,
+          library.libraryId,
+          id,
+          wantsDraft ? { publishedOnly: false } : lookupScope,
+        );
         if (!row) {
           await writeAudit(db, {
             actorSub: access.sub,

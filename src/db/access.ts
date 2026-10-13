@@ -164,14 +164,14 @@ export async function publishedCountsForSubject(
     ? await allRows<{ id: string; n: string | number }>(
         db,
         `SELECT library_id AS id, COUNT(*) AS n
-         FROM items
+         FROM items_live
          WHERE status = 'published'
          GROUP BY library_id`,
       )
     : await allRows<{ id: string; n: string | number }>(
         db,
         `SELECT i.library_id AS id, COUNT(*) AS n
-         FROM items i
+         FROM items_live i
          INNER JOIN library_access a ON a.library_id = i.library_id
          WHERE a.subject = ? AND i.status = 'published'
          GROUP BY i.library_id`,

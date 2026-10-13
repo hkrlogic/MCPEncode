@@ -193,11 +193,31 @@ const generalReviewSchema: LibrarySchema = {
   fields: [{ key: "body", label: "Description", type: "markdown", required: false, kind: "body" }],
 };
 
+export const PENDING_LIVE_BANNER = "Pending changes — agents still see the published version";
+
+/**
+ * Review Lock edit on a live item: the published copy is still what Readers
+ * and agents see. Shows that copy next to the draft below.
+ */
+export function pendingLiveBanner(item: ItemRow): string {
+  if (item.status !== "draft" || !item.has_pending_changes || !item.published_snapshot) return "";
+  const live = item.published_snapshot;
+  return `<div class="notice pending-live" role="status">
+    <p><strong>${esc(PENDING_LIVE_BANNER)}.</strong> Readers and agents keep the published copy below until you Publish this edit. Cancel drops the edit and keeps the published copy.</p>
+    <details class="published-copy">
+      <summary>Show the published version</summary>
+      <p class="hint">Name: ${esc(live.name)}</p>
+      <p class="hint">Summary: ${esc(live.summary)}</p>
+      <pre class="published-body">${esc(live.body)}</pre>
+    </details>
+  </div>`;
+}
+
 /** Pending item: the comparison sits above the content, before Publish. */
 export function itemReviewBlock(item: ItemRow, schema: LibrarySchema): string {
   if (item.status !== "draft") return "";
   const review = itemReview(item, item.published_snapshot, schema);
-  return `<section class="item-review" aria-labelledby="what-changed">
+  return `${pendingLiveBanner(item)}<section class="item-review" aria-labelledby="what-changed">
     <h2 id="what-changed">What changed</h2>
     ${reviewMarkup(review, "full")}
   </section>`;
@@ -229,6 +249,7 @@ export function itemListMarkup(
           <span class="item-name-row">
             <span class="item-name">${esc(row.name)}</span>
             ${showStatus ? statusBadge(row.status) : ""}
+            ${showStatus && row.status === "draft" && row.has_pending_changes ? `<span class="tag" title="Agents still see the published version">Published copy live</span>` : ""}
           </span>
           ${summaryInReview || !row.summary ? "" : `<span class="excerpt">${esc(row.summary)}</span>`}
           ${row.review ? reviewMarkup(row.review, "list") : ""}

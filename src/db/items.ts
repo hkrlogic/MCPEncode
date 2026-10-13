@@ -12,12 +12,14 @@ import {
 import { parseTableValues } from "../items/table-proposal.ts";
 import { itemForLibrary } from "../items/templates.ts";
 import type { ItemRow, ItemSummary, ReadScope } from "./models.ts";
-import { writePublishAudit } from "./audit.ts";
+import { writeAudit, writePublishAudit } from "./audit.ts";
 import {
   allRows,
   asStatus,
   escapeLike,
-  ITEM_COLUMNS,
+  itemColumns,
+  itemSource,
+  readsLive,
   LIST_LIMIT_MAX,
   LIST_OFFSET_MAX,
   libraryWhere,
@@ -54,9 +56,14 @@ type ListHit = {
   details?: string | null;
   body?: string;
   published_snapshot?: string | null;
+  published_live?: boolean | null;
+  has_pending_changes?: boolean | null;
 };
 
-function toSummary(row: ListHit, options: { includeValues: boolean; review?: LibrarySchema }): ItemSummary {
+function toSummary(
+  row: ListHit,
+  options: { includeValues: boolean; review?: LibrarySchema; pendingFlag?: boolean },
+): ItemSummary {
   const labels = parseLabels(row.labels);
   const summary: ItemSummary = {
     id: row.id,
@@ -68,6 +75,9 @@ function toSummary(row: ListHit, options: { includeValues: boolean; review?: Lib
     status: asStatus(row.status),
     updated_at: row.updated_at,
   };
+  if (options.pendingFlag) {
+    summary.has_pending_changes = row.published_live === true || row.has_pending_changes === true;
+  }
   if (options.includeValues) {
     const values = parseTableValues(typeof row.details === "string" ? row.details : null);
     if (values) summary.values = values;
@@ -87,6 +97,13 @@ function toSummary(row: ListHit, options: { includeValues: boolean; review?: Lib
     );
   }
   return summary;
+}
+
+/** Readers never learn that an edit is Pending. */
+function forScope(item: ItemRow, scope: ReadScope): ItemRow {
+  if (!scope.publishedOnly) return item;
+  const { has_pending_changes: _pending, ...rest } = item;
+  return rest;
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -144,22 +161,31 @@ export async function listItems(
   // details is the table-row JSON. The catalog list omits it; the library grid asks for it.
   // A Pending review also needs body and the last published copy, then drops them
   // after the comparison so the page does not receive the full text.
-  const columns = options.review
-    ? "id, library_id, name, entity_key, labels, summary, status, updated_at, body, details, published_snapshot"
-    : options.includeDetails
-      ? "id, library_id, name, entity_key, labels, summary, status, updated_at, details"
-      : "id, library_id, name, entity_key, labels, summary, status, updated_at";
+  const live = readsLive(scope);
+  // Readers never learn that an edit is Pending; editors do.
+  const pendingColumn = scope.publishedOnly ? "" : live ? ", has_pending_changes" : ", published_live";
+  const base = "id, library_id, name, entity_key, labels, summary, status, updated_at";
+  const columns =
+    (options.review
+      ? `${base}, body, details, published_snapshot`
+      : options.includeDetails
+        ? `${base}, details`
+        : base) + pendingColumn;
   const rows = await allRows<ListHit>(
     db,
     `SELECT ${columns}
-     FROM items
+     FROM ${itemSource(scope)}
      WHERE ${where.join(" AND ")}
      ORDER BY updated_at DESC
      LIMIT ? OFFSET ?`,
     ...params,
   );
   return rows.map((row) =>
-    toSummary(row, { includeValues: options.includeDetails === true, review: options.review }),
+    toSummary(row, {
+      includeValues: options.includeDetails === true,
+      review: options.review,
+      pendingFlag: !scope.publishedOnly,
+    }),
   );
 }
 
@@ -175,11 +201,11 @@ export async function getItemByEntityKey(
   const statusClause = scope.publishedOnly ? "AND status = 'published'" : "";
   const row = await getRow<SqlItem>(
     db,
-    `SELECT ${ITEM_COLUMNS} FROM items WHERE library_id = ? AND entity_key = ? ${statusClause} LIMIT 1`,
+    `SELECT ${itemColumns(scope)} FROM ${itemSource(scope)} WHERE library_id = ? AND entity_key = ? ${statusClause} LIMIT 1`,
     libraryId,
     key,
   );
-  return row ? toItem(row) : undefined;
+  return row ? forScope(toItem(row), scope) : undefined;
 }
 
 /**
@@ -196,15 +222,17 @@ export async function getItem(
     throw new Error("library_id is required");
   }
   const statusClause = scope.publishedOnly ? " AND status = 'published'" : "";
+  const columns = itemColumns(scope);
+  const source = itemSource(scope);
   const row = scope.libraryId
     ? await getRow<SqlItem>(
         db,
-        `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ? AND library_id = ?${statusClause}`,
+        `SELECT ${columns} FROM ${source} WHERE id = ? AND library_id = ?${statusClause}`,
         id,
         scope.libraryId,
       )
-    : await getRow<SqlItem>(db, `SELECT ${ITEM_COLUMNS} FROM items WHERE id = ?`, id);
-  return row ? toItem(row) : undefined;
+    : await getRow<SqlItem>(db, `SELECT ${columns} FROM ${source} WHERE id = ?`, id);
+  return row ? forScope(toItem(row), scope) : undefined;
 }
 
 /**
@@ -218,7 +246,7 @@ export async function getLibraryItem(
   scope: ReadScope,
 ): Promise<ItemRow | undefined> {
   if (!libraryId) throw new Error("library_id is required");
-  return getItem(db, id, { publishedOnly: scope.publishedOnly, libraryId });
+  return getItem(db, id, { publishedOnly: scope.publishedOnly, live: scope.live, libraryId });
 }
 
 type ItemSave = ItemInput & {
@@ -376,7 +404,7 @@ export async function updateItem(
         `UPDATE items
          SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
              status = 'published', published_snapshot = ?, previous_published_snapshot = ?,
-             updated_by = ?, updated_at = ?
+             published_live = false, updated_by = ?, updated_at = ?
          WHERE id = ? AND library_id = ?`,
         input.name,
         keyed.key,
@@ -411,14 +439,17 @@ export async function updateItem(
     return getItem(db, id, { publishedOnly: false });
   }
 
-  // Review Lock: editing a published item moves it back to Pending.
+  // Review Lock: editing a published item moves the edit to Pending. Its last
+  // published copy stays live for Readers and agents until Publish or Cancel.
   const unpublish = existing.status === "published";
+  const keepLive = unpublish && existing.published_snapshot !== null;
   try {
     await runSql(
       db,
       `UPDATE items
        SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
            status = CASE WHEN status = 'published' THEN 'draft' ELSE status END,
+           published_live = CASE WHEN status = 'published' THEN ? ELSE published_live END,
            updated_by = ?, updated_at = ?
        WHERE id = ? AND library_id = ?`,
       input.name,
@@ -427,6 +458,7 @@ export async function updateItem(
       summary,
       input.body,
       input.details ?? null,
+      keepLive,
       actorSub,
       now,
       id,
@@ -448,6 +480,15 @@ export async function updateItem(
       fromStatus: "published",
       toStatus: "draft",
     });
+    if (keepLive) {
+      await writeAudit(db, {
+        actorSub,
+        libraryId: existing.library_id,
+        tool: "item.edit_pending",
+        success: true,
+        detail: id,
+      });
+    }
   }
   return getItem(db, id, { publishedOnly: false });
 }
@@ -502,7 +543,7 @@ export async function publishItem(
     db,
     `UPDATE items
      SET status = 'published', published_snapshot = ?, previous_published_snapshot = ?,
-         updated_by = ?, updated_at = ?
+         published_live = false, updated_by = ?, updated_at = ?
      WHERE id = ? AND status = 'draft'`,
     snapshot,
     previous ? JSON.stringify(previous) : null,
@@ -516,6 +557,13 @@ export async function publishItem(
     actorSub,
     fromStatus: "draft",
     toStatus: "published",
+  });
+  await writeAudit(db, {
+    actorSub,
+    libraryId: existing.library_id,
+    tool: existing.has_pending_changes ? "item.publish_replace_live" : "item.publish",
+    success: true,
+    detail: id,
   });
   return getItem(db, id, { publishedOnly: false });
 }
@@ -552,7 +600,7 @@ export async function cancelPublishItem(
         tx,
         `UPDATE items
          SET name = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
-             status = 'published', updated_by = ?, updated_at = ?
+             status = 'published', published_live = false, updated_by = ?, updated_at = ?
          WHERE id = ? AND status = 'draft'`,
         snapshot.name,
         JSON.stringify(snapshot.labels),
@@ -570,6 +618,13 @@ export async function cancelPublishItem(
         fromStatus: "draft",
         toStatus: "published",
       });
+      await writeAudit(tx, {
+        actorSub,
+        libraryId: existing.library_id,
+        tool: "item.discard_pending",
+        success: true,
+        detail: id,
+      });
       const item = await getItem(tx, id, { publishedOnly: false });
       if (!item) return { ok: false, reason: "not_found" };
       return { ok: true, item, kind: "restored" };
@@ -580,7 +635,7 @@ export async function cancelPublishItem(
 
     await runSql(
       tx,
-      `UPDATE items SET status = 'archived', updated_by = ?, updated_at = ? WHERE id = ? AND status = 'draft'`,
+      `UPDATE items SET status = 'archived', published_live = false, updated_by = ?, updated_at = ? WHERE id = ? AND status = 'draft'`,
       actorSub,
       now,
       id,
@@ -637,7 +692,7 @@ export async function unpublishItem(
   const now = Date.now();
   await runSql(
     db,
-    `UPDATE items SET status = 'draft', updated_by = ?, updated_at = ? WHERE id = ? AND status = 'published'`,
+    `UPDATE items SET status = 'draft', published_live = false, updated_by = ?, updated_at = ? WHERE id = ? AND status = 'published'`,
     actorSub,
     now,
     id,
@@ -664,7 +719,7 @@ export async function archiveItem(
   const now = Date.now();
   await runSql(
     db,
-    `UPDATE items SET status = 'archived', updated_by = ?, updated_at = ? WHERE id = ?`,
+    `UPDATE items SET status = 'archived', published_live = false, updated_by = ?, updated_at = ? WHERE id = ?`,
     actorSub,
     now,
     id,
@@ -690,7 +745,7 @@ export async function restoreItem(
   const now = Date.now();
   await runSql(
     db,
-    `UPDATE items SET status = 'draft', updated_by = ?, updated_at = ? WHERE id = ? AND status = 'archived'`,
+    `UPDATE items SET status = 'draft', published_live = false, updated_by = ?, updated_at = ? WHERE id = ? AND status = 'archived'`,
     actorSub,
     now,
     id,
@@ -755,13 +810,15 @@ export async function revertToPublished(
       tx,
       `UPDATE items
        SET name = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
-           status = 'draft', updated_by = ?, updated_at = ?
+           status = 'draft', published_live = ?, updated_by = ?, updated_at = ?
        WHERE id = ?`,
       snapshot.name,
       JSON.stringify(snapshot.labels),
       snapshot.summary,
       snapshot.body,
       snapshot.details,
+      // The current published copy stays live; only the working fields change.
+      (fromStatus === "published" || existing.has_pending_changes) && existing.published_snapshot !== null,
       actorSub,
       now,
       id,
@@ -775,6 +832,13 @@ export async function revertToPublished(
         toStatus: "draft",
       });
     }
+    await writeAudit(tx, {
+      actorSub,
+      libraryId: existing.library_id,
+      tool: "item.revert_pending",
+      success: true,
+      detail: `${id} kind=${plan.kind}`,
+    });
     const item = await getItem(tx, id, { publishedOnly: false });
     if (!item) return { ok: false, reason: "not_found" };
     return { ok: true, item, kind: plan.kind };

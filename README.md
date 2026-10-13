@@ -43,7 +43,6 @@ The client opens a browser: sign in, then **Allow** on the consent page. That co
 
 - Run a single app instance; pending sign-ins and rate limits live in memory.
 - Connect tokens are stored in plain text (hashing planned for v0.2); treat backups as secret.
-- With Review Lock, an edited Item is hidden from Readers until it is published again.
 
 Full list: [docs/known-limitations.md](docs/known-limitations.md).
 
