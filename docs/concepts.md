@@ -64,9 +64,20 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 
 A word that is only a label several items share (for example `runbook`) returns those items as a list, not one of them as "the" answer. Questions with no word in common with the library are still refused. `search_shelf` falls back from the exact phrase to "every word somewhere in name, summary or labels".
 
+**Citations.** Every published item that `list_items`, `open_item` or `search_shelf` returns carries a citation for its **published** copy (never a Pending draft):
+- `version`: counts publishes, Review Unlock saves and Reverts.
+- `published_at` and `updated_at` (ISO 8601).
+- `published_by`: the account username, when known.
+- `url`: the item page under `PUBLIC_BASE_URL`.
+- `cite_as`: a ready string, for example `"VPN Troubleshooting" (Help Desk Runbooks), version 3, published 2026-10-13 by dana.publisher. https://…/items/<id> [item <id> v3]`.
+
+Never-published drafts say `citation: none`. Items published before this release start at version 1, with no recorded publisher.
+
+**Edit conflicts.** Publisher results that return a full item (`open_item`, a single-match `list_items`, `create_item`, `update_item`) include `revision`. Pass it back as `expected_revision` on `update_item`: if anyone saved the item since, nothing is saved and the tool returns a conflict with `current_revision`, so the agent can re-read and reapply. Without `expected_revision` the last save wins, as before. The web edit form does the same check and shows the latest copy when it fails.
+
 There is **no publish, approve, write-mode or revert tool.** Those stay with people in the web UI. Tool output labels item content as data, not instructions.
 
-**Summaries.** Every item has a summary: the short text lookups return before an item is opened. General libraries build it from the body (text before the first table, up to 500 characters). Policy, Procedure, Custom and extended General libraries take a required one-line `summary` (up to 160 characters).
+**Summaries.** Every item has a summary: the short text lookups return before an item is opened. General libraries build it from the body (text before the first table, up to 500 characters), and keep doing so after a person approves an extra field (`summary` stays optional there). Policy, Procedure and Custom libraries take a required one-line `summary` (up to 160 characters).
 
 ## Connecting
 

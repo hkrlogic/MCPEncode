@@ -1,5 +1,5 @@
 /** HTML form field builders for add/edit item pages. */
-import type { LibrarySchema } from "../../items/library-schema.ts";
+import { type LibrarySchema, summaryIsDerived } from "../../items/library-schema.ts";
 import {
   EMPTY_TABLE,
   splitSummaryAndTable,
@@ -129,10 +129,14 @@ export function schemaItemFields(input: {
           </label>
         </div>
         ${entityKeyField(input.entityKey ?? "")}
-        <label>Summary
+        ${
+          summaryIsDerived(input.schema)
+            ? summaryField(input.summary, false)
+            : `<label>Summary
           <input name="summary" required maxlength="160" value="${esc(input.summary)}"
             placeholder="One line. This is what search shows." autocomplete="off">
-        </label>
+        </label>`
+        }
         ${controlMarkup ? `<fieldset class="field-group"><legend>${input.schema.starter === "table" ? "Columns" : "Fields"}</legend>${controlMarkup}</fieldset>` : ""}
         ${bodyMarkup}
   `;

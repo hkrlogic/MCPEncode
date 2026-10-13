@@ -69,6 +69,8 @@ export function labeledItemData(item: {
   status?: string;
   has_pending_changes?: boolean;
   version?: "published" | "draft";
+  /** Editor connections only: pass back as update_item expected_revision. */
+  revision?: number;
 }): string {
   const files = item.files ?? [];
   const fileLines =
@@ -88,6 +90,7 @@ export function labeledItemData(item: {
     item.status ? `status: ${item.status}` : "",
     item.has_pending_changes === undefined ? "" : `has_pending_changes: ${item.has_pending_changes}`,
     item.version ? `version: ${item.version}` : "",
+    item.revision === undefined ? "" : `revision: ${item.revision}`,
     `name: ${item.name}`,
     `labels: ${item.labels.join(", ") || "(none)"}`,
     item.summary ? `summary: ${item.summary}` : "",
