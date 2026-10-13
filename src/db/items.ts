@@ -49,6 +49,8 @@ type ListHit = {
   name: string;
   entity_key: string | null;
   labels: string | string[];
+  /** Present only on a Pending review list. */
+  aliases?: string | string[] | null;
   summary: string;
   status: string;
   updated_at: number;
@@ -88,6 +90,7 @@ function toSummary(
       {
         name: row.name,
         labels,
+        aliases: parseLabels(row.aliases ?? []),
         summary: row.summary,
         body: row.body ?? "",
         details: typeof row.details === "string" ? row.details : null,
@@ -154,7 +157,9 @@ export async function listItems(
   const needle = query.q?.trim();
   if (needle) {
     const pattern = `%${escapeLike(needle)}%`;
-    where.push("(name ILIKE ? ESCAPE '\\' OR summary ILIKE ? ESCAPE '\\' OR labels::text ILIKE ? ESCAPE '\\')");
+    where.push(
+      "(name ILIKE ? ESCAPE '\\' OR summary ILIKE ? ESCAPE '\\' OR (labels::text || ' ' || aliases::text) ILIKE ? ESCAPE '\\')",
+    );
     params.push(pattern, pattern, pattern);
   }
   params.push(limit, offset);
@@ -167,7 +172,7 @@ export async function listItems(
   const base = "id, library_id, name, entity_key, labels, summary, status, updated_at";
   const columns =
     (options.review
-      ? `${base}, body, details, published_snapshot`
+      ? `${base}, aliases, body, details, published_snapshot`
       : options.includeDetails
         ? `${base}, details`
         : base) + pendingColumn;
@@ -250,6 +255,8 @@ export async function getLibraryItem(
 }
 
 type ItemSave = ItemInput & {
+  /** Search aliases. Omitted on update keeps the stored aliases. */
+  aliases?: string[];
   summary?: string;
   details?: string | null;
   entity_key?: string | null;
@@ -275,6 +282,7 @@ export async function addDraftItem(
   libraryId: string,
   input: ItemWriteInput,
   actorSub: string,
+  extra: { aliases?: string[] } = {},
 ): Promise<{ ok: true; item: ItemRow } | { ok: false; message: string }> {
   try {
     return await db.transaction(async (tx) => {
@@ -283,7 +291,8 @@ export async function addDraftItem(
       const saved = itemForLibrary(library.schema, input);
       if (!saved.ok) return saved;
       const status = library.writeMode === "direct" ? "published" : "draft";
-      const item = await createItem(tx, saved.item, actorSub, libraryId, { status });
+      const toSave = extra.aliases ? { ...saved.item, aliases: extra.aliases } : saved.item;
+      const item = await createItem(tx, toSave, actorSub, libraryId, { status });
       return { ok: true, item };
     });
   } catch (error) {
@@ -319,6 +328,7 @@ export async function createItem(
       ? snapshotFromItem({
           name: input.name,
           labels: input.labels,
+          aliases: input.aliases ?? [],
           summary,
           body: input.body,
           details: input.details ?? null,
@@ -328,14 +338,15 @@ export async function createItem(
   await runSql(
     db,
     `INSERT INTO items (
-       id, library_id, name, entity_key, labels, summary, body, details, status, published_snapshot,
+       id, library_id, name, entity_key, labels, aliases, summary, body, details, status, published_snapshot,
        created_by, updated_by, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     id,
     library_id,
     input.name,
     keyed.key,
     JSON.stringify(input.labels),
+    JSON.stringify(input.aliases ?? []),
     summary,
     input.body,
     input.details ?? null,
@@ -418,6 +429,7 @@ export async function updateItem(
       ? { ok: true as const, key: existing.entity_key }
       : entityKeyForSave(input.entity_key);
   if (!keyed.ok) throw new Error(keyed.message);
+  const aliases = input.aliases ?? existing.aliases ?? [];
 
   if (writeMode === "direct") {
     // Review Unlock: any successful save is live. Snapshot tracks the live copy.
@@ -426,6 +438,7 @@ export async function updateItem(
     const nextFields = {
       name: input.name,
       labels: input.labels,
+      aliases,
       summary,
       body: input.body,
       details: input.details ?? null,
@@ -441,7 +454,7 @@ export async function updateItem(
       changed = await allRows<{ id: string }>(
         db,
         `UPDATE items
-         SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
+         SET name = ?, entity_key = ?, labels = ?::jsonb, aliases = ?::jsonb, summary = ?, body = ?, details = ?,
              status = 'published', published_snapshot = ?, previous_published_snapshot = ?,
              published_live = false, updated_by = ?, updated_at = ?
          WHERE id = ? AND library_id = ?${guard}
@@ -449,6 +462,7 @@ export async function updateItem(
         input.name,
         keyed.key,
         JSON.stringify(input.labels),
+        JSON.stringify(aliases),
         summary,
         input.body,
         input.details ?? null,
@@ -490,7 +504,7 @@ export async function updateItem(
     changed = await allRows<{ id: string }>(
       db,
       `UPDATE items
-       SET name = ?, entity_key = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
+       SET name = ?, entity_key = ?, labels = ?::jsonb, aliases = ?::jsonb, summary = ?, body = ?, details = ?,
            status = CASE WHEN status = 'published' THEN 'draft' ELSE status END,
            published_live = CASE WHEN status = 'published' THEN ? ELSE published_live END,
            updated_by = ?, updated_at = ?
@@ -499,6 +513,7 @@ export async function updateItem(
       input.name,
       keyed.key,
       JSON.stringify(input.labels),
+      JSON.stringify(aliases),
       summary,
       input.body,
       input.details ?? null,
@@ -575,6 +590,7 @@ export async function publishItem(
   const nextFields = {
     name: existing.name,
     labels: existing.labels,
+    aliases: existing.aliases ?? [],
     summary: existing.summary,
     body: existing.body,
     details: existing.details,
@@ -645,11 +661,12 @@ export async function cancelPublishItem(
       await runSql(
         tx,
         `UPDATE items
-         SET name = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
+         SET name = ?, labels = ?::jsonb, aliases = ?::jsonb, summary = ?, body = ?, details = ?,
              status = 'published', published_live = false, updated_by = ?, updated_at = ?
          WHERE id = ? AND status = 'draft'`,
         snapshot.name,
         JSON.stringify(snapshot.labels),
+        JSON.stringify(snapshot.aliases ?? []),
         snapshot.summary,
         snapshot.body,
         snapshot.details,
@@ -855,11 +872,12 @@ export async function revertToPublished(
     await runSql(
       tx,
       `UPDATE items
-       SET name = ?, labels = ?::jsonb, summary = ?, body = ?, details = ?,
+       SET name = ?, labels = ?::jsonb, aliases = ?::jsonb, summary = ?, body = ?, details = ?,
            status = 'draft', published_live = ?, updated_by = ?, updated_at = ?
        WHERE id = ?`,
       snapshot.name,
       JSON.stringify(snapshot.labels),
+      JSON.stringify(snapshot.aliases ?? []),
       snapshot.summary,
       snapshot.body,
       snapshot.details,

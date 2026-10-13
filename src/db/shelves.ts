@@ -176,7 +176,7 @@ export async function searchShelf(
      WHERE l.shelf_id = ?
        AND i.status = 'published'
        AND l.id IN (${placeholders})
-       AND (i.name ILIKE ? ESCAPE '\\' OR i.summary ILIKE ? ESCAPE '\\' OR i.labels::text ILIKE ? ESCAPE '\\')
+       AND (i.name ILIKE ? ESCAPE '\\' OR i.summary ILIKE ? ESCAPE '\\' OR (i.labels::text || ' ' || i.aliases::text) ILIKE ? ESCAPE '\\')
      ORDER BY LOWER(l.name) ASC, LOWER(i.name) ASC, i.name ASC
      LIMIT ${SHELF_HITS_MAX}`,
     shelfId,
@@ -193,7 +193,7 @@ export async function searchShelf(
     );
     if (tokens.length >= 2) {
       const clauses = tokens
-        .map(() => "(i.name ILIKE ? ESCAPE '\\' OR i.summary ILIKE ? ESCAPE '\\' OR i.labels::text ILIKE ? ESCAPE '\\')")
+        .map(() => "(i.name ILIKE ? ESCAPE '\\' OR i.summary ILIKE ? ESCAPE '\\' OR (i.labels::text || ' ' || i.aliases::text) ILIKE ? ESCAPE '\\')")
         .join(" AND ");
       const params = tokens.flatMap((token) => {
         const like = `%${escapeLike(token)}%`;

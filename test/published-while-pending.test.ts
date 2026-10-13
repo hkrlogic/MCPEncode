@@ -276,7 +276,11 @@ test("migration backfill: edited-after-publish items go live again; others stay 
     // Pretend the rows were written before 018: nothing is live while Pending.
     await db.run("UPDATE items SET published_live = false");
     await db.run("UPDATE items SET published_snapshot = '{not json' WHERE id = ?", broken);
-    await db.run("DELETE FROM schema_migrations WHERE version = '018_published_while_pending.sql'");
+    // Later migrations redefine items_live (021 adds aliases), so replay them in order too.
+    await db.run("DROP VIEW items_live");
+    await db.run(
+      "DELETE FROM schema_migrations WHERE version IN ('018_published_while_pending.sql', '021_item_aliases.sql')",
+    );
     await applyMigrations(db);
 
     const live = async (id: string) => (await getItem(db, id, { ...reader, libraryId: library.id }))?.body;

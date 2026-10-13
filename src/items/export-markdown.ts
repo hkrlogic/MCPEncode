@@ -62,6 +62,12 @@ export function itemToMarkdown(item: ItemRow, library: LibraryRow): string {
   if (labels.length > 0) {
     chunks.push(`Labels: ${labels.join(", ")}`, "");
   }
+  const aliases = Array.isArray(item.aliases)
+    ? item.aliases.filter((alias): alias is string => typeof alias === "string" && alias.trim() !== "")
+    : [];
+  if (aliases.length > 0) {
+    chunks.push(`Aliases: ${aliases.join(", ")}`, "");
+  }
 
   const starter = library.schema?.starter ?? "general";
   const fields = Array.isArray(library.schema?.fields) ? library.schema.fields : [];
