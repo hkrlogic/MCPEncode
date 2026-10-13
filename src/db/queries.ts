@@ -34,6 +34,8 @@ export {
   addDraftItem,
   countLibraryItems,
   updateItem,
+  ItemConflictError,
+  ITEM_CONFLICT_MESSAGE,
   publishItem,
   publishItems,
   cancelPublishItem,

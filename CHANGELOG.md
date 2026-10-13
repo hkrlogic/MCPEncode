@@ -19,6 +19,12 @@ The web app now matches the MCPEncode landing page: Inter and JetBrains Mono, st
   - `prefers-reduced-motion` turns off every transition and animation.
 - **Screenshots:** `docs/assets/*.png` were regenerated from `npm run seed-demo` in the new look.
 
+### Added: edit-conflict detection ([#30](https://github.com/hkrlogic/MCPEncode/issues/30))
+
+- Publisher MCP results now include `revision`, the last-saved time of the item's working copy. `update_item` accepts an optional `expected_revision`. When the item changed since then, nothing is saved and the tool returns `Conflict: …` with `current_revision`. The check also runs inside the `UPDATE`, so two parallel saves from the same revision cannot both win.
+- The web edit form sends the revision it was opened with. A stale form gets **409**, a short message and the latest saved copy.
+- Backward compatible: callers and forms without a revision keep the old last-write-wins behaviour. No migration.
+
 ## v0.2.1
 
 ### Security

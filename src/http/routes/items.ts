@@ -18,6 +18,7 @@ import {
   revertToPublished,
   unpublishItem,
   updateItem,
+  ItemConflictError,
   writeAudit,
 } from "../../db/queries.ts";
 import type { AppShell } from "../pages/layout.ts";
@@ -66,6 +67,17 @@ async function itemShell(
 ): Promise<AppShell> {
   const shell = await loadAppShell(db, access);
   return { ...shell, activeLibraryId: libraryId };
+}
+
+/** Shown when the edit form was based on an older save. */
+export const UI_CONFLICT_MESSAGE =
+  "Someone saved this item after you opened it, so your edit was not saved. The form now shows the latest version. Reapply your change and save again.";
+
+/** expected_revision from the edit form; absent or malformed means no check (old forms). */
+function formRevision(body: unknown): number | undefined {
+  const raw = (body as Record<string, unknown> | undefined)?.expected_revision;
+  if (typeof raw !== "string" || !/^\d{1,16}$/.test(raw)) return undefined;
+  return Number(raw);
 }
 
 export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): void {
@@ -335,10 +347,27 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
     const wasPublished = item.status === "published";
     let row;
     try {
-      row = await updateItem(db, req.params.id, parsed.data, access.sub);
+      row = await updateItem(db, req.params.id, parsed.data, access.sub, {
+        expectedRevision: formRevision(req.body),
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not save item.";
       const shell = await itemShell(db, access, library.id);
+      if (error instanceof ItemConflictError) {
+        // Show the latest saved copy so the person can reapply their change.
+        const latest = (await getItem(db, req.params.id, { publishedOnly: false })) ?? item;
+        res.status(409).send(
+          editPage({
+            access: libraryAccess,
+            csrf: access.csrf,
+            item: latest,
+            library,
+            error: UI_CONFLICT_MESSAGE,
+            shell,
+          }),
+        );
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Could not save item.";
       res.status(400).send(
         editPage({
           access: libraryAccess,

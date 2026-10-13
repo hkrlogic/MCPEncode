@@ -57,6 +57,8 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 | `create_library` / `propose_table` / `propose_field` | Publisher | Design a library; a person approves the schema |
 | `list_audit` | Publisher, Site admin | Who called which tool in this library |
 
+**Edit conflicts.** Publisher results that return a full item (`open_item`, a single-match `list_items`, `create_item`, `update_item`) include `revision`. Pass it back as `expected_revision` on `update_item`: if anyone saved the item since, nothing is saved and the tool returns a conflict with `current_revision`, so the agent can re-read and reapply. Without `expected_revision` the last save wins, as before. The web edit form does the same check and shows the latest copy when it fails.
+
 There is **no publish, approve, write-mode or revert tool.** Those stay with people in the web UI. Tool output labels item content as data, not instructions.
 
 **Summaries.** Every item has a summary: the short text lookups return before an item is opened. General libraries build it from the body (text before the first table, up to 500 characters). Policy, Procedure, Custom and extended General libraries take a required one-line `summary` (up to 160 characters).

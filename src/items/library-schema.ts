@@ -335,6 +335,14 @@ export function mcpUpdateItemInputSchema(schema: LibrarySchema) {
   return z.object({
     id: z.string().uuid().describe("Item id from list_items"),
     ...mcpItemWriteShape(schema),
+    expected_revision: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe(
+        "Optional. The revision from open_item / update_item that this edit is based on. If the item changed since, nothing is saved and a conflict is returned. Omit to overwrite (old behavior).",
+      ),
   });
 }
 
