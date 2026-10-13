@@ -19,6 +19,12 @@ The web app now matches the MCPEncode landing page: Inter and JetBrains Mono, st
   - `prefers-reduced-motion` turns off every transition and animation.
 - **Screenshots:** `docs/assets/*.png` were regenerated from `npm run seed-demo` in the new look.
 
+### Added: citations on agent results ([#30](https://github.com/hkrlogic/MCPEncode/issues/30))
+
+- `open_item`, `list_items` (a full item or a list) and `search_shelf` now carry a **citation** for the published copy: `version`, `published_at`, `updated_at`, `published_by`, `url` and a ready `cite_as` string. Readers keep citing the published version while an edit is Pending. Never-published drafts say not to cite them.
+- Migration `020_item_citation.sql` adds `items.published_version` and `items.published_by`. A trigger bumps the version whenever the published copy changes (Publish, Review Unlock save, Revert). Existing published items start at version 1, with no recorded publisher.
+- The agent instructions ask agents to cite with `cite_as`.
+
 ## v0.2.1
 
 ### Security
