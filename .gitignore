@@ -32,3 +32,6 @@ tmp/
 
 # OS
 .DS_Store
+
+# Local admin credentials written by deploy helpers
+.local-admin
