@@ -7,7 +7,7 @@
 #   docker compose up -d postgres    # Postgres only, for npm start during development
 services:
   postgres:
-    image: postgres:16
+    image: postgres:18
     ports:
       - "127.0.0.1:5432:5432"
     environment:
