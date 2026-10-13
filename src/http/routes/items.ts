@@ -32,7 +32,7 @@ import {
 import { itemToMarkdown, markdownExportFilename } from "../../items/export-markdown.ts";
 import { parseTableValues, tableControl, tableParts } from "../../items/table-proposal.ts";
 import { renderMarkdown } from "../../markdown/render.ts";
-import { parseLibraryItem, requireCsrf, sessionAccess, tokensMatch } from "../helpers.ts";
+import { formAliases, parseLibraryItem, requireCsrf, sessionAccess, tokensMatch } from "../helpers.ts";
 import { editPage, errorPage, itemPage } from "../pages.ts";
 import { readItemUpload } from "../upload.ts";
 import type { AppRouteContext } from "./context.ts";
@@ -347,7 +347,9 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
     const wasPublished = item.status === "published";
     let row;
     try {
-      row = await updateItem(db, req.params.id, parsed.data, access.sub, {
+      const aliases = formAliases(req.body);
+      const input = aliases === undefined ? parsed.data : { ...parsed.data, aliases };
+      row = await updateItem(db, req.params.id, input, access.sub, {
         expectedRevision: formRevision(req.body),
       });
     } catch (error) {

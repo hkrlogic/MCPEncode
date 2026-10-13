@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added: item aliases and agent label suggestions ([#35](https://github.com/hkrlogic/MCPEncode/issues/35))
+
+- **Aliases.** Items have an editable **Aliases** field: other words people use, such as `phished, phishing, suspicious email`. `list_items q=`, typo correction and `search_shelf` match and rank aliases the same way as labels. Item pages show them as "Also searched as". `open_item` prints an `aliases:` line, and Markdown export adds `Aliases:`.
+- **`suggest_labels` (Publisher MCP tool).** Agents add or remove labels and aliases on a **published** item without changing its name, summary or body.
+  - **Review Lock:** the suggestion is Pending. Readers keep the published copy, and the review shows the Labels / Aliases change for a person to Publish or Cancel.
+  - **Review Unlock:** it is live at once.
+  - Readers don't get the tool. Calls are audit-logged as `suggest_labels`. The citation version moves only when the published copy changes.
+- **Migration `021_item_aliases.sql`** adds `items.aliases` (JSONB, default `[]`) and exposes the published aliases in `items_live`. Published copies from before this release have no aliases.
+
 ### Changed: new look ([#23](https://github.com/hkrlogic/MCPEncode/issues/23))
 
 The web app now matches the MCPEncode landing page: Inter and JetBrains Mono, stone neutrals, an indigo accent, softer cards and one easing curve. This release changes only CSS, fonts and a few lines of markup. Class names, routes, settings and the database are unchanged.

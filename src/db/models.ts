@@ -54,6 +54,8 @@ export type ItemStatus = "draft" | "published" | "archived";
 export type PublishedSnapshot = {
   name: string;
   labels: string[];
+  /** Other words for this item that search matches like labels. [] in snapshots from before aliases. */
+  aliases?: string[];
   summary: string;
   body: string;
   details: string | null;
@@ -68,6 +70,8 @@ export type ItemRow = {
   /** Stable upsert key inside this library. Null when unset. */
   entity_key: string | null;
   labels: string[];
+  /** Other words people use for this item (e.g. "phished"). Search matches them like labels. */
+  aliases?: string[];
   summary: string;
   body: string;
   status: ItemStatus;

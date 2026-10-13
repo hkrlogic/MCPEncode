@@ -24,6 +24,7 @@ export type ItemReview =
 export type ReviewSource = {
   name: string;
   labels: string[];
+  aliases?: string[];
   summary: string;
   body: string;
   details: string | null;
@@ -123,6 +124,7 @@ export function itemReview(
   const fields: ReviewField[] = [];
   pushChange(fields, "Name", snapshot.name, current.name, false);
   pushChange(fields, "Labels", labelsText(snapshot.labels), labelsText(current.labels), false);
+  pushChange(fields, "Aliases", labelsText(snapshot.aliases ?? []), labelsText(current.aliases ?? []), false);
   pushChange(fields, "Summary", snapshot.summary, current.summary, false);
 
   const structured = structuredChanges(schema, snapshot.details, current.details);

@@ -44,6 +44,7 @@ import { APP_VERSION } from "../version.ts";
 import { libraryDesignGuide } from "./library-design.ts";
 import { labeledItemData } from "../markdown/render.ts";
 import { citationLines, citationsFor } from "../db/citations.ts";
+import { suggestLabels } from "../db/label-suggestions.ts";
 
 /** Shown when a tool call never reaches the library (401, timeout, disconnect). */
 export const NOT_CONNECTED =
@@ -270,6 +271,7 @@ export function buildMcpServer(
       entity_key: item.entity_key,
       name: item.name,
       labels: item.labels,
+      aliases: item.aliases ?? [],
       summary: item.summary,
       body: item.body,
       files,
@@ -798,6 +800,65 @@ export function buildMcpServer(
               ? `${message}\nid: ${id}\nexpected_revision: ${expected_revision}\ncurrent_revision: ${error.currentRevision}`
               : message,
           );
+        }
+      },
+    );
+
+    const labelList = z.array(z.string().trim().min(1).max(40)).max(20).optional();
+    server.registerTool(
+      "suggest_labels",
+      {
+        title: "Suggest labels or aliases",
+        description:
+          library.writeMode === "direct"
+            ? "Recommend labels and aliases (other words people search for, e.g. \"phished\" for an incident runbook) for a PUBLISHED item. Only labels and aliases change; name, summary and body are untouched. This library is Review Unlock, so the change is live immediately. Use when a question should have found this item but did not."
+            : "Recommend labels and aliases (other words people search for, e.g. \"phished\" for an incident runbook) for a PUBLISHED item. Only labels and aliases change; name, summary and body are untouched. The suggestion goes to Pending: Readers keep the published copy until a person approves it (Publish) or rejects it (Cancel) in the publisher. Use when a question should have found this item but did not.",
+        inputSchema: z.object({
+          id: z.string().uuid(),
+          add_labels: labelList,
+          remove_labels: labelList,
+          add_aliases: labelList,
+          remove_aliases: labelList,
+          reason: z.string().trim().max(300).optional().describe("Why, in one line (e.g. the question that missed)."),
+          expected_revision: z.number().int().optional(),
+        }),
+        annotations: { readOnlyHint: false },
+      },
+      async ({ id, reason, expected_revision, ...change }) => {
+        const audit = (success: boolean, detail: string) =>
+          writeAudit(db, {
+            actorSub: access.sub,
+            libraryId: library.libraryId,
+            tool: "suggest_labels",
+            success,
+            detail: detail.slice(0, 1000),
+          });
+        try {
+          const result = await suggestLabels(db, library.libraryId, id, change, access.sub, {
+            expectedRevision: expected_revision,
+          });
+          if (!result.ok) {
+            await audit(false, `${id} ${result.reason}`);
+            return deny(result.message);
+          }
+          if (!result.changed) {
+            await audit(true, `${id} no change`);
+            return ok(`No change: the item already has those labels and aliases.\n${await itemWire(result.item)}`);
+          }
+          await audit(
+            true,
+            JSON.stringify({ id, labels: result.labels, aliases: result.aliases, reason: reason ?? "" }),
+          );
+          const head =
+            library.writeMode === "direct"
+              ? "Saved. This library is Review Unlock, so the new labels and aliases are live now."
+              : "Suggested. The change is Pending: Readers and agents still see the published copy. A person must approve it (Publish) or reject it (Cancel) in the publisher.";
+          return ok(`${head}\n${await itemWire(result.item)}`);
+        } catch (error) {
+          const conflict = error instanceof ItemConflictError;
+          await audit(false, conflict ? `${id} conflict` : id);
+          const message = error instanceof Error ? error.message : "Suggestion failed.";
+          return deny(conflict ? `${message}\nid: ${id}\ncurrent_revision: ${error.currentRevision}` : message);
         }
       },
     );

@@ -69,13 +69,14 @@ type Scored = {
 };
 
 function scoreDetail(
-  row: { name: string; summary: string; body: string; labels?: string | string[] },
+  row: { name: string; summary: string; body: string; labels?: string | string[]; aliases?: string | string[] | null },
   tokens: string[],
 ): Scored {
   const name = row.name.toLowerCase();
   const summary = row.summary.toLowerCase();
   const body = row.body.toLowerCase();
-  const labels = parseLabels(row.labels ?? []).join(" ").toLowerCase();
+  // Aliases are other words for the item; they count exactly like labels.
+  const labels = [...parseLabels(row.labels ?? []), ...parseLabels(row.aliases ?? [])].join(" ").toLowerCase();
   let score = 0;
   let nameHits = 0;
   let labelHits = 0;
@@ -103,7 +104,7 @@ function scoreDetail(
 }
 
 function scoreItem(
-  row: { name: string; summary: string; body: string; labels?: string | string[] },
+  row: { name: string; summary: string; body: string; labels?: string | string[]; aliases?: string | string[] | null },
   tokens: string[],
 ): number {
   return scoreDetail(row, tokens).score;
@@ -129,6 +130,7 @@ type LookupHit = {
   name: string;
   entity_key: string | null;
   labels: string | string[];
+  aliases: string | string[] | null;
   summary: string;
   body: string;
   status: string;
@@ -196,7 +198,7 @@ async function findNameSummaryHits(
     // is left empty here, so this pass stays name/summary-focused.
     const rows = await allRows<Omit<LookupHit, "body"> & { relevance: number }>(
       db,
-      `SELECT id, library_id, name, entity_key, labels, summary, status, updated_at,
+      `SELECT id, library_id, name, entity_key, labels, aliases, summary, status, updated_at,
               ts_rank(search_tsv, plainto_tsquery('english', ?)) AS relevance
        FROM ${itemSource(scope)}
        WHERE ${libraryWhere(scope)}
@@ -216,7 +218,7 @@ async function findNameSummaryHits(
     const pattern = `(^|[^a-z0-9])(${safeShort.join("|")})([^a-z0-9]|$)`;
     const rows = await allRows<Omit<LookupHit, "body">>(
       db,
-      `SELECT id, library_id, name, entity_key, labels, summary, status, updated_at
+      `SELECT id, library_id, name, entity_key, labels, aliases, summary, status, updated_at
        FROM ${itemSource(scope)}
        WHERE ${libraryWhere(scope)}
          AND (LOWER(name) ~ ? OR LOWER(summary) ~ ?)
@@ -263,7 +265,7 @@ async function loadLookupHits(
   const placeholders = ids.map(() => "?").join(", ");
   return allRows<LookupHit>(
     db,
-    `SELECT id, library_id, name, entity_key, labels, summary, body, status, updated_at
+    `SELECT id, library_id, name, entity_key, labels, aliases, summary, body, status, updated_at
      FROM ${itemSource(scope)}
      WHERE ${libraryWhere(scope)}
        AND id IN (${placeholders})`,
@@ -272,7 +274,7 @@ async function loadLookupHits(
   );
 }
 
-/** Library item rows whose labels contain every token (all = true) or any token. */
+/** Library item rows whose labels or aliases contain every token (all = true) or any token. */
 async function findLabelHits(
   db: Database,
   libraryId: string,
@@ -287,10 +289,12 @@ async function findLabelHits(
   const patterns = all
     ? safe.map((token) => `(^|[^a-z0-9])${token}([^a-z0-9]|$)`)
     : [`(^|[^a-z0-9])(${safe.join("|")})([^a-z0-9]|$)`];
-  const where = patterns.map(() => "LOWER(labels::text) ~ ?").join(all ? " AND " : " OR ");
+  const where = patterns
+    .map(() => "LOWER(labels::text || ' ' || COALESCE(aliases, '[]'::jsonb)::text) ~ ?")
+    .join(all ? " AND " : " OR ");
   const rows = await allRows<Omit<LookupHit, "body">>(
     db,
-    `SELECT id, library_id, name, entity_key, labels, summary, status, updated_at
+    `SELECT id, library_id, name, entity_key, labels, aliases, summary, status, updated_at
      FROM ${itemSource(scope)}
      WHERE ${libraryWhere(scope)}
        AND (${where})
@@ -348,13 +352,18 @@ export function editDistance(a: string, b: string, cap = 3): number {
   return (rows[a.length] as number[])[b.length] as number;
 }
 
-/** Words allowed for spelling correction: names, summaries and labels of this library. */
+/** Words allowed for spelling correction: names, summaries, labels and aliases of this library. */
 const VOCABULARY_ROW_LIMIT = 2000;
 
 async function libraryVocabulary(db: Database, libraryId: string, scope: ReadScope): Promise<Set<string>> {
-  const rows = await allRows<{ name: string; summary: string; labels: string | string[] }>(
+  const rows = await allRows<{
+    name: string;
+    summary: string;
+    labels: string | string[];
+    aliases: string | string[] | null;
+  }>(
     db,
-    `SELECT name, summary, labels
+    `SELECT name, summary, labels, aliases
      FROM ${itemSource(scope)}
      WHERE ${libraryWhere(scope)}
      ORDER BY updated_at DESC
@@ -363,7 +372,7 @@ async function libraryVocabulary(db: Database, libraryId: string, scope: ReadSco
   );
   const vocabulary = new Set<string>();
   for (const row of rows) {
-    const text = `${row.name} ${row.summary} ${parseLabels(row.labels).join(" ")}`.toLowerCase();
+    const text = `${row.name} ${row.summary} ${parseLabels(row.labels).join(" ")} ${parseLabels(row.aliases ?? []).join(" ")}`.toLowerCase();
     for (const word of words(text)) if (word.length >= 3) vocabulary.add(word);
   }
   return vocabulary;
