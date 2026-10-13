@@ -577,7 +577,7 @@ export function layout(input: {
   // Shell pages keep the top bar slim — username, Accounts, and Sign out live in the sidebar.
   const nav = input.access
     ? `<nav class="nav" aria-label="Main">
-        <a class="brand" href="/">MCPEncode</a>
+        <a class="brand" href="/"><svg class="brand-mark" viewBox="0 0 32 32" width="28" height="28" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" fill="#1c1917"/><path d="M10 9.5h3.5v13H10zM15 9.5h3.5v13H15zM20.2 10.2l3.2-.9 3 12.5-3.2.9z" fill="#fff"/></svg>MCPEncode</a>
         ${
           shellMode
             ? input.library
@@ -601,7 +601,7 @@ export function layout(input: {
         }
       </nav>`
     : `<nav class="nav" aria-label="Main">
-        <a class="brand" href="/">MCPEncode</a>
+        <a class="brand" href="/"><svg class="brand-mark" viewBox="0 0 32 32" width="28" height="28" fill="none" aria-hidden="true" focusable="false"><rect width="32" height="32" rx="8" fill="#1c1917"/><path d="M10 9.5h3.5v13H10zM15 9.5h3.5v13H15zM20.2 10.2l3.2-.9 3 12.5-3.2.9z" fill="#fff"/></svg>MCPEncode</a>
         <div class="nav-end">
           <a class="nav-signout" href="/login">Sign in</a>
         </div>
