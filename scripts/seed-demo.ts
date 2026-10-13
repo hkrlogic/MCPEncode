@@ -48,6 +48,8 @@ type Lib = {
   readerKey?: boolean;
   /** Review every N days (freshness). Unset = type default. */
   reviewDays?: number;
+  /** Review-by dates relative to today, so the Review queue has realistic entries. */
+  reviewIn?: Record<string, number>;
 };
 
 const jar = new Map<string, string>();
@@ -199,6 +201,8 @@ Actively exploited vulnerabilities are patched within 72 hours, outside the norm
     name: "Help Desk Runbooks",
     mode: "reviewed",
     reviewDays: 90,
+    // Account Lockout slipped past its review; Incident Response is due next week.
+    reviewIn: { "Account Lockout": -9, "Incident Response Runbook": 6 },
     items: [
       {
         name: "Incident Response Runbook",
@@ -450,6 +454,10 @@ for (const lib of LIBRARIES) {
   for (const doc of lib.items) ids[doc.name] = await addItem(libraryId, doc);
   if (lib.mode === "reviewed") {
     await post(`/libraries/${libraryId}/items/publish`, { item_id: Object.values(ids) });
+  }
+  for (const [name, days] of Object.entries(lib.reviewIn ?? {})) {
+    const date = new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+    await post(`/items/${ids[name]}/review-by`, { review_by: date });
   }
   if (lib.archived) {
     const id = await addItem(libraryId, lib.archived);
