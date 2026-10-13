@@ -57,6 +57,13 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 | `create_library` / `propose_table` / `propose_field` | Publisher | Design a library; a person approves the schema |
 | `list_audit` | Publisher, Site admin | Who called which tool in this library |
 
+**How `list_items q=` searches.**
+1. Every word must match (name, labels, summary, then body; the full-text index applies English stemming).
+2. If nothing matches every word, any word may match. A clear winner that matched on its name or labels, and on most of the words, is returned as the one answer. Weaker candidates come back as **"Did you mean"** suggestions, which the agent must open and check before citing.
+3. Still nothing: words that appear nowhere in the library's names, summaries or labels are corrected to the closest library word (1–2 typos), and steps 1–2 run again.
+
+A word that is only a label several items share (for example `runbook`) returns those items as a list, not one of them as "the" answer. Questions with no word in common with the library are still refused. `search_shelf` falls back from the exact phrase to "every word somewhere in name, summary or labels".
+
 **Citations.** Every published item that `list_items`, `open_item` or `search_shelf` returns carries a citation for its **published** copy (never a Pending draft):
 - `version`: counts publishes, Review Unlock saves and Reverts.
 - `published_at` and `updated_at` (ISO 8601).

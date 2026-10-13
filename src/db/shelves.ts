@@ -147,6 +147,9 @@ export async function listShelfLibraries(
  * which has no access-list row but may read that one library.
  * Returns names and summaries only.
  */
+/** Filler words ignored when a shelf phrase is split into words. */
+const SHELF_STOP_WORDS = new Set(["the", "and", "for", "how", "what", "with", "from", "about", "when", "does", "can", "you", "your"]);
+
 export async function searchShelf(
   db: Database,
   shelfId: string,
@@ -159,7 +162,7 @@ export async function searchShelf(
   if (readable.length === 0) return [];
   const pattern = `%${escapeLike(needle)}%`;
   const placeholders = readable.map(() => "?").join(", ");
-  const rows = await allRows<{
+  let rows = await allRows<{
     item_id: string;
     name: string;
     summary: string;
@@ -182,6 +185,37 @@ export async function searchShelf(
     pattern,
     pattern,
   );
+  if (rows.length === 0) {
+    // The whole phrase is not in any name, summary or label ("password reset").
+    // Try again with every word required somewhere in name, summary or labels.
+    const tokens = [...new Set(needle.toLowerCase().match(/[a-z0-9]+/g) ?? [])].filter(
+      (token) => token.length >= 3 && !SHELF_STOP_WORDS.has(token),
+    );
+    if (tokens.length >= 2) {
+      const clauses = tokens
+        .map(() => "(i.name ILIKE ? ESCAPE '\\' OR i.summary ILIKE ? ESCAPE '\\' OR i.labels::text ILIKE ? ESCAPE '\\')")
+        .join(" AND ");
+      const params = tokens.flatMap((token) => {
+        const like = `%${escapeLike(token)}%`;
+        return [like, like, like];
+      });
+      rows = await allRows(
+        db,
+        `SELECT i.id AS item_id, i.name, i.summary, l.id AS library_id, l.name AS library_name
+         FROM items_live i
+         INNER JOIN libraries l ON l.id = i.library_id
+         WHERE l.shelf_id = ?
+           AND i.status = 'published'
+           AND l.id IN (${placeholders})
+           AND ${clauses}
+         ORDER BY LOWER(l.name) ASC, LOWER(i.name) ASC, i.name ASC
+         LIMIT ${SHELF_HITS_MAX}`,
+        shelfId,
+        ...readable,
+        ...params,
+      );
+    }
+  }
   return rows.map((row) => ({
     libraryId: row.library_id,
     libraryName: row.library_name,
