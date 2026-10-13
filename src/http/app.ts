@@ -15,7 +15,7 @@ import {
   createMcpHandler,
 } from "@modelcontextprotocol/server";
 import type { Database } from "../db/types.ts";
-import { getLibrary, getLibraryReaderKeyHash, getShelf } from "../db/queries.ts";
+import { getLibrary, getLibraryConnectTokenHash, getLibraryReaderKeyHash, getShelf } from "../db/queries.ts";
 import {
   bearerFromAuthorization,
   isReaderKeyToken,
@@ -40,7 +40,7 @@ import {
 import type { AuthServerEndpoints } from "./discovery.ts";
 import { healthHandler } from "./health.ts";
 import {
-  connectTokensMatch,
+  connectTokenMatchesHash,
   libraryMcpBaseUrl,
   isConnectToken,
   isLibraryId,
@@ -180,11 +180,13 @@ export function createApp(input: {
           return;
         }
         const library = await getLibrary(db, libraryId);
-        if (!library || !connectTokensMatch(library.connectToken, connectToken)) {
+        const storedHash = library ? await getLibraryConnectTokenHash(db, library.id) : null;
+        if (!library || !connectTokenMatchesHash(storedHash, connectToken)) {
           res.status(404).json({ error: "not_found" });
           return;
         }
-        sendResourceMetadata(res, new URL(libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken)));
+        // The token already matched, so echoing the presented value reveals nothing new.
+        sendResourceMetadata(res, new URL(libraryMcpUrl(config.publicBaseUrl, library.id, connectToken)));
       })().catch(next);
     },
   );
@@ -295,7 +297,8 @@ export function createApp(input: {
       return;
     }
     const library = await getLibrary(db, libraryId);
-    if (!library || !connectTokensMatch(library.connectToken, connectToken)) {
+    const storedHash = library ? await getLibraryConnectTokenHash(db, library.id) : null;
+    if (!library || !connectTokenMatchesHash(storedHash, connectToken)) {
       res.status(404).json({
         error: "not_found",
         error_description:
@@ -305,7 +308,7 @@ export function createApp(input: {
     }
     const resourceUrl = new URL(
       form === "path"
-        ? libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken)
+        ? libraryMcpUrl(config.publicBaseUrl, library.id, connectToken)
         : libraryMcpBaseUrl(config.publicBaseUrl, library.id),
     );
 

@@ -239,7 +239,7 @@ test("the library page shows a field proposal only to a publisher", () => {
       proposedAt: Date.UTC(2026, 9, 5, 16, 0),
     },
     fieldProposalUnreadable: false,
-    connectToken: "test-connect-token-cccccccccccccccccc",
+    connectTokenLast4: "cccc",
     created_by: "mpos-editor",
     updated_by: "mpos-editor",
     created_at: 0,

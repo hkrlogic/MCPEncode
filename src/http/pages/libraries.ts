@@ -510,6 +510,7 @@ function readerKeyPanel(input: {
   csrf: string;
   mcpUrl: string;
   readerKey?: string;
+  connectUrl?: string;
 }): string {
   const prefix = input.library.readerKeyPrefix;
   const when = readerKeyWhen(input.library.readerKeyCreatedAt);
@@ -527,7 +528,7 @@ function readerKeyPanel(input: {
       </div>
       <p class="mcp-panel-note">In LibreChat, use the Connect link as the server URL, send the header below, and set requiresOAuth to false.</p>
       <pre class="reader-key-config" id="reader-key-config">${esc(`type: streamable-http
-url: ${input.mcpUrl}
+url: ${input.connectUrl ?? "<your Connect link — rotate Connect to get a new one>"}
 requiresOAuth: false
 headers:
   Authorization: Bearer ${reveal}`)}</pre>`
@@ -599,6 +600,11 @@ export function libraryPage(input: {
    * Later loads show the prefix, not the secret.
    */
   readerKey?: string;
+  /**
+   * Full Connect link. Set only on the one response after Create, Copy, or Rotate.
+   * Every other load shows mcpUrl, which is masked.
+   */
+  connectUrl?: string;
   /** Fixed notice after Approve or Reject. Not raw query text. */
   notice?: string;
   /** Item count used to explain why Approve is unavailable. */
@@ -826,8 +832,33 @@ export function libraryPage(input: {
         ${searchStatus(input.library.id, tab, searching, tab === "pending" ? pending.length : tab === "archives" ? archived.length : listedItems.length)}`;
 
   // The link stays in the header so publishers can copy it without leaving the item list.
+  const connectReveal = canWrite ? input.connectUrl : undefined;
+  const connectRotate = canWrite
+    ? `<form method="post" action="/libraries/${esc(input.library.id)}/connect/rotate"
+           data-confirm="${confirmText(
+             `Rotate the Connect link for ${input.library.name}? Old links stop working. People on Access stay.`,
+           )}">
+         <input type="hidden" name="csrf" value="${esc(input.csrf)}">
+         <button class="btn" type="submit">Rotate</button>
+       </form>`
+    : "";
+  const connectBox = connectReveal
+    ? `<div class="mcp-link-box">
+          <code class="mcp-link" id="mcp-url">${esc(connectReveal)}</code>
+          <button type="button" class="btn mcp-copy" data-copy="#mcp-url">Copy</button>
+        </div>
+        <p class="mcp-panel-note"><strong>Copy this link now. You won't see it again.</strong> To get a link later, rotate it.</p>`
+    : `<div class="mcp-link-box">
+          <code class="mcp-link mcp-link-masked" id="mcp-url">${esc(input.mcpUrl)}</code>
+        </div>
+        <p class="mcp-panel-note">${
+          canWrite
+            ? "The full link was shown once, when it was created. To get a new one, rotate it. Old links stop working."
+            : "The full link is shown only to a publisher, once. Ask a publisher on this library for it."
+        }</p>
+        ${connectRotate ? `<div class="reader-key-actions">${connectRotate}</div>` : ""}`;
   const mcpBlock = `
-    <details class="mcp-menu">
+    <details class="mcp-menu"${connectReveal ? " open" : ""}>
       ${mcpLinkSummary()}
       <div class="mcp-panel" role="dialog" aria-label="Connect link for this library">
         <div class="mcp-panel-head">
@@ -835,11 +866,8 @@ export function libraryPage(input: {
           <h2 class="mcp-panel-title">Connect link</h2>
           <p class="mcp-panel-lead">Paste into Cursor or the kiosk. Each person still signs in. For a shared agent, use a Reader key.</p>
         </div>
-        <div class="mcp-link-box">
-          <code class="mcp-link" id="mcp-url">${esc(input.mcpUrl)}</code>
-          <button type="button" class="btn mcp-copy" data-copy="#mcp-url">Copy</button>
-        </div>
-        <p class="mcp-panel-note">If this link leaks, rotate it under Actions. People on Access stay. Rotating Connect does not change the Reader key.</p>
+        ${connectBox}
+        <p class="mcp-panel-note">If this link leaks, rotate it. People on Access stay. Rotating Connect does not change the Reader key.</p>
       </div>
     </details>`;
 

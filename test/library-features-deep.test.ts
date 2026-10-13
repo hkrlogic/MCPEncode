@@ -36,6 +36,8 @@ import {
 import { itemForLibrarySchema, schemaForStarter } from "../src/items/library-schema.ts";
 import { valuesForSchemaEdit } from "../src/items/table-proposal.ts";
 import { withTestDatabase } from "./db.ts";
+import { getLibraryConnectTokenHash } from "../src/db/libraries.ts";
+import { hashConnectToken } from "../src/http/library-url.ts";
 
 const SESSION_SECRET = "test-session-secret-32-bytes-minimum!!";
 
@@ -308,7 +310,8 @@ test("deep: rename does not rotate Connect; copy does not share Access subjects"
     const renamed = await renameLibrary(db, library.id, "Alpha renamed", "alice");
     assert.equal(renamed.ok, true);
     if (!renamed.ok) return;
-    assert.equal(renamed.library.connectToken, token);
+    assert.equal(renamed.library.connectTokenLast4, token.slice(-4));
+    assert.equal(await getLibraryConnectTokenHash(db, library.id), hashConnectToken(token));
 
     const copy = await copyLibraryTemplate(db, library.id, "Beta", "alice");
     assert.equal(copy.ok, true);

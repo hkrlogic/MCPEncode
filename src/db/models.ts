@@ -27,10 +27,11 @@ export type LibraryRow = {
   /** JSON was present but not a valid field proposal. Reject still clears it. */
   fieldProposalUnreadable: boolean;
   /**
-   * Secret path segment in the library MCP URL.
-   * Rotate to kill a leaked Connect link; access grants stay as they are.
+   * Last four characters of the Connect token, safe to show ("…a1b2").
+   * The token itself is stored only as a SHA-256 hash and is never read back.
+   * Rotate to get a new link; access grants stay as they are.
    */
-  connectToken: string;
+  connectTokenLast4: string | null;
   /**
    * First characters of the Reader key, safe to show.
    * Null when this library has no Reader key. The secret is never stored.

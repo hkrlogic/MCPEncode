@@ -8,6 +8,7 @@ import { parseStoredTableProposal, type TableProposal, type TableProposalDraft }
 import { isLibraryTemplate, type LibraryTemplate } from "../items/templates.ts";
 import { generateReaderKey, hashReaderKey, readerKeyPrefix } from "../auth/reader-key.ts";
 import { grantLibraryAccess } from "./access.ts";
+import { connectTokenLast4, hashConnectToken } from "../http/library-url.ts";
 import type { LibraryRow } from "./models.ts";
 import { allRows, escapeLike, getRow, runSql } from "./query-helpers.ts";
 
@@ -18,6 +19,12 @@ function libraryTemplate(value: string | undefined): LibraryTemplate {
 function libraryWriteMode(value: string | undefined): LibraryWriteMode {
   return value && isLibraryWriteMode(value) ? value : "reviewed";
 }
+
+/**
+ * A library row plus the plaintext Connect token. Returned only by create,
+ * copy, and rotate so the caller can show the link once. Never stored.
+ */
+export type LibraryWithConnectToken = LibraryRow & { connectToken: string };
 
 /** Secret path segment for the library MCP URL (base64url, 32 bytes). */
 function freshConnectToken(): string {
@@ -33,13 +40,13 @@ type SqlLibrary = Omit<
   | "fieldProposal"
   | "fieldProposalUnreadable"
   | "writeMode"
-  | "connectToken"
+  | "connectTokenLast4"
   | "readerKeyPrefix"
   | "readerKeyCreatedAt"
 > & {
   template?: string;
   write_mode?: string;
-  connect_token?: string;
+  connect_token_last4?: string | null;
   reader_key_prefix?: string | null;
   reader_key_created_at?: number | string | null;
   shelf_id?: string | null;
@@ -68,7 +75,7 @@ function toLibrary(row: SqlLibrary): LibraryRow {
     tableProposalUnreadable: stored.unreadable,
     fieldProposal: fieldStored.proposal,
     fieldProposalUnreadable: fieldStored.unreadable,
-    connectToken: row.connect_token ?? "",
+    connectTokenLast4: row.connect_token_last4 || null,
     readerKeyPrefix: row.reader_key_prefix || null,
     readerKeyCreatedAt: asMillis(row.reader_key_created_at),
     shelfId: row.shelf_id || null,
@@ -113,7 +120,7 @@ export async function createLibrary(
   writeMode: LibraryWriteMode = "reviewed",
   /** Portal Custom: the field set the human just confirmed. Locks on insert. */
   schemaOverride?: LibrarySchema,
-): Promise<LibraryRow> {
+): Promise<LibraryWithConnectToken> {
   if (table && template !== "general") {
     throw new Error("A custom table is stored on a general library until a publisher approves it");
   }
@@ -140,15 +147,16 @@ export async function createLibrary(
   await db.transaction(async (tx) => {
     await runSql(
       tx,
-      `INSERT INTO libraries (id, name, template, write_mode, schema, table_proposal, connect_token, created_by, updated_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)`,
+      `INSERT INTO libraries (id, name, template, write_mode, schema, table_proposal, connect_token_hash, connect_token_last4, created_by, updated_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?)`,
       id,
       name.trim(),
       template,
       writeMode,
       JSON.stringify(schema),
       proposal ? JSON.stringify(proposal) : null,
-      connectToken,
+      hashConnectToken(connectToken),
+      connectTokenLast4(connectToken),
       actorSub,
       actorSub,
       now,
@@ -163,7 +171,7 @@ export async function createLibrary(
   });
   const created = await getLibrary(db, id);
   if (!created) throw new Error("failed to read library after insert");
-  return created;
+  return { ...created, connectToken };
 }
 
 /**
@@ -174,19 +182,32 @@ export async function rotateLibraryConnectToken(
   db: Database,
   id: string,
   actorSub: string,
-): Promise<LibraryRow | undefined> {
+): Promise<LibraryWithConnectToken | undefined> {
   const existing = await getLibrary(db, id);
   if (!existing) return undefined;
   const now = Date.now();
+  const connectToken = freshConnectToken();
   await runSql(
     db,
-    "UPDATE libraries SET connect_token = ?, updated_by = ?, updated_at = ? WHERE id = ?",
-    freshConnectToken(),
+    "UPDATE libraries SET connect_token_hash = ?, connect_token_last4 = ?, updated_by = ?, updated_at = ? WHERE id = ?",
+    hashConnectToken(connectToken),
+    connectTokenLast4(connectToken),
     actorSub,
     now,
     id,
   );
-  return getLibrary(db, id);
+  const updated = await getLibrary(db, id);
+  return updated ? { ...updated, connectToken } : undefined;
+}
+
+/** Stored Connect token hash only. Callers compare it with connectTokenMatchesHash. */
+export async function getLibraryConnectTokenHash(db: Database, id: string): Promise<string | null> {
+  const row = await getRow<{ connect_token_hash: string | null }>(
+    db,
+    "SELECT connect_token_hash FROM libraries WHERE id = ?",
+    id,
+  );
+  return row?.connect_token_hash ?? null;
 }
 
 /** Stored hash only. Callers compare it with readerKeyMatches and never send it to the browser. */
@@ -291,7 +312,7 @@ export async function copyLibraryTemplate(
   sourceId: string,
   name: string,
   actorSub: string,
-): Promise<{ ok: true; library: LibraryRow } | { ok: false; message: string }> {
+): Promise<{ ok: true; library: LibraryWithConnectToken } | { ok: false; message: string }> {
   const parsed = libraryInputSchema.safeParse({ name });
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Name is required" };
@@ -306,14 +327,15 @@ export async function copyLibraryTemplate(
       tx,
       `INSERT INTO libraries (
          id, name, template, write_mode, schema, table_proposal, field_proposal,
-         connect_token, created_by, updated_by, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?::jsonb, NULL, NULL, ?, ?, ?, ?, ?)`,
+         connect_token_hash, connect_token_last4, created_by, updated_by, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?::jsonb, NULL, NULL, ?, ?, ?, ?, ?, ?)`,
       id,
       parsed.data.name,
       source.template,
       source.writeMode,
       JSON.stringify(source.schema),
-      connectToken,
+      hashConnectToken(connectToken),
+      connectTokenLast4(connectToken),
       actorSub,
       actorSub,
       now,
@@ -327,7 +349,7 @@ export async function copyLibraryTemplate(
     });
     const created = await getLibrary(tx, id);
     if (!created) return { ok: false, message: "Failed to read library after copy." };
-    return { ok: true, library: created };
+    return { ok: true, library: { ...created, connectToken } };
   });
 }
 

@@ -24,7 +24,7 @@ function library(partial: Partial<LibraryRow> = {}): LibraryRow {
     tableProposalUnreadable: false,
     fieldProposal: null,
     fieldProposalUnreadable: false,
-    connectToken: "test-connect-token-aaaaaaaaaaaaaaaaaa",
+    connectTokenLast4: "aaaa",
     created_by: "alice",
     updated_by: "alice",
     created_at: 0,
@@ -443,7 +443,7 @@ test("Edit and Archive live in Actions; Publish stays primary; only SA hard-dele
   assert.match(libraryHtml, /Rotate connect link/);
   assert.match(libraryHtml, /action="\/libraries\/[^"]+\/connect\/rotate"/);
   assert.match(libraryHtml, /Delete library/);
-  assert.match(libraryHtml, /If this link leaks, rotate it under Actions/);
+  assert.match(libraryHtml, /If this link leaks, rotate it/);
 });
 
 test("table lists can include column values without changing the catalog list", async () => {

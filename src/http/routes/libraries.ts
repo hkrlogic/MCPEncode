@@ -47,15 +47,34 @@ import {
   sessionAccess,
 } from "../helpers.ts";
 import { cookieHeader, readCookie } from "../cookies.ts";
-import { libraryMcpUrl } from "../library-url.ts";
+import { libraryMcpUrl, maskedLibraryMcpUrl } from "../library-url.ts";
+import { CONNECT_REVEAL_COOKIE, stashConnectReveal, takeConnectReveal } from "../../auth/connect-reveal.ts";
 import { addItemPage, addLibraryPage, errorPage, librariesPage, libraryPage } from "../pages.ts";
 import { loadAppShell } from "../shell.ts";
 import type { AppRouteContext } from "./context.ts";
 
 type SessionUser = Access & { csrf: string };
 
+/** Masked Connect link ("…a1b2"). The full link exists only in the one-time reveal. */
 function libraryConnectUrl(config: AppRouteContext["config"], library: LibraryRow): string {
-  return libraryMcpUrl(config.publicBaseUrl, library.id, library.connectToken);
+  return maskedLibraryMcpUrl(config.publicBaseUrl, library.id, library.connectTokenLast4);
+}
+
+/** Hold a new Connect token for the publisher's next page load. The cookie carries only a reveal id. */
+function setConnectReveal(
+  res: express.Response,
+  config: AppRouteContext["config"],
+  input: { libraryId: string; sub: string; token: string },
+): void {
+  const revealId = stashConnectReveal(input);
+  res.append(
+    "Set-Cookie",
+    cookieHeader(CONNECT_REVEAL_COOKIE, revealId, {
+      maxAge: 120,
+      path: readerKeyCookiePath(input.libraryId),
+      secure: config.publicBaseUrl.startsWith("https://"),
+    }),
+  );
 }
 
 /** Cookie path for the one-time Reader key reveal. Matches the library page only. */
@@ -144,7 +163,7 @@ function readerKeyNotice(flag: unknown): string | undefined {
 /** Fixed copy for ?connect=. Query text is never echoed. */
 function connectNotice(flag: unknown): string | undefined {
   if (flag === "rotated") {
-    return "Connect link rotated. Old links stop working. Copy the new link from Connect. People on Access are unchanged.";
+    return "Connect link rotated. Old links stop working. Copy the new link from Connect now; it is shown only once. People on Access are unchanged.";
   }
   return undefined;
 }
@@ -339,6 +358,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       libraryId: row.id,
       detail: `${row.id}:${row.writeMode}`,
     });
+    setConnectReveal(res, config, { libraryId: row.id, sub: access.sub, token: row.connectToken });
     res.redirect(`/libraries/${row.id}`);
   });
 
@@ -510,6 +530,28 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       );
       if (readerKey) res.setHeader("Cache-Control", "no-store");
     }
+    const connectRevealId = readCookie(req.headers, CONNECT_REVEAL_COOKIE, {
+      path: readerKeyCookiePath(ctxLib.library.id),
+      secure: config.publicBaseUrl.startsWith("https://"),
+    });
+    let connectUrl: string | undefined;
+    if (connectRevealId) {
+      const token = can(ctxLib.libraryAccess, "records.write")
+        ? takeConnectReveal(connectRevealId, ctxLib.library.id, access.sub)
+        : undefined;
+      res.append(
+        "Set-Cookie",
+        cookieHeader(CONNECT_REVEAL_COOKIE, "", {
+          clear: true,
+          path: readerKeyCookiePath(ctxLib.library.id),
+          secure: config.publicBaseUrl.startsWith("https://"),
+        }),
+      );
+      if (token) {
+        connectUrl = libraryMcpUrl(config.publicBaseUrl, ctxLib.library.id, token);
+        res.setHeader("Cache-Control", "no-store");
+      }
+    }
     res.send(
       libraryPage({
         access: ctxLib.libraryAccess,
@@ -519,6 +561,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         q,
         tab,
         readerKey,
+        connectUrl,
         mcpUrl: libraryConnectUrl(config, ctxLib.library),
         accessList,
         accounts,
@@ -758,6 +801,9 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         libraryId: ctxLib.library.id,
         detail: ctxLib.library.id,
       });
+      if (updated) {
+        setConnectReveal(res, config, { libraryId: updated.id, sub: access.sub, token: updated.connectToken });
+      }
       res.redirect(`/libraries/${ctxLib.library.id}?connect=rotated`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not rotate the Connect link";
@@ -813,7 +859,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       sub: access.sub,
       key: issued.key,
     });
-    res.setHeader(
+    res.append(
       "Set-Cookie",
       cookieHeader(READER_REVEAL_COOKIE, revealId, {
         maxAge: 120,
@@ -912,6 +958,11 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       res.redirect(`/libraries/${ctxLib.library.id}?copied=invalid`);
       return;
     }
+    setConnectReveal(res, config, {
+      libraryId: result.library.id,
+      sub: access.sub,
+      token: result.library.connectToken,
+    });
     // Land on the new empty library so the publisher can add fields or items.
     res.redirect(`/libraries/${result.library.id}?copied=1`);
   });

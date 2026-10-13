@@ -149,7 +149,7 @@ test("the library page shows a proposal only to a publisher", () => {
     tableProposalUnreadable: false,
     fieldProposal: null,
     fieldProposalUnreadable: false,
-    connectToken: "test-connect-token-bbbbbbbbbbbbbbbbbb",
+    connectTokenLast4: "bbbb",
     created_by: "mpos-editor",
     updated_by: "mpos-editor",
     created_at: 0,
