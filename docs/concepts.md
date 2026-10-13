@@ -59,7 +59,7 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 
 There is **no publish, approve, write-mode or revert tool.** Those stay with people in the web UI. Tool output labels item content as data, not instructions.
 
-**Summaries.** Every item has a summary: the short text lookups return before an item is opened. General libraries build it from the body (text before the first table, up to 500 characters). Policy, Procedure, Custom and extended General libraries take a required one-line `summary` (up to 160 characters).
+**Summaries.** Every item has a summary: the short text lookups return before an item is opened. General libraries build it from the body (text before the first table, up to 500 characters), and keep doing so after a person approves an extra field (`summary` stays optional there). Policy, Procedure and Custom libraries take a required one-line `summary` (up to 160 characters).
 
 ## Connecting
 

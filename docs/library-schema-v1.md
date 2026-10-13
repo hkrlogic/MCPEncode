@@ -193,5 +193,9 @@ Optional checks that a library still “looks like” its starter guide — e.g.
 
 ## Implementation note
 
+**Approving a field on a General library keeps the summary optional.** It is still derived from the description when an agent or the form leaves it out, so `create_item` / `update_item` calls that worked before the approval keep working. Policy, Procedure, table and custom libraries require a summary, as before.
+
+**Tool lists are always current.** MCP is served statelessly: each request builds the tools from the library's stored schema, so the next `tools/list` after an Approve already shows the new field. The server cannot push `notifications/tools/list_changed` over a stateless connection, so a client that caches tool lists should refresh them after a person Approves a field.
+
 Slice 1 (propose_field + Approve/Reject + append-only lock) is implemented.  
 Copy library template + rename library are implemented in the publisher UI (no MCP tools for those).

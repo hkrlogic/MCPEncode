@@ -19,6 +19,11 @@ The web app now matches the MCPEncode landing page: Inter and JetBrains Mono, st
   - `prefers-reduced-motion` turns off every transition and animation.
 - **Screenshots:** `docs/assets/*.png` were regenerated from `npm run seed-demo` in the new look.
 
+### Fixed: approving a field no longer breaks agent writes ([#30](https://github.com/hkrlogic/MCPEncode/issues/30))
+
+- On a General library, approving an optional field (for example `propose_field` "Review by") used to make `summary` **required** on `create_item` / `update_item`. The next ordinary `update_item {id, name, body}` then failed validation. The summary is now optional again and is derived from the description when omitted, the same as before the approval. The publisher form follows suit. Policy, Procedure, table and custom libraries are unchanged.
+- Documented that MCP tool lists are rebuilt on every request, so the new field shows up on the next `tools/list`. A stateless server cannot push `notifications/tools/list_changed`.
+
 ## v0.2.1
 
 ### Security
