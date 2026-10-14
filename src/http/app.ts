@@ -2,7 +2,7 @@
 import { runWithRequestState } from "./request-context.ts";
 import path from "node:path";
 import { forwardedForWarning } from "./proxy-warning.ts";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import {
@@ -207,11 +207,18 @@ export function createApp(input: {
     sendResourceMetadata(res, new URL(libraryMcpBaseUrl(config.publicBaseUrl, libraryId.toLowerCase())));
   });
 
-  // Browsers ask for /favicon.ico on every page; answer with the SVG mark.
+  // Browsers ask for /favicon.ico on every page; answer with the SVG mark,
+  // read once at startup so the route never touches the file system.
+  const faviconPath = path.join(publicDir, "favicon.svg");
+  const favicon = existsSync(faviconPath) ? readFileSync(faviconPath) : undefined;
   app.get("/favicon.ico", (_req, res) => {
+    if (!favicon) {
+      res.status(404).end();
+      return;
+    }
     res.type("image/svg+xml");
     res.setHeader("Cache-Control", "public, max-age=86400");
-    res.sendFile(path.join(publicDir, "favicon.svg"));
+    res.send(favicon);
   });
 
   // Fingerprinted query strings bust Cloudflare/browser caches after deploys.
