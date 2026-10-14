@@ -55,6 +55,7 @@ export function appsPage(input: {
   const pending = input.hosts.filter((row) => row.status === "pending");
   const approved = input.hosts.filter((row) => row.status === "approved");
   const denied = input.hosts.filter((row) => row.status === "denied");
+  const revoked = input.hosts.filter((row) => row.status === "revoked");
   const body = input.local
     ? `${flash}
       ${pending.length === 0 ? `<p class="empty">No apps are waiting for approval.</p>` : ""}
@@ -67,6 +68,7 @@ export function appsPage(input: {
       ${section("Approved", approved, (row) =>
         decisionForm(input.csrf, row.host, "revoke", "Revoke", `Revoke ${row.host}?\n\nApps on this host are signed out (their refresh tokens end) and cannot sign in again unless you approve it.`),
       )}
+      ${section("Revoked", revoked, (row) => decisionForm(input.csrf, row.host, "approve", "Approve again"))}
       ${section("Denied", denied, (row) => decisionForm(input.csrf, row.host, "approve", "Approve"))}
       ${
         input.envHosts.length

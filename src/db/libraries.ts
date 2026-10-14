@@ -11,6 +11,7 @@ import { grantLibraryAccess } from "./access.ts";
 import { connectTokenLast4, hashConnectToken } from "../http/library-url.ts";
 import type { LibraryRow } from "./models.ts";
 import { allRows, escapeLike, getRow, runSql } from "./query-helpers.ts";
+import { DEFAULT_LIBRARY_ID, DEFAULT_LIBRARY_NAME } from "./migrate.ts";
 
 function libraryTemplate(value: string | undefined): LibraryTemplate {
   return value && isLibraryTemplate(value) ? value : "general";
@@ -446,4 +447,25 @@ export async function resolveLibrary(
   if (partial.length === 1) return { id: partial[0].id };
   if (partial.length > 1) return { choices: partial };
   return undefined;
+}
+
+/**
+ * A fresh database gets an empty "Main" library from the baseline migration.
+ * When the first account is created it is removed if nobody has used it (no
+ * items, no access, still named Main), so a new install starts with an empty
+ * list. Existing installs keep Main: they already have an account.
+ */
+export async function removeUnusedDefaultLibrary(db: Database): Promise<boolean> {
+  const row = await getRow<{ id: string }>(
+    db,
+    `DELETE FROM libraries l
+     WHERE l.id = ? AND l.name = ?
+       AND NOT EXISTS (SELECT 1 FROM items i WHERE i.library_id = l.id)
+       AND NOT EXISTS (SELECT 1 FROM library_access a WHERE a.library_id = l.id)
+       AND NOT EXISTS (SELECT 1 FROM publish_audit p WHERE p.library_id = l.id)
+     RETURNING l.id`,
+    DEFAULT_LIBRARY_ID,
+    DEFAULT_LIBRARY_NAME,
+  );
+  return Boolean(row);
 }

@@ -40,6 +40,9 @@ import {
 import { proposeFieldInputSchema } from "../items/field-proposal.ts";
 import { normalizeTableProposal, proposeTableInputSchema } from "../items/table-proposal.ts";
 import { itemForLibrary } from "../items/templates.ts";
+import { bodyWithoutSummary } from "../markdown/table.ts";
+import { isPlainGeneral, summaryIsDerived } from "../items/library-schema.ts";
+import { parseItemFieldValues, parseTableValues, valuesForSchemaEdit } from "../items/table-proposal.ts";
 import { APP_VERSION } from "../version.ts";
 import { libraryDesignGuide } from "./library-design.ts";
 import { labeledItemData } from "../markdown/render.ts";
@@ -57,11 +60,15 @@ export const UNAUTHORIZED_MCP =
 export const ACCOUNT_UNAVAILABLE =
   "This account is disabled or no longer exists. Ask an SA to enable it, then sign in again.";
 
+/** The token was issued before the person signed out (or their password was reset). */
+export const SIGNED_OUT_MCP =
+  "Your sign-in ended; reconnect this library's MCP link and sign in again (you signed out, or your password was reset).";
+
 export const FORBIDDEN_LIBRARY =
-  "Signed in, but this account cannot open this library. Ask a publisher on the library to grant your IdP subject access.";
+  "Signed in, but this account cannot open this library. Ask a publisher on the library to add you under Access.";
 
 export const READER_KEY_REJECTED =
-  "Reader key was not accepted. A publisher can rotate it on this library. A Reader key only reads published items.";
+  "Reader key was not accepted. Ask a publisher on this library for the current Reader key (Library → Reader key). A Reader key only reads published items.";
 
 /**
  * How publishers should collect and store live data in a Review Unlock library
@@ -92,7 +99,7 @@ export function agentInstructions(
   const writeBlurb =
     writeMode === "direct"
       ? directHandoffGuide()
-      : "create_item and update_item save drafts only. Readers and the kiosk only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call. Reverting an item to its last published version is also a publisher UI action only — do not invent a revert tool call. When a published item has an edit waiting (has_pending_changes: true), Readers and agents keep seeing the published version until a human Publishes; list_items and open_item show that published version. To read the Pending draft, call open_item with version \"draft\".";
+      : "create_item and update_item save drafts only. Readers and Reader keys only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call. Reverting an item to its last published version is also a publisher UI action only — do not invent a revert tool call. When a published item has an edit waiting (has_pending_changes: true), Readers and agents keep seeing the published version until a human Publishes; list_items and open_item show that published version. To read the Pending draft, call open_item with version \"draft\".";
 
   return `You look up human-authored items in the library "${libraryName}". Cite an item or say it is not in the library. Do not invent.
 
@@ -146,6 +153,30 @@ function ok(text: string) {
 }
 
 /** Keep only string fields (and a string-array labels list) from a tool payload. */
+/**
+ * The stored item as write input, so a partial update can start from it:
+ * name, summary, labels and this library's field values (or the markdown
+ * body for a plain Documents library).
+ */
+export function storedItemWrite(row: ItemRow, schema: LibrarySchema): ItemWriteInput {
+  const write: ItemWriteInput = {
+    name: row.name,
+    summary: row.summary ?? "",
+    labels: [...(row.labels ?? [])],
+  };
+  if (isPlainGeneral(schema)) {
+    write.body = row.body ?? "";
+    return write;
+  }
+  const values =
+    parseItemFieldValues(row.details) ?? parseTableValues(row.details) ?? valuesForSchemaEdit(row, schema);
+  for (const field of schema.fields) {
+    const value = values[field.key];
+    if (typeof value === "string") write[field.key] = value;
+  }
+  return write;
+}
+
 function asItemWrite(input: Record<string, unknown>): ItemWriteInput {
   const write: ItemWriteInput = {};
   for (const [key, value] of Object.entries(input)) {
@@ -273,7 +304,7 @@ export function buildMcpServer(
       labels: item.labels,
       aliases: item.aliases ?? [],
       summary: item.summary,
-      body: item.body,
+      body: bodyWithoutSummary(item.body, item.summary),
       files,
       ...meta,
     });
@@ -727,7 +758,7 @@ export function buildMcpServer(
         });
         if (!result.ok) return deny(result.message);
         return ok(
-          `Proposed optional field "${result.proposal.label}" (${result.proposal.type}, key ${result.proposal.key}). It is waiting in the publisher. A human must Approve or Reject it there. It is not live until they Approve. Tell them to reconnect this library's MCP link after Approve so create_item sees the new field.`,
+          `Proposed optional field "${result.proposal.label}" (${result.proposal.type}, key ${result.proposal.key}). It is waiting in the publisher. A human must Approve or Reject it there. It is not live until they Approve. After Approve, create_item and update_item take the new field on your next tools/list (the tool list is rebuilt on every request; reconnect only if your client caches tools).`,
         );
       },
     );
@@ -735,6 +766,51 @@ export function buildMcpServer(
     // Tool argument schemas are built from this library's stored schema only.
     const createItemSchema = mcpCreateItemInputSchema(library.schema);
     const updateItemSchema = mcpUpdateItemInputSchema(library.schema);
+
+    /**
+     * Save an edit to an existing item. Without replace, fields the caller left
+     * out keep their stored value; with replace, the input is the whole item.
+     */
+    const saveUpdate = async (
+      tool: "update_item" | "create_item",
+      existing: ItemRow,
+      input: Record<string, unknown>,
+      options: { replace: boolean; expectedRevision?: number; head?: string },
+    ) => {
+      const id = existing.id;
+      const fail = async (message: string, detail = id) => {
+        await writeAudit(db, { actorSub: access.sub, libraryId: library.libraryId, tool, success: false, detail });
+        return deny(message);
+      };
+      const libraryRow = await getLibrary(db, library.libraryId);
+      if (!libraryRow) return deny("Library not found.");
+      const given = asItemWrite(input);
+      const stored = storedItemWrite(existing, libraryRow.schema);
+      // A derived summary follows the body: re-derive it unless one is given.
+      if (summaryIsDerived(libraryRow.schema)) delete stored.summary;
+      const write = options.replace ? given : { ...stored, ...given };
+      const saved = itemForLibrary(libraryRow.schema, write);
+      if (!saved.ok) return fail(saved.message);
+      try {
+        const row = await updateItem(db, id, saved.item, access.sub, {
+          libraryId: library.libraryId,
+          expectedRevision: options.expectedRevision,
+        });
+        if (!row) return fail(`No item with id ${id}`);
+        await writeAudit(db, { actorSub: access.sub, libraryId: library.libraryId, tool, success: true, detail: id });
+        const wire = await itemWire(row);
+        return ok(options.head ? `${options.head}\n${wire}` : wire);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Update failed.";
+        if (error instanceof ItemConflictError) {
+          return fail(
+            `${message}\nid: ${id}\nexpected_revision: ${options.expectedRevision}\ncurrent_revision: ${error.currentRevision}`,
+            `${id} conflict`,
+          );
+        }
+        return fail(message);
+      }
+    };
 
     server.registerTool(
       "create_item",
@@ -745,6 +821,16 @@ export function buildMcpServer(
         annotations: { readOnlyHint: false },
       },
       async (input) => {
+        // entity_key upsert: an item with this key already exists, so update it
+        // (fields left out keep their value) instead of failing.
+        const key = typeof input.entity_key === "string" ? input.entity_key : "";
+        const keyed = key ? await getItemByEntityKey(db, library.libraryId, key, { publishedOnly: false }) : undefined;
+        if (keyed) {
+          return saveUpdate("create_item", keyed, input as Record<string, unknown>, {
+            replace: false,
+            head: `Updated the existing item with entity_key ${keyed.entity_key} (id ${keyed.id}) instead of adding a duplicate.`,
+          });
+        }
         const result = await addDraftItem(db, library.libraryId, asItemWrite(input), access.sub);
         if (!result.ok) {
           await writeAudit(db, {
@@ -775,71 +861,23 @@ export function buildMcpServer(
         inputSchema: updateItemSchema,
         annotations: { readOnlyHint: false },
       },
-      async ({ id, expected_revision, ...input }) => {
+      async ({ id, expected_revision, replace, ...input }) => {
         // Scoped to this link's library: an id from another library is not found.
-        const existing = await getLibraryItem(db, library.libraryId, id, { publishedOnly: false });
+        const existing = await getLibraryItem(db, library.libraryId, String(id), { publishedOnly: false });
         if (!existing) {
           await writeAudit(db, {
             actorSub: access.sub,
             libraryId: library.libraryId,
             tool: "update_item",
             success: false,
-            detail: id,
+            detail: String(id),
           });
           return deny(`No item with id ${id}`);
         }
-        const libraryRow = await getLibrary(db, library.libraryId);
-        if (!libraryRow) return deny("Library not found.");
-        const saved = itemForLibrary(libraryRow.schema, asItemWrite(input));
-        if (!saved.ok) {
-          await writeAudit(db, {
-            actorSub: access.sub,
-            libraryId: library.libraryId,
-            tool: "update_item",
-            success: false,
-            detail: id,
-          });
-          return deny(saved.message);
-        }
-        try {
-          const row = await updateItem(db, id, saved.item, access.sub, {
-            libraryId: library.libraryId,
-            expectedRevision: typeof expected_revision === "number" ? expected_revision : undefined,
-          });
-          if (!row) {
-            await writeAudit(db, {
-              actorSub: access.sub,
-              libraryId: library.libraryId,
-              tool: "update_item",
-              success: false,
-              detail: id,
-            });
-            return deny(`No item with id ${id}`);
-          }
-          await writeAudit(db, {
-            actorSub: access.sub,
-            libraryId: library.libraryId,
-            tool: "update_item",
-            success: true,
-            detail: id,
-          });
-          return ok(await itemWire(row));
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "Update failed.";
-          const conflict = error instanceof ItemConflictError;
-          await writeAudit(db, {
-            actorSub: access.sub,
-            libraryId: library.libraryId,
-            tool: "update_item",
-            success: false,
-            detail: conflict ? `${id} conflict` : id,
-          });
-          return deny(
-            conflict
-              ? `${message}\nid: ${id}\nexpected_revision: ${expected_revision}\ncurrent_revision: ${error.currentRevision}`
-              : message,
-          );
-        }
+        return saveUpdate("update_item", existing, input as Record<string, unknown>, {
+          replace: replace === true,
+          expectedRevision: typeof expected_revision === "number" ? expected_revision : undefined,
+        });
       },
     );
 
@@ -982,7 +1020,7 @@ export async function resolveLibraryMcpAccess(
     // demoted SA is no longer SA whatever the token still says, and a token
     // issued before a sign-out everywhere is refused.
     const check = await guard(sub, extra.iat);
-    if (!check.allowed) return { error: ACCOUNT_UNAVAILABLE };
+    if (!check.allowed) return { error: check.reason === "signed_out" ? SIGNED_OUT_MCP : ACCOUNT_UNAVAILABLE };
     idpRole = check.role;
   }
   const membership = await getLibraryAccess(db, libraryId, sub);

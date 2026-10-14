@@ -80,10 +80,15 @@ test("X-Library-Token opens the library on the bare MCP path; the link form keep
       const token = library.connectToken;
       const bare = `${base}/libraries/${library.id}/mcp`;
 
-      // No header: still the retired-link answer.
-      const missing = await post(bare, { authorization: `Bearer ${issued.key}` });
+      // No header and no Reader key: still the retired-link answer.
+      const missing = await post(bare, {});
       assert.equal(missing.status, 410);
       assert.match(missing.text, /X-Library-Token/);
+
+      // A Reader key works on the bare path on its own: no Connect token needed.
+      const readerOnly = await post(bare, { authorization: `Bearer ${issued.key}` });
+      assert.equal(readerOnly.status, 200, readerOnly.text);
+      assert.match(readerOnly.text, /serverInfo/);
 
       // Wrong header: not found, same as a wrong link.
       const wrong = await post(bare, { authorization: `Bearer ${issued.key}`, "x-library-token": "x".repeat(43) });

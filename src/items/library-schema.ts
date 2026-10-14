@@ -259,15 +259,13 @@ export function formatSchemaFields(
   fields: SchemaFieldDef[],
   values: Record<string, string>,
 ): string {
+  // Empty optional fields are left out, so the body has no bare "Purchased:" lines.
   const control = fields
-    .filter((field) => field.kind === "control")
-    .map((field) => `${field.label}: ${values[field.key] ?? ""}`);
+    .filter((field) => field.kind === "control" && (values[field.key] ?? "").trim())
+    .map((field) => `${field.label}: ${(values[field.key] ?? "").trim()}`);
   const body = fields
-    .filter((field) => field.kind === "body")
-    .map((field) => {
-      const value = (values[field.key] ?? "").trim();
-      return value ? `${field.label}:\n${value}` : `${field.label}:`;
-    });
+    .filter((field) => field.kind === "body" && (values[field.key] ?? "").trim())
+    .map((field) => `${field.label}:\n${(values[field.key] ?? "").trim()}`);
   return [title, ...control, "", ...body].join("\n").trim();
 }
 
@@ -346,14 +344,28 @@ export function mcpItemWriteShape(schema: LibrarySchema): Record<string, z.ZodTy
   return shape;
 }
 
+/**
+ * Loose objects: keys that are not fields of this library reach the handler,
+ * which refuses them with the field list (instead of dropping them silently).
+ */
 export function mcpCreateItemInputSchema(schema: LibrarySchema) {
-  return z.object(mcpItemWriteShape(schema));
+  return z.object(mcpItemWriteShape(schema)).loose();
 }
 
+/** Every field optional: omitted fields keep their stored value unless replace is true. */
 export function mcpUpdateItemInputSchema(schema: LibrarySchema) {
+  const partial = Object.fromEntries(
+    Object.entries(mcpItemWriteShape(schema)).map(([key, value]) => [key, value.optional()]),
+  );
   return z.object({
     id: z.string().uuid().describe("Item id from list_items"),
-    ...mcpItemWriteShape(schema),
+    ...partial,
+    replace: z
+      .boolean()
+      .optional()
+      .describe(
+        "Optional. Default false: fields you leave out keep their current value. true: replace the whole item, so omitted optional fields are cleared.",
+      ),
     expected_revision: z
       .number()
       .int()
@@ -362,7 +374,7 @@ export function mcpUpdateItemInputSchema(schema: LibrarySchema) {
       .describe(
         "Optional. The revision from open_item / update_item that this edit is based on. If the item changed since, nothing is saved and a conflict is returned. Omit to overwrite (old behavior).",
       ),
-  });
+  }).loose();
 }
 
 /** Sorted argument keys advertised on create_item for this library. */
@@ -381,11 +393,11 @@ export function mcpWriteToolDescription(
   const head =
     writeMode === "direct"
       ? kind === "create"
-        ? "Add a library item only when list_items with entity_key (or q) found no match. This library is Review Unlock — the item is live immediately. Set entity_key for the real-world entity, a stable name, a one-line summary, and useful labels. Prefer update_item when the entity already exists."
-        : "Replace one library item by id after list_items found it (prefer entity_key). This library is Review Unlock — the saved version is live immediately. Keep entity_key and name stable; refresh the summary and labels so the next agent can scoop it."
+        ? "Add a library item. This library is Review Unlock — the item is live immediately. Set entity_key for the real-world entity: if an item with that entity_key already exists, it is updated instead (fields you leave out keep their value). Give a stable name, a one-line summary, and useful labels."
+        : "Update one library item by id after list_items found it (prefer entity_key). Fields you leave out keep their current value; pass replace: true to replace the whole item. This library is Review Unlock — the saved version is live immediately. Keep entity_key and name stable."
       : kind === "create"
-        ? "Add a library item as a draft (Pending). Not visible to readers or the kiosk until a human Publishes it in the publisher UI. Optional entity_key is a stable id for later updates."
-        : "Replace one library item. Saves as draft: if published, it becomes Pending until a human Publishes again in the publisher UI. Optional entity_key is a stable id for later updates.";
+        ? "Add a library item as a draft (Pending). Not visible to readers or Reader keys until a human Publishes it in the publisher UI. Optional entity_key is a stable id: if an item with that entity_key already exists, it is updated instead (fields you leave out keep their value)."
+        : "Update one library item by id. Fields you leave out keep their current value; pass replace: true to replace the whole item. Saves as draft: if published, the edit is Pending until a human Publishes it, and Readers keep the published version.";
   const summaryBit = summaryIsDerived(schema) ? "" : ", summary";
   const shape = schema.custom ? "custom" : schema.starter;
   return `${head} This library uses the ${shape} schema. Send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}. Optional: entity_key, labels. Do not invent fields. To add a field, propose_field after the human confirms — they Approve in the publisher. Use only when the human asked.`;
@@ -595,4 +607,29 @@ export function itemForLibrarySchema(
   }
 
   return { ok: false, message: schemaFieldMessage(schema) };
+}
+
+/**
+ * Web form wording for a save error. Agent messages lead with the field list
+ * ("This library uses the … schema. Send name, …. Do not invent fields.") and
+ * tool names; people filling in a form need only what to fix.
+ */
+export function humanItemMessage(message: string, schema: LibrarySchema): string {
+  if (/entity_key already exists|duplicate key value/i.test(message)) {
+    return "Another item in this library already uses this entity key. Edit that item instead, or use a different key.";
+  }
+  const unknown = /^Unknown field\(s\): ([^.]+)\./.exec(message);
+  if (unknown) return `This library has no field called ${unknown[1]}.`;
+  const prefix = schemaFieldMessage(schema);
+  let text = message.startsWith(prefix) ? message.slice(prefix.length).trim() : message;
+  text = text.replace(/\s*Do not invent fields\.?/g, "").trim();
+  const label = (key: string) =>
+    schema.fields.find((field) => field.key === key)?.label ?? key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " ");
+  text = text
+    .replace(/(\w+): Too small: expected string to have >=1 characters?\.?/g, (_m, key: string) => `${label(key)} can't be empty.`)
+    .replace(/(\w+): Too big: expected string to have <=(\d+) characters?\.?/g, (_m, key: string, n: string) => `${label(key)} is too long (at most ${n} characters).`)
+    .replace(/(\w+): Invalid input: expected \w+, received undefined\.?/g, (_m, key: string) => `${label(key)} is required.`)
+    .replace(/(\w+): Invalid input[^.]*\.?/g, (_m, key: string) => `${label(key)} has a value this library can't use.`);
+  if (!text) return "Check the highlighted fields and try again.";
+  return /[.!?]$/.test(text) ? text : `${text}.`;
 }

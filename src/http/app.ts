@@ -1,4 +1,5 @@
 /** Express app composer: static assets, OAuth metadata, routes, MCP mount. */
+import { runWithRequestState } from "./request-context.ts";
 import path from "node:path";
 import { forwardedForWarning } from "./proxy-warning.ts";
 import { existsSync } from "node:fs";
@@ -30,6 +31,7 @@ import { loginScopes } from "../auth/scopes.ts";
 import { createTokenVerifier } from "../auth/verifier.ts";
 import {
   ACCOUNT_UNAVAILABLE,
+  SIGNED_OUT_MCP,
   FORBIDDEN_LIBRARY,
   READER_KEY_REJECTED,
   UNAUTHORIZED_MCP,
@@ -49,6 +51,7 @@ import {
 import { registerAccountRoutes } from "./routes/accounts.ts";
 import { registerAuthRoutes } from "./routes/auth.ts";
 import { registerCallbackHostRoutes } from "./routes/callback-hosts.ts";
+import { registerAuditRoutes } from "./routes/audit.ts";
 import type { CallbackHostAdmin } from "../auth/embedded-idp.ts";
 import type { AppRouteContext } from "./routes/context.ts";
 import { registerEditorRoutes } from "./routes/editor.ts";
@@ -105,6 +108,7 @@ export function createApp(input: {
   const app = express();
   // No auth and no Host check. Returns only ok / unavailable.
   app.get("/healthz", healthHandler(db));
+  app.use((_req, _res, next) => runWithRequestState(next));
   app.use(express.json());
   app.use(hostHeaderValidation(allowedNames));
   app.use((req, res, next) => {
@@ -203,6 +207,13 @@ export function createApp(input: {
     sendResourceMetadata(res, new URL(libraryMcpBaseUrl(config.publicBaseUrl, libraryId.toLowerCase())));
   });
 
+  // Browsers ask for /favicon.ico on every page; answer with the SVG mark.
+  app.get("/favicon.ico", (_req, res) => {
+    res.type("image/svg+xml");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.sendFile(path.join(publicDir, "favicon.svg"));
+  });
+
   // Fingerprinted query strings bust Cloudflare/browser caches after deploys.
   // Keep a short max-age so a missed fingerprint still revalidates quickly.
   app.use(
@@ -245,6 +256,7 @@ export function createApp(input: {
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);
   registerCallbackHostRoutes(app, ctx);
+  registerAuditRoutes(app, ctx);
   registerLibraryRoutes(app, ctx);
   registerShelfRoutes(app, ctx);
   registerItemRoutes(app, ctx);
@@ -272,6 +284,22 @@ export function createApp(input: {
   app.all("/libraries/:libraryId/mcp", mcpLimit, async (req, res, next) => {
     const header = req.headers["x-library-token"];
     if (typeof header !== "string" || header === "") {
+      // A Reader key is a library secret of its own: it works on this URL
+      // without the Connect token, so publishers never rotate Connect to set
+      // up a shared agent.
+      const readerBearer = bearerFromAuthorization(
+        typeof req.headers.authorization === "string" ? req.headers.authorization : undefined,
+      );
+      if (readerBearer && isReaderKeyToken(readerBearer)) {
+        const libraryId = String(req.params.libraryId);
+        const library = isLibraryId(libraryId) ? await getLibrary(db, libraryId) : null;
+        if (!library) {
+          res.status(404).json({ error: "not_found", error_description: "Library not found." });
+          return;
+        }
+        await serveReaderKey(req, res, library, readerBearer).catch(next);
+        return;
+      }
       res.status(410).json({
         error: "gone",
         error_description:
@@ -285,6 +313,31 @@ export function createApp(input: {
   app.all("/libraries/:libraryId/mcp/:connectToken", mcpLimit, async (req, res, next) => {
     await serveLibraryMcp(req, res, next, String(req.params.connectToken), "path").catch(next);
   });
+
+  async function serveReaderKey(
+    req: express.Request,
+    res: express.Response,
+    library: NonNullable<Awaited<ReturnType<typeof getLibrary>>>,
+    bearer: string,
+  ): Promise<void> {
+    const stored = await getLibraryReaderKeyHash(db, library.id);
+    if (!readerKeyMatches(bearer, stored)) {
+      res.status(401).json({
+        error: "invalid_token",
+        error_description: READER_KEY_REJECTED,
+      });
+      return;
+    }
+    const authInfo = readerKeyAuthInfo(library.id);
+    (req as express.Request & { auth?: typeof authInfo }).auth = authInfo;
+    const shelfName = library.shelfId ? (await getShelf(db, library.shelfId))?.name ?? null : null;
+    const scoped = readerKeyLibraryContext({ ...library, shelfName });
+    const mcpHandler = createMcpHandler(({ authInfo: info }) => {
+      if (!info) throw new Error("MCP handler invoked without authInfo");
+      return buildMcpServer(db, info, scoped, { publicBaseUrl: config.publicBaseUrl });
+    });
+    void toNodeHandler(mcpHandler)(req, res, req.body);
+  }
 
   async function serveLibraryMcp(
     req: express.Request,
@@ -320,23 +373,7 @@ export function createApp(input: {
     const authorization = req.headers.authorization;
     const bearer = bearerFromAuthorization(typeof authorization === "string" ? authorization : undefined);
     if (bearer && isReaderKeyToken(bearer)) {
-      const stored = await getLibraryReaderKeyHash(db, library.id);
-      if (!readerKeyMatches(bearer, stored)) {
-        res.status(401).json({
-          error: "invalid_token",
-          error_description: READER_KEY_REJECTED,
-        });
-        return;
-      }
-      const authInfo = readerKeyAuthInfo(library.id);
-      (req as express.Request & { auth?: typeof authInfo }).auth = authInfo;
-      const shelfName = library.shelfId ? (await getShelf(db, library.shelfId))?.name ?? null : null;
-      const scoped = readerKeyLibraryContext({ ...library, shelfName });
-      const mcpHandler = createMcpHandler(({ authInfo: info }) => {
-        if (!info) throw new Error("MCP handler invoked without authInfo");
-        return buildMcpServer(db, info, scoped, { publicBaseUrl: config.publicBaseUrl });
-      });
-      void toNodeHandler(mcpHandler)(req, res, req.body);
+      await serveReaderKey(req, res, library, bearer);
       return;
     }
 
@@ -385,6 +422,16 @@ export function createApp(input: {
           libraryId,
           app.locals.accountGuard as AccountGuard | undefined,
         );
+        if ("error" in scoped && scoped.error === SIGNED_OUT_MCP) {
+          // 401 with a challenge, so the MCP client starts a fresh sign-in.
+          res.setHeader(
+            "WWW-Authenticate",
+            `Bearer error="invalid_token", error_description="Sign-in ended; reconnect", resource_metadata="${getOAuthProtectedResourceMetadataUrl(resourceUrl)}"`,
+          );
+          res.status(401);
+          sendJson({ error: "invalid_token", error_description: SIGNED_OUT_MCP });
+          return;
+        }
         if ("error" in scoped) {
           const status =
             scoped.error === FORBIDDEN_LIBRARY || scoped.error === ACCOUNT_UNAVAILABLE ? 403 : 404;

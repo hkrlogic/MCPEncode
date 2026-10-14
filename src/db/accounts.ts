@@ -7,6 +7,7 @@ import {
   type StoredAccount,
 } from "../auth/accounts.ts";
 import { hashPassword, normalizeUsername, passwordError } from "../auth/passwords.ts";
+import { removeUnusedDefaultLibrary } from "./libraries.ts";
 import { getRow } from "./query-helpers.ts";
 import type { Database } from "./types.ts";
 
@@ -100,7 +101,7 @@ export function accountStore(db: Database): AccountStore {
       const username = normalizeUsername(input.username);
       const passwordHash = await hashPassword(input.password);
       // Hold a transaction lock so two browsers cannot both become the first account.
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         await tx.get("SELECT pg_advisory_xact_lock(hashtext('mcpencode-accounts'))");
         const existing = await getRow<{ id: string }>(tx, "SELECT id FROM accounts LIMIT 1");
         if (existing) return { ok: false as const, message: "An account already exists. Sign in." };
@@ -117,6 +118,8 @@ export function accountStore(db: Database): AccountStore {
           account: { id, username, role: "sa" as const, disabled: false },
         };
       });
+      if (result.ok) await removeUnusedDefaultLibrary(db).catch(() => undefined);
+      return result;
     },
     async list() {
       const rows = (await db.all(

@@ -10,7 +10,7 @@ MCPEncode keeps the facts your IT team's AI agents rely on (help desk runbooks, 
 - **Freshness.** Items get a review-by date (90 days for Policy and Procedure by default). Agents relay a warning when an item is past review, and **strict mode** refuses stale items and points to the owner. A **Review queue** lists what is due, with one-click **Still accurate**.
 - **Aliases.** "We got phished" finds the Incident Response runbook. Agents can suggest labels and aliases with `suggest_labels`; a person approves them like any other edit.
 
-**Status:** Early (0.1). Issues welcome; please open one before a large pull request.
+**Status:** Early (0.2). Issues welcome; please open one before a large pull request.
 
 ## Quick start
 

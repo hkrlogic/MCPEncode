@@ -53,11 +53,13 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 | `list_items` | Reader+ | Look up by question (`q`) or browse. One clear match returns the full item. Returns the published version; Publisher connections also get `status` and `has_pending_changes`. |
 | `open_item` | Reader+ | Full item by id (published version). Publishers may pass `version: "draft"` to read a Pending edit. |
 | `search_shelf` | Reader+ | Published summaries across the library's shelf |
-| `create_item` / `update_item` | Publisher | Save: Pending (Review Lock) or published (Review Unlock) |
+| `create_item` | Publisher | Save: Pending (Review Lock) or published (Review Unlock). With an `entity_key` that already exists in the library, updates that item instead (upsert). |
+| `update_item` | Publisher | Change an item. Fields you leave out keep their value; `replace: true` replaces the whole item (omitted optional fields are cleared). Unknown fields are refused. |
 | `suggest_labels` | Publisher | Add or remove labels and aliases on a **published** item without touching its text: Pending for a person to approve (Review Lock) or live at once (Review Unlock) |
-| `delete_item` | Publisher | Remove an item |
-| `create_library` / `propose_table` / `propose_field` | Publisher | Design a library; a person approves the schema |
-| `list_audit` | Publisher, Site admin | Who called which tool in this library |
+| `delete_item` | Site admin | Hard-delete an item (Publishers archive instead) |
+| `create_library` | Site admin | Create a library, optionally with a proposed table |
+| `propose_table` / `propose_field` | Publisher | Design a library; a person approves the schema. After approval the tools pick up the new field on the next request; there is no need to reconnect. |
+| `list_audit` | Publisher, Site admin | Who called which tool in this library; each row has `actor` (the username) |
 
 **How `list_items q=` searches.**
 1. Every word must match (name, labels and aliases, summary, then body; the full-text index applies English stemming). Aliases score exactly like labels.
@@ -102,7 +104,9 @@ There is **no publish, approve, write-mode or revert tool.** Those stay with peo
 
 - **Connect link** (`/libraries/<id>/mcp/<token>`): paste into the MCP client. The client signs in (built-in sign-in: it registers itself, the person enters a password and clicks **Allow** on the consent page).
 - **Header form**: `/libraries/<id>/mcp` with `X-Library-Token: <token>`, which keeps the token out of URLs and logs.
-- **Reader key**: `Authorization: Bearer <key>` for a shared read-only agent, no sign-in.
+- **Reader key**: `Authorization: Bearer <key>` on `/libraries/<id>/mcp` (no Connect token needed) for a shared read-only agent, no sign-in. Rotating the Connect link does not affect the Reader key; rotate the Reader key itself if it leaks.
+
+**Audit log page.** `/audit` (Settings → Audit log) is a read-only, paged list of events: the Site admin sees every event, a Publisher sees the libraries they publish (`?library=<id>` for one).
 
 Rotating the Connect link (**Connect → Rotate**) invalidates the old token in both forms; Access grants stay.
 

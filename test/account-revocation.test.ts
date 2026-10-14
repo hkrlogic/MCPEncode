@@ -47,8 +47,8 @@ test("the guard refuses a disabled account and one that does not exist", async (
   const { accounts, ada } = await twoSas();
   const guard = createAccountGuard(accounts);
   await accounts.setDisabled(ada.id, true);
-  assert.deepEqual(await guard(ada.id), { allowed: false });
-  assert.deepEqual(await guard("no-such-account"), { allowed: false });
+  assert.deepEqual(await guard(ada.id), { allowed: false, reason: "disabled" });
+  assert.deepEqual(await guard("no-such-account"), { allowed: false, reason: "disabled" });
 });
 
 function requestWithSession(token: string, guard?: ReturnType<typeof createAccountGuard>): Request {

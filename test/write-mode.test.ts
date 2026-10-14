@@ -164,10 +164,11 @@ test("direct write tool descriptions teach search-then-upsert handoff", () => {
   assert.match(create, /entity_key/);
   assert.match(create, /stable name/);
   assert.match(create, /one-line summary/);
-  assert.match(create, /Prefer update_item/);
+  assert.match(create, /already exists, it is updated instead/);
   const update = mcpWriteToolDescription(schema, "update", "direct");
   assert.match(update, /prefer entity_key/);
-  assert.match(update, /next agent can scoop/);
+  assert.match(update, /Fields you leave out keep their current value/);
+  assert.match(update, /replace: true/);
   const reviewed = mcpWriteToolDescription(schema, "create", "reviewed");
   assert.match(reviewed, /Pending/);
   assert.match(reviewed, /entity_key/);

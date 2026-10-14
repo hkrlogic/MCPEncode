@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Breaking: Compose uses Postgres 18 on a new volume
+
+- `docker-compose.yml` runs `postgres:18` with the volume mounted at `/var/lib/postgresql` (Postgres 18 refused the old `/var/lib/postgresql/data` mount, so a fresh `docker compose up` failed). The volume is now **`postgres18_data`**.
+- **Existing Compose installs:** your data stays in the old `postgres_data` volume (Postgres 16) and is **not** used by Postgres 18; after upgrading the app would start empty. Dump and restore it, or pin `postgres:16` with an override. Steps: [docs/deploy.md → Postgres 16 to 18](docs/deploy.md#postgres-16-to-18-compose).
+
+### Breaking: `update_item` keeps fields you leave out
+
+- `update_item` used to replace the whole item, so a call without `labels` cleared the labels. Now omitted fields keep their current value. Pass `replace: true` for the old behaviour (omitted optional fields are cleared). Send an empty string or `[]` to clear one field.
+
+### Fixed and changed after the deep test
+
+- Items tab lists live items that have a pending edit (tagged **Edit pending**); the save message after editing a published item now says the published version stays live.
+- After a web sign-out (or password reset) the MCP link answers **401** with `WWW-Authenticate` and "Your sign-in ended; reconnect…". A disabled account still gets its own message.
+- Usernames instead of account ids on Settings → Apps, field/table proposals, and `list_audit` (new `actor` field).
+- New read-only **Audit log** page (`/audit`), 50 per page. Site admin: every event; Publisher: their libraries.
+- Reader key works on `/libraries/<id>/mcp` alone; the guidance no longer says to rotate Connect, and Readers do not see rotate advice.
+- Web forms show plain-language validation errors (MCP wording unchanged). "Kiosk" removed from all text.
+- `create_item` with an existing `entity_key` updates that item. Unknown fields are refused with a clear error.
+- A fresh install no longer has an empty **Main** library (removed when the first account is created, only if unused). Existing installs keep it. Orphan libraries are listed once, under Unclaimed.
+- Item bodies no longer repeat the summary; empty optional fields are left out.
+- Flash messages after deleting an item or library, granting or removing access. A deleted library returns 404, not 403.
+- Settings → Apps lists a revoked host as **Revoked** (migration `023_callback_host_revoked.sql`), not Denied.
+- Token responses report the real scope (a library Publisher gets `mcpencode:edit`).
+- Sign-in for an account with no access to the library is refused before the consent page, in plain words.
+- Favicon; "1 item" singular; error pages show who is signed in.
+- Not done: `notifications/tools/list_changed` cannot be pushed (each MCP request builds a fresh stateless server); the field-approval wording now says the next request picks up the new field.
+
 ### Added: freshness: review-by dates, stale warnings, strict mode, review queue ([#37](https://github.com/hkrlogic/MCPEncode/issues/37))
 
 - **Review-by dates.**

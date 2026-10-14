@@ -1,4 +1,6 @@
 /** Library list/create/delete, access list, and add-item under a library. */
+import { actorNames } from "../../db/actors.ts";
+import { humanItemMessage } from "../../items/library-schema.ts";
 import type express from "express";
 import { accessForLibrary, can, isSa, type Access, type LibraryRole } from "../../auth/rbac.ts";
 import { accountStore } from "../../db/accounts.ts";
@@ -112,7 +114,7 @@ function libraryTab(value: unknown): "items" | "pending" | "archives" | "access"
 /** Fixed copy for ?table=. Query text is never echoed. */
 function tableDecisionNotice(flag: unknown): string | undefined {
   if (flag === "approved") {
-    return "Table approved. Reconnect this library’s MCP link so agents see the new columns.";
+    return "Table approved. Agents get the new columns the next time their client lists tools; a client that caches its tool list may need to reconnect.";
   }
   if (flag === "rejected") return "Table proposal rejected. The library is unchanged.";
   if (flag === "blocked") {
@@ -126,7 +128,7 @@ function tableDecisionNotice(flag: unknown): string | undefined {
 /** Fixed copy for ?field=. Query text is never echoed. */
 function fieldDecisionNotice(flag: unknown): string | undefined {
   if (flag === "approved") {
-    return "Field approved. Reconnect this library’s MCP link so agents see the new field.";
+    return "Field approved. Agents get the new field the next time their client lists tools; a client that caches its tool list may need to reconnect.";
   }
   if (flag === "rejected") return "Field proposal rejected. The library is unchanged.";
   if (flag === "missing") return "No field is waiting for approval.";
@@ -198,6 +200,19 @@ function cancelNotice(canceledRaw: unknown, archivedRaw: unknown): string | unde
     return `${head} They were never published, so they are in Archives.`;
   }
   return `${head} New items are in Archives. The others are back to the last published version.`;
+}
+
+/** Fixed copy for ?access=. Query text is never echoed. */
+function accessNotice(flag: unknown): string | undefined {
+  if (flag === "granted") return "Access granted. They can open this library the next time they load a page.";
+  if (flag === "revoked") return "Access removed. That person can no longer open this library.";
+  return undefined;
+}
+
+/** Fixed copy for ?deleted=. Query text is never echoed. */
+function deletedNotice(flag: unknown): string | undefined {
+  if (flag === "item") return "Item deleted.";
+  return undefined;
 }
 
 /** Fixed copy for ?copied= — only fixed flags, never echo names from the query. */
@@ -294,6 +309,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         shelves: shell.shelves,
         username: shell.username,
         roleLabel: shell.roleLabel,
+        notice: req.query.deleted === "library" ? "Library deleted." : undefined,
       }),
     );
   });
@@ -463,7 +479,14 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
     }
     const ctxLib = await libraryContext(db, req.params.id, access);
     if (!ctxLib) {
-      res.status(403).send(errorPage("You do not have access to this library."));
+      // A library that is gone (deleted) is a 404 for anyone signed in; ids are
+      // random UUIDs, so this does not help guess other libraries.
+      const exists = await getLibrary(db, String(req.params.id)).catch(() => undefined);
+      if (!exists) {
+        res.status(404).send(errorPage("This library does not exist. It may have been deleted.", access));
+        return;
+      }
+      res.status(403).send(errorPage("You do not have access to this library.", access));
       return;
     }
     const shell = await publisherShell(db, access);
@@ -494,7 +517,9 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       readerKeyNotice(req.query["reader-key"]) ??
       renameNotice(req.query.renamed) ??
       shelfMoveNotice(req.query.shelf) ??
-      copyNotice(req.query.copied);
+      copyNotice(req.query.copied) ??
+      accessNotice(req.query.access) ??
+      deletedNotice(req.query.deleted);
     const waiting =
       ctxLib.library.tableProposal != null || ctxLib.library.tableProposalUnreadable;
     const itemCount =
@@ -554,11 +579,31 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         res.setHeader("Cache-Control", "no-store");
       }
     }
+    // Proposals store the proposer's account id; show the username instead.
+    const proposers = await actorNames(db, [
+      ctxLib.library.fieldProposal?.proposedBy,
+      ctxLib.library.tableProposal?.proposedBy,
+    ]);
+    const library = {
+      ...ctxLib.library,
+      fieldProposal: ctxLib.library.fieldProposal
+        ? {
+            ...ctxLib.library.fieldProposal,
+            proposedBy: proposers.get(ctxLib.library.fieldProposal.proposedBy) ?? ctxLib.library.fieldProposal.proposedBy,
+          }
+        : ctxLib.library.fieldProposal,
+      tableProposal: ctxLib.library.tableProposal
+        ? {
+            ...ctxLib.library.tableProposal,
+            proposedBy: proposers.get(ctxLib.library.tableProposal.proposedBy) ?? ctxLib.library.tableProposal.proposedBy,
+          }
+        : ctxLib.library.tableProposal,
+    };
     res.send(
       libraryPage({
         access: ctxLib.libraryAccess,
         csrf: access.csrf,
-        library: ctxLib.library,
+        library,
         items,
         q,
         tab,
@@ -706,7 +751,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         libraryId: ctxLib.library.id,
         detail: `${ctxLib.library.id}:${subject}:${role}`,
       });
-      res.redirect(`/libraries/${ctxLib.library.id}?tab=access`);
+      res.redirect(`/libraries/${ctxLib.library.id}?tab=access&access=granted`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not grant access";
       const items = await listLibraryItems(db, ctxLib.library, { limit: 50 }, false);
@@ -756,7 +801,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         libraryId: ctxLib.library.id,
         detail: `${ctxLib.library.id}:${subject}`,
       });
-      res.redirect(`/libraries/${ctxLib.library.id}?tab=access`);
+      res.redirect(`/libraries/${ctxLib.library.id}?tab=access&access=revoked`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not revoke access";
       const items = await listLibraryItems(db, ctxLib.library, { limit: 50 }, false);
@@ -990,7 +1035,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
         libraryId: ctxLib.library.id,
         detail: ctxLib.library.id,
       });
-      res.redirect("/");
+      res.redirect(removed ? "/?deleted=library" : "/");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not delete this library";
       const items = await listLibraryItems(db, ctxLib.library, { limit: 50 }, false);
@@ -1199,7 +1244,7 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
           access: ctxLib.libraryAccess,
           csrf: access.csrf,
           library,
-          error: result.message,
+          error: humanItemMessage(result.message, library.schema),
           shell: {
             libraries: shell.shellLibraries,
             orphans: shell.shellOrphans,

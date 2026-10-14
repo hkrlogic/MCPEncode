@@ -1,4 +1,5 @@
 /** Cookie names and form/session helpers for HTTP routes. */
+import { rememberViewer } from "./request-context.ts";
 import { timingSafeEqual } from "node:crypto";
 import type { Request, Response } from "express";
 import type { AppConfig } from "../config.ts";
@@ -85,10 +86,12 @@ export async function sessionAccess(
     if (!check.allowed) return undefined;
     role = check.role;
   }
-  return {
+  const access = {
     ...accessFromIdentity({ sub: session.sub, clientId: session.clientId, role }),
     csrf: session.csrf,
   };
+  rememberViewer(access);
+  return access;
 }
 
 /** Constant-time compare of two secrets; an empty value never matches. */

@@ -1,6 +1,7 @@
 /** Settings → Apps: SA approves, denies or revokes hosted apps' callback hosts. */
 import type express from "express";
 import { can } from "../../auth/rbac.ts";
+import { actorNames } from "../../db/actors.ts";
 import { appsPage } from "../pages/apps.ts";
 import { errorPage } from "../pages/login.ts";
 import { formString, requireCsrf, sessionAccess } from "../helpers.ts";
@@ -27,6 +28,11 @@ export function registerCallbackHostRoutes(app: express.Express, ctx: AppRouteCo
       return;
     }
     const listed = ctx.callbackHosts ? await ctx.callbackHosts.list() : { hosts: [], envHosts: [] };
+    const names = await actorNames(db, listed.hosts.map((row) => row.decidedBy));
+    const hosts = listed.hosts.map((row) => ({
+      ...row,
+      decidedBy: row.decidedBy ? (names.get(row.decidedBy) ?? row.decidedBy) : row.decidedBy,
+    }));
     const flag = typeof req.query.notice === "string" ? req.query.notice : "";
     res.setHeader("Cache-Control", "no-store");
     res.send(
@@ -34,7 +40,7 @@ export function registerCallbackHostRoutes(app: express.Express, ctx: AppRouteCo
         access,
         csrf: access.csrf,
         shell: await loadAppShell(db, access),
-        hosts: listed.hosts,
+        hosts,
         envHosts: listed.envHosts,
         local: Boolean(ctx.callbackHosts),
         notice: NOTICES[flag],

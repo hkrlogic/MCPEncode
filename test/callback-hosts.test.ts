@@ -388,7 +388,7 @@ test("Settings → Apps: SA approves, denies and revokes with CSRF; others canno
       const token = await exchange(s.base, clientId, code ?? "");
       assert.ok(token.json.refresh_token);
       assert.equal((await decide(sa, { csrf, host, decision: "revoke" })).status, 302);
-      assert.equal((await store.findHost(host))?.status, "denied");
+      assert.equal((await store.findHost(host))?.status, "revoked"); // listed as Revoked; refuses like Denied
       const refreshed = await fetch(`${s.base}/id/token`, {
         method: "POST",
         headers: { "content-type": "application/x-www-form-urlencoded" },

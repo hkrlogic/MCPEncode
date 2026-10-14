@@ -1,10 +1,14 @@
 /** Error page for sign-in and publisher failures. */
+import { currentViewer } from "../request-context.ts";
+import type { Access } from "../../auth/rbac.ts";
 import { esc, layout } from "./layout.ts";
 
-export function errorPage(message: string): string {
+/** The signed-in header is shown when the request is signed in (see request-context). */
+export function errorPage(message: string, access?: Access): string {
   return layout({
     title: "Error · MCPEncode",
-    body: `<p class="error">${esc(message)}</p><p><a href="/">Library</a></p>`,
+    access: access ?? currentViewer(),
+    body: `<p class="error">${esc(message)}</p><p><a href="/">Libraries</a></p>`,
   });
 }
 

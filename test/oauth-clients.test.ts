@@ -415,8 +415,8 @@ test("signing out everywhere rejects the old refresh token and access token", as
     assert.equal(denied.status, 400);
     assert.equal(denied.json.error, "invalid_grant");
     // The 15-minute access token is refused at once too.
-    assert.deepEqual(await guard(ada.id, payload.iat), { allowed: false });
-    assert.deepEqual(await guard(ada.id, undefined), { allowed: false });
+    assert.deepEqual(await guard(ada.id, payload.iat), { allowed: false, reason: "signed_out" });
+    assert.deepEqual(await guard(ada.id, undefined), { allowed: false, reason: "signed_out" });
     // A sign-in after that works.
     await new Promise((resolve) => setTimeout(resolve, 1100));
     const again = await fullSignIn(s.base, client.client_id);

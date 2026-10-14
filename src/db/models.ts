@@ -128,6 +128,8 @@ export type ItemSummary = {
 export type AuditRow = {
   id: string;
   actor_sub: string;
+  /** Username of the actor (built-in accounts), "Reader key", or the subject. */
+  actor: string;
   tool: string;
   success: boolean;
   detail: string;

@@ -351,9 +351,9 @@ export function editPage(input: {
     input.library.writeMode === "direct"
       ? `<p class="notice" role="status">This library is ${esc(writeModeLabel("direct"))} — saving makes this item live for readers and agents.</p>`
       : input.item.status === "published"
-        ? `<p class="notice" role="status">Saving moves this item to Pending and hides it from the kiosk until you Publish again.</p>`
+        ? `<p class="notice" role="status">Saving puts this edit in Pending. Readers and agents keep the published version until you Publish.</p>`
         : input.item.status === "draft"
-          ? `<p class="hint">This item is Pending. Publish from the item page when it is ready for the kiosk.</p>`
+          ? `<p class="hint">This item is Pending. Publish from the item page when readers and agents should see it.</p>`
           : `<p class="hint">This item is Archived. Restore it before publishing.</p>`;
   const schemaForm = usesSchemaForm(input.library);
   return layout({
