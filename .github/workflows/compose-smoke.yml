@@ -1,0 +1,44 @@
+name: Compose smoke test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env (non-interactive)
+        run: sh scripts/init-env.sh
+
+      - name: Build and start
+        run: docker compose up -d --build
+
+      - name: Wait for /healthz
+        run: |
+          deadline=$((SECONDS + 180))
+          until body=$(curl -fsS http://localhost:3000/healthz 2>/dev/null) && echo "$body" | grep -q '"status":"ok"'; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Timed out waiting for /healthz (last: ${body:-none})"
+              exit 1
+            fi
+            sleep 3
+          done
+          echo "Healthy: $body"
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
