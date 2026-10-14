@@ -8,10 +8,14 @@ import {
   itemInputSchema,
   excerptOf,
   normalizeEntityKey,
+  normalizeLabels,
   type ItemInput,
 } from "./schema.ts";
 import { formatTableItem } from "./table-proposal.ts";
+import { FIELD_TYPE_MAX, fieldMax } from "./field-limits.ts";
 import { type LibraryTemplate, isLibraryTemplate } from "./templates.ts";
+
+export { FIELD_TYPE_MAX, fieldMax };
 
 export type SchemaFieldType = "text" | "date" | "version" | "longtext" | "markdown";
 
@@ -24,6 +28,8 @@ export type SchemaFieldDef = {
   kind: "control" | "body";
   max?: number;
 };
+
+const VERSION_PATTERN = /^\d+(\.\d+){0,2}$/;
 
 /** Stored on libraries.schema (JSONB). Starter id kept for UI / MCP copy. */
 export type LibrarySchema = {
@@ -292,7 +298,7 @@ export function schemaAgentBlurb(schema: LibrarySchema): string {
  * Built from the stored schema so clients do not see other starters' fields.
  */
 function mcpZodForField(field: SchemaFieldDef): z.ZodType {
-  const max = field.max ?? (field.type === "markdown" ? 50_000 : field.type === "text" ? 200 : 8_000);
+  const max = fieldMax(field);
   let description = field.label;
   if (field.type === "date") description = `${field.label} (YYYY-MM-DD)`;
   if (field.type === "version") description = `${field.label} (for example 1.0)`;
@@ -420,7 +426,7 @@ function isoDate(label: string) {
 }
 
 function zodForField(field: SchemaFieldDef): z.ZodType<string> {
-  const max = field.max ?? (field.type === "markdown" ? 50_000 : 8_000);
+  const max = fieldMax(field);
   if (field.type === "date") {
     return field.required ? isoDate(field.label) : isoDate(field.label).or(z.literal(""));
   }
@@ -430,8 +436,15 @@ function zodForField(field: SchemaFieldDef): z.ZodType<string> {
       .trim()
       .min(1, `${field.label} is required`)
       .max(max, `${field.label} must be ${max} characters or fewer`)
-      .regex(/^\d+(\.\d+){0,2}$/, `${field.label} must look like 1.0`);
-    return field.required ? version : z.string().trim().max(max).default("");
+      .regex(VERSION_PATTERN, `${field.label} must look like 1.0`);
+    if (field.required) return version;
+    // Optional, but a value that is given must still look like a version.
+    return z
+      .string()
+      .trim()
+      .max(max, `${field.label} must be ${max} characters or fewer`)
+      .refine((value) => value === "" || VERSION_PATTERN.test(value), `${field.label} must look like 1.0`)
+      .default("");
   }
   if (field.required) {
     return z
@@ -443,7 +456,7 @@ function zodForField(field: SchemaFieldDef): z.ZodType<string> {
   return z.string().trim().max(max).default("");
 }
 
-function unexpectedFields(schema: LibrarySchema, input: ItemWriteInput): string | undefined {
+function unexpectedFields(schema: LibrarySchema, input: ItemWriteInput): string[] {
   const allowed = new Set<string>([...META_KEYS, ...schema.fields.map((field) => field.key)]);
   // Policy may still accept legacy "rule" as an alias for "policy".
   if (schema.fields.some((field) => field.key === "policy")) allowed.add("rule");
@@ -463,8 +476,31 @@ function unexpectedFields(schema: LibrarySchema, input: ItemWriteInput): string 
   ) {
     extras.push("body");
   }
-  if (extras.length === 0) return undefined;
-  return `Unknown field(s): ${[...new Set(extras)].join(", ")}. ${schemaFieldMessage(schema)}`;
+  const issues: string[] = [];
+  if (extras.length > 0) issues.push(`Unknown field(s): ${[...new Set(extras)].join(", ")}.`);
+  return issues;
+}
+
+/**
+ * Agent writes only: plain General derives the summary from the body, so a summary
+ * sent over MCP used to be dropped silently. Refuse it instead. (Internal callers
+ * may still pass one; it is ignored there as before.)
+ */
+export function plainGeneralSummaryIssue(schema: LibrarySchema, input: ItemWriteInput): string | undefined {
+  if (!isPlainGeneral(schema)) return undefined;
+  if (typeof input.summary !== "string" || !input.summary.trim()) return undefined;
+  return `summary is not a field in this library: it is derived from the body. Put the text in body instead. ${schemaFieldMessage(schema)}`;
+}
+
+/** One readable line per zod issue; generic zod wording gets the field key in front. */
+function issueLines(issues: readonly { message: string; path: readonly PropertyKey[] }[]): string[] {
+  return issues.map((issue) => {
+    const key = issue.path.map(String).join(".");
+    const message = issue.message.trim();
+    const generic = /^(Invalid|Too (small|big)|Expected)/.test(message);
+    const line = generic && key ? `${key}: ${message}` : message;
+    return /[.!?]$/.test(line) ? line : `${line}.`;
+  });
 }
 
 function readField(input: ItemWriteInput, key: string): string {
@@ -487,20 +523,23 @@ export function itemForLibrarySchema(
   const schema =
     typeof schemaOrStarter === "string" ? schemaForStarter(schemaOrStarter) : schemaOrStarter;
 
-  const unexpected = unexpectedFields(schema, input);
-  if (unexpected) return { ok: false, message: unexpected };
+  // Every problem is collected and returned together, not just the first.
+  const issues = unexpectedFields(schema, input);
+  const failed = (more: string[]) => ({
+    ok: false as const,
+    message: `${[...issues, ...more].join(" ")} ${schemaFieldMessage(schema)}`.trim(),
+  });
 
   // Plain Documents: markdown body only (no approved add-on fields yet).
   if (isPlainGeneral(schema)) {
     const parsed = itemInputSchema.safeParse({
       name: input.name,
       body: input.body ?? "",
-      labels: input.labels ?? [],
+      labels: normalizeLabels(input.labels),
       entity_key: input.entity_key,
     });
-    if (!parsed.success) {
-      return { ok: false, message: parsed.error.issues[0]?.message ?? "Invalid item" };
-    }
+    if (!parsed.success) return failed(issueLines(parsed.error.issues));
+    if (issues.length > 0) return failed([]);
     return attachEntityKey({ ...parsed.data, details: null }, input);
   }
 
@@ -522,7 +561,7 @@ export function itemForLibrarySchema(
   const payload: Record<string, unknown> = {
     name: input.name,
     summary: input.summary ?? "",
-    labels: input.labels ?? [],
+    labels: normalizeLabels(input.labels),
   };
   for (const field of schema.fields) {
     payload[field.key] = readField(input, field.key);
@@ -530,17 +569,26 @@ export function itemForLibrarySchema(
 
   const parsed = z.object(shape).safeParse(payload);
   if (!parsed.success) {
-    const detail = parsed.error.issues[0]?.message ?? "Invalid item";
-    return { ok: false, message: `${schemaFieldMessage(schema)} ${detail}` };
+    const lines = issueLines(parsed.error.issues);
+    const raw = payload as Record<string, unknown>;
+    if (
+      schema.starter === "policy" &&
+      typeof raw.review_date === "string" &&
+      typeof raw.effective_date === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(raw.review_date.trim()) &&
+      /^\d{4}-\d{2}-\d{2}$/.test(raw.effective_date.trim()) &&
+      raw.review_date.trim() < raw.effective_date.trim()
+    ) {
+      lines.push("Review date must be on or after the effective date.");
+    }
+    return failed(lines);
   }
+  if (issues.length > 0) return failed([]);
 
   if (schema.starter === "policy") {
     const data = parsed.data as Record<string, string> & { name: string; summary: string; labels: string[] };
     if (data.review_date && data.effective_date && data.review_date < data.effective_date) {
-      return {
-        ok: false,
-        message: `${schemaFieldMessage(schema)} Review date must be on or after the effective date`,
-      };
+      return failed(["Review date must be on or after the effective date."]);
     }
     const details = Object.fromEntries(
       schema.fields.map((field) => [field.key, data[field.key] ?? ""]),
@@ -606,7 +654,7 @@ export function itemForLibrarySchema(
     );
   }
 
-  return { ok: false, message: schemaFieldMessage(schema) };
+  return failed([]);
 }
 
 /**
@@ -618,10 +666,9 @@ export function humanItemMessage(message: string, schema: LibrarySchema): string
   if (/entity_key already exists|duplicate key value/i.test(message)) {
     return "Another item in this library already uses this entity key. Edit that item instead, or use a different key.";
   }
-  const unknown = /^Unknown field\(s\): ([^.]+)\./.exec(message);
-  if (unknown) return `This library has no field called ${unknown[1]}.`;
   const prefix = schemaFieldMessage(schema);
-  let text = message.startsWith(prefix) ? message.slice(prefix.length).trim() : message;
+  let text = message.split(prefix).join(" ").replace(/\s+/g, " ").trim();
+  text = text.replace(/Unknown field\(s\): ([^.]+)\./, (_m, keys: string) => `This library has no field called ${keys}.`);
   text = text.replace(/\s*Do not invent fields\.?/g, "").trim();
   const label = (key: string) =>
     schema.fields.find((field) => field.key === key)?.label ?? key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " ");

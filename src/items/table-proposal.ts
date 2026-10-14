@@ -2,6 +2,7 @@
  * A table proposed over MCP. It is not the library schema until a publisher
  * approves it in the portal. Agents cannot approve or reject.
  */
+import { FIELD_TYPE_MAX } from "./field-limits.ts";
 import { z } from "zod/v4";
 import type { LibrarySchema, SchemaFieldDef } from "./library-schema.ts";
 
@@ -207,8 +208,8 @@ export function schemaFromProposal(proposal: TableProposal): LibrarySchema {
       required: column.required,
       kind: column.type === "longtext" ? "body" : "control",
     };
-    if (column.type === "text") field.max = 200;
-    if (column.type === "longtext") field.max = 8_000;
+    if (column.type === "text") field.max = FIELD_TYPE_MAX.text;
+    if (column.type === "longtext") field.max = FIELD_TYPE_MAX.longtext;
     return field;
   });
   return { starter: "table", tableName: proposal.name, fields };

@@ -61,6 +61,14 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 | `propose_table` / `propose_field` | Publisher | Design a library; a person approves the schema. After approval the tools pick up the new field on the next request; there is no need to reconnect. |
 | `list_audit` | Publisher, Site admin | Who called which tool in this library; each row has `actor` (the username) |
 
+**How item writes are checked.** `create_item`, `update_item` and the web form go through the same check against the library's stored schema:
+- **Fields:** keys that are not fields of this library are refused (`Unknown field(s): …`). Every value must be a string; `labels` is an array of strings. Numbers, booleans, objects and mixed arrays are refused with the key names, not dropped. `null` counts as not sent.
+- **Required, dates, versions:** required fields must be non-empty; dates are `YYYY-MM-DD` and a real day; versions look like `1`, `1.0` or `1.0.2`, also when the field is optional and a value is given.
+- **Lengths:** name 200, summary 160, labels 40 each and at most 20. A field without its own limit uses one default per type (text 200, longtext 8,000, markdown 50,000), the same in the tool's argument list and in the save check.
+- **Labels** are stored trimmed, lower case and without duplicates, whether they come from an agent, the form or `suggest_labels`. Labels are free-form.
+- **Summary** on a plain General library comes from the body; an agent that sends `summary` there is told to put the text in `body`.
+- **Errors** list every problem in one message (with the library's field list), so an agent can fix them in one retry.
+
 **How `list_items q=` searches.**
 1. Every word must match (name, labels and aliases, summary, then body; the full-text index applies English stemming). Aliases score exactly like labels.
 2. If nothing matches every word, any word may match. A clear winner that matched on its name or labels, and on most of the words, is returned as the one answer. Weaker candidates come back as **"Did you mean"** suggestions, which the agent must open and check before citing.

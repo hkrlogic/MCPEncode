@@ -41,7 +41,7 @@ import { proposeFieldInputSchema } from "../items/field-proposal.ts";
 import { normalizeTableProposal, proposeTableInputSchema } from "../items/table-proposal.ts";
 import { itemForLibrary } from "../items/templates.ts";
 import { bodyWithoutSummary } from "../markdown/table.ts";
-import { isPlainGeneral, summaryIsDerived } from "../items/library-schema.ts";
+import { isPlainGeneral, plainGeneralSummaryIssue, summaryIsDerived } from "../items/library-schema.ts";
 import { parseItemFieldValues, parseTableValues, valuesForSchemaEdit } from "../items/table-proposal.ts";
 import { APP_VERSION } from "../version.ts";
 import { libraryDesignGuide } from "./library-design.ts";
@@ -161,13 +161,14 @@ function ok(text: string) {
 export function storedItemWrite(row: ItemRow, schema: LibrarySchema): ItemWriteInput {
   const write: ItemWriteInput = {
     name: row.name,
-    summary: row.summary ?? "",
     labels: [...(row.labels ?? [])],
   };
   if (isPlainGeneral(schema)) {
+    // No summary field here: it is derived from the body.
     write.body = row.body ?? "";
     return write;
   }
+  write.summary = row.summary ?? "";
   const values =
     parseItemFieldValues(row.details) ?? parseTableValues(row.details) ?? valuesForSchemaEdit(row, schema);
   for (const field of schema.fields) {
@@ -177,13 +178,29 @@ export function storedItemWrite(row: ItemRow, schema: LibrarySchema): ItemWriteI
   return write;
 }
 
-function asItemWrite(input: Record<string, unknown>): ItemWriteInput {
+/**
+ * Tool payload as item write input. Values must be strings (or a string array);
+ * anything else is refused with the key names instead of being dropped silently.
+ * null and undefined mean "not sent".
+ */
+export function asItemWrite(
+  input: Record<string, unknown>,
+): { ok: true; write: ItemWriteInput } | { ok: false; message: string } {
   const write: ItemWriteInput = {};
+  const bad: string[] = [];
   for (const [key, value] of Object.entries(input)) {
+    if (value === undefined || value === null) continue;
     if (typeof value === "string") write[key] = value;
     else if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) write[key] = value;
+    else bad.push(key);
   }
-  return write;
+  if (bad.length > 0) {
+    return {
+      ok: false,
+      message: `Unsupported value for field(s): ${bad.join(", ")}. Every field takes a string (labels: an array of strings). Numbers, booleans, objects and mixed arrays are refused, not converted.`,
+    };
+  }
+  return { ok: true, write };
 }
 
 export type LibraryMcpContext = {
@@ -784,7 +801,11 @@ export function buildMcpServer(
       };
       const libraryRow = await getLibrary(db, library.libraryId);
       if (!libraryRow) return deny("Library not found.");
-      const given = asItemWrite(input);
+      const parsedInput = asItemWrite(input);
+      if (!parsedInput.ok) return fail(parsedInput.message);
+      const given = parsedInput.write;
+      const summaryIssue = plainGeneralSummaryIssue(libraryRow.schema, given);
+      if (summaryIssue) return fail(summaryIssue);
       const stored = storedItemWrite(existing, libraryRow.schema);
       // A derived summary follows the body: re-derive it unless one is given.
       if (summaryIsDerived(libraryRow.schema)) delete stored.summary;
@@ -831,7 +852,15 @@ export function buildMcpServer(
             head: `Updated the existing item with entity_key ${keyed.entity_key} (id ${keyed.id}) instead of adding a duplicate.`,
           });
         }
-        const result = await addDraftItem(db, library.libraryId, asItemWrite(input), access.sub);
+        const parsedInput = asItemWrite(input as Record<string, unknown>);
+        const current = parsedInput.ok ? await getLibrary(db, library.libraryId) : undefined;
+        const summaryIssue =
+          parsedInput.ok && current ? plainGeneralSummaryIssue(current.schema, parsedInput.write) : undefined;
+        const result = !parsedInput.ok
+          ? parsedInput
+          : summaryIssue
+            ? { ok: false as const, message: summaryIssue }
+            : await addDraftItem(db, library.libraryId, parsedInput.write, access.sub);
         if (!result.ok) {
           await writeAudit(db, {
             actorSub: access.sub,
