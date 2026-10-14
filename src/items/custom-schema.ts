@@ -3,6 +3,7 @@
  * Name, labels, and summary stay on every item. These fields are the rest.
  * Creating the library locks them. Later adds are still propose → Approve.
  */
+import { FIELD_TYPE_MAX } from "./field-limits.ts";
 import {
   FIELD_PROPOSAL_TYPES,
   MAX_FIELD_LABEL,
@@ -34,8 +35,8 @@ function fieldDef(label: string, key: string, type: FieldProposalType, required:
     required,
     kind: type === "longtext" ? "body" : "control",
   };
-  if (type === "text") field.max = 200;
-  if (type === "longtext") field.max = 8_000;
+  if (type === "text") field.max = FIELD_TYPE_MAX.text;
+  if (type === "longtext") field.max = FIELD_TYPE_MAX.longtext;
   return field;
 }
 

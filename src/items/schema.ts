@@ -113,6 +113,23 @@ export const createLibraryInputSchema = z.object({
 
 export type CreateLibraryInput = z.infer<typeof createLibraryInputSchema>;
 
+/**
+ * Labels as stored: trimmed, lower case, unique, empty entries dropped. Same rules
+ * as the web form (parseLabelField) but without truncating, so an over-long label
+ * or too many labels is still refused by validation instead of being cut silently.
+ */
+export function normalizeLabels(labels: readonly string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of labels ?? []) {
+    const label = raw.trim().toLowerCase();
+    if (!label || seen.has(label)) continue;
+    seen.add(label);
+    out.push(label);
+  }
+  return out;
+}
+
 /** Parse a form labels field (`ops, poc`) into the stored string array. */
 export function parseLabelField(raw: string | undefined): string[] {
   if (!raw) return [];

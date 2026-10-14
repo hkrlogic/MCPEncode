@@ -2,6 +2,7 @@
  * One optional field proposed over MCP. Not on the live schema until a
  * publisher Approves it in the portal. Agents cannot approve or reject.
  */
+import { FIELD_TYPE_MAX } from "./field-limits.ts";
 import { z } from "zod/v4";
 import type { LibrarySchema, SchemaFieldDef, SchemaFieldType } from "./library-schema.ts";
 
@@ -129,8 +130,8 @@ export function schemaWithApprovedField(
     required: false,
     kind: proposal.type === "longtext" ? "body" : "control",
   };
-  if (proposal.type === "text") field.max = 200;
-  if (proposal.type === "longtext") field.max = 8_000;
+  if (proposal.type === "text") field.max = FIELD_TYPE_MAX.text;
+  if (proposal.type === "longtext") field.max = FIELD_TYPE_MAX.longtext;
   return { ...schema, fields: [...schema.fields, field] };
 }
 

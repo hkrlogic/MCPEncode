@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Stricter, clearer item writes over MCP
+
+- **Labels are normalized everywhere:** `create_item` and `update_item` now store labels trimmed, lower case and unique, like the web form. Migration `024_normalize_labels.sql` cleans existing labels, including the published copy and the previous published copy (without counting as a new publish: citation version and review date are unchanged).
+- **No more silent drops:** a field value that is not a string (or a string array for labels), for example a number or an object, is refused with the key names. `summary` on a plain General library is refused (it comes from the body) instead of being ignored.
+- **Optional version fields** must look like `1.0` when a value is given.
+- **One default length per field type** for the tool's argument list and the save check (they used to disagree for text fields without their own limit: 200 vs 8,000).
+- **All problems at once:** a refused write lists every issue, not only the first. Web form messages follow.
+
 ### Breaking: Compose uses Postgres 18 on a new volume
 
 - `docker-compose.yml` runs `postgres:18` with the volume mounted at `/var/lib/postgresql` (Postgres 18 refused the old `/var/lib/postgresql/data` mount, so a fresh `docker compose up` failed). The volume is now **`postgres18_data`**.
