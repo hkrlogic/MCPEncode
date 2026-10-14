@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
+import { z } from "zod/v4";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { createItem, createLibrary, getItem, getLibrary, publishItem } from "../src/db/queries.ts";
 import type { Database } from "../src/db/types.ts";
@@ -153,7 +154,7 @@ test("optional version fields must look like a version when given", () => {
   assert.match(bad.ok ? "" : bad.message, /Release must look like 1\.0/);
 });
 
-test("tool schema and save check use the same default max per type", () => {
+test("tool schema advertises the same default max per type that the save check enforces", () => {
   const schema: LibrarySchema = {
     starter: "general",
     custom: true,
@@ -168,9 +169,10 @@ test("tool schema and save check use the same default max per type", () => {
     assert.equal(max, FIELD_TYPE_MAX[field.type]);
     const atMax = { name: "A", summary: "S", [field.key]: "a".repeat(max) };
     const over = { name: "A", summary: "S", [field.key]: "a".repeat(max + 1) };
-    assert.equal(tool.safeParse(atMax).success, true, `${field.key} at max passes tool schema`);
+    const json = z.toJSONSchema(tool) as { properties: Record<string, { type?: string; description?: string }> };
+    assert.equal(json.properties[field.key]?.type, "string");
+    assert.match(json.properties[field.key]?.description ?? "", new RegExp(`At most ${max} characters`));
     assert.equal(itemForLibrarySchema(schema, atMax).ok, true, `${field.key} at max passes save`);
-    assert.equal(tool.safeParse(over).success, false, `${field.key} over max fails tool schema`);
     assert.equal(itemForLibrarySchema(schema, over).ok, false, `${field.key} over max fails save`);
   }
 });

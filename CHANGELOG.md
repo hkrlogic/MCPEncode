@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Polish: agent answers
+
+- **One round of write errors:** `create_item` and `update_item` no longer stop at the tool's own argument check. Wrong types, missing required fields, unknown fields, bad dates and versions, bad labels and entity keys all come back in one message. The argument list still advertises types, required fields and limits.
+- **No match is not an error:** `list_items` with no match (by `q` or `entity_key`) returns a normal answer telling the agent to say the item is not in the library.
+- **Date order** (review date on or after effective date) is checked only when both dates are real, so an invalid date no longer brings a misleading second message.
+- **Shorter agent instructions:** about half the length (publisher, Review Lock: 5,662 → 2,975 characters; Reader key: 1,563 → 1,299; write tool descriptions about 30% shorter). The safety rules are unchanged: cite or say it is not there, published items only, Review Lock drafts and human-only publish/revert.
+- **UTF-8:** MCP responses declare `charset=utf-8`, so strict clients no longer garble em dashes and accents.
+
 ### Stricter, clearer item writes over MCP
 
 - **Labels are normalized everywhere:** `create_item` and `update_item` now store labels trimmed, lower case and unique, like the web form. Migration `024_normalize_labels.sql` cleans existing labels, including the published copy and the previous published copy (without counting as a new publish: citation version and review date are unchanged).

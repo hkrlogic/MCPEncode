@@ -118,10 +118,11 @@ export type CreateLibraryInput = z.infer<typeof createLibraryInputSchema>;
  * as the web form (parseLabelField) but without truncating, so an over-long label
  * or too many labels is still refused by validation instead of being cut silently.
  */
-export function normalizeLabels(labels: readonly string[] | undefined): string[] {
+export function normalizeLabels(labels: readonly string[] | string | undefined): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const raw of labels ?? []) {
+  if (!Array.isArray(labels)) return out;
+  for (const raw of labels) {
     const label = raw.trim().toLowerCase();
     if (!label || seen.has(label)) continue;
     seen.add(label);

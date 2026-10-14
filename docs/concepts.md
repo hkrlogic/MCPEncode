@@ -67,7 +67,8 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 - **Lengths:** name 200, summary 160, labels 40 each and at most 20. A field without its own limit uses one default per type (text 200, longtext 8,000, markdown 50,000), the same in the tool's argument list and in the save check.
 - **Labels** are stored trimmed, lower case and without duplicates, whether they come from an agent, the form or `suggest_labels`. Labels are free-form.
 - **Summary** on a plain General library comes from the body; an agent that sends `summary` there is told to put the text in `body`.
-- **Errors** list every problem in one message (with the library's field list), so an agent can fix them in one retry.
+- **Errors** list every problem in one message (with the library's field list), so an agent can fix them in one retry. The tool's argument list shows types, required fields and limits, but the save check enforces them, so a wrong type, a missing field and an unknown field all come back together. Review date versus effective date is compared only when both are real dates.
+- **No match** from `list_items` (by `q` or `entity_key`) is a normal answer that says the item is not in the library, not a tool error.
 
 **How `list_items q=` searches.**
 1. Every word must match (name, labels and aliases, summary, then body; the full-text index applies English stemming). Aliases score exactly like labels.
