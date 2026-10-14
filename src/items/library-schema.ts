@@ -215,7 +215,7 @@ export function schemaFieldMessage(schema: LibrarySchema): string {
       : `${schema.starter} schema`;
   const needsSummary = !summaryIsDerived(schema);
   const parts = [
-    `This library uses the ${kind}.`,
+    `This library uses the ${kind}. `,
     `Send name${needsSummary ? ", summary" : ""}`,
     required.length > 0 ? `, ${required.join(", ")}` : "",
     ".",
