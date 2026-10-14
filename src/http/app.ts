@@ -11,6 +11,7 @@ import {
   requireBearerAuth,
 } from "@modelcontextprotocol/express";
 import { toNodeHandler } from "@modelcontextprotocol/node";
+import { declareUtf8 } from "./utf8-charset.ts";
 import {
   buildOAuthProtectedResourceMetadata,
   createMcpHandler,
@@ -343,6 +344,7 @@ export function createApp(input: {
       if (!info) throw new Error("MCP handler invoked without authInfo");
       return buildMcpServer(db, info, scoped, { publicBaseUrl: config.publicBaseUrl });
     });
+    declareUtf8(res);
     void toNodeHandler(mcpHandler)(req, res, req.body);
   }
 
@@ -457,6 +459,7 @@ export function createApp(input: {
           });
         });
         const nodeMcp = toNodeHandler(mcpHandler);
+        declareUtf8(res);
         void nodeMcp(req, res, req.body);
       })().catch(next);
     });

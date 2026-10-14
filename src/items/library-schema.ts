@@ -297,55 +297,54 @@ export function schemaAgentBlurb(schema: LibrarySchema): string {
  * MCP tool argument types for create_item / update_item on this library only.
  * Built from the stored schema so clients do not see other starters' fields.
  */
+/**
+ * Tool arguments are advertised with their JSON type but not enforced by the SDK:
+ * the save check enforces types, required fields and limits, and reports every
+ * problem in one answer (the SDK would stop at its own first pass).
+ */
+function advertisedString(description: string): z.ZodType {
+  return z.unknown().optional().meta({ type: "string", description });
+}
+
 function mcpZodForField(field: SchemaFieldDef): z.ZodType {
   const max = fieldMax(field);
   let description = field.label;
   if (field.type === "date") description = `${field.label} (YYYY-MM-DD)`;
   if (field.type === "version") description = `${field.label} (for example 1.0)`;
   if (field.type === "markdown") description = `${field.label} (markdown)`;
-  const base = z.string().trim().max(max).describe(description);
-  if (field.required) return base.min(1, `${field.label} is required`);
-  return base.optional();
+  const rule = field.required ? `Required. At most ${max} characters.` : `Optional. At most ${max} characters.`;
+  return advertisedString(`${description}. ${rule}`);
 }
 
 /** Field shape for create_item (no id). */
 export function mcpItemWriteShape(schema: LibrarySchema): Record<string, z.ZodType> {
   const shape: Record<string, z.ZodType> = {
-    name: z.string().trim().min(1).max(200).describe("Item name"),
-    entity_key: entityKeySchema,
-    labels: z
-      .array(z.string().trim().min(1).max(40))
-      .max(20)
-      .optional()
-      .describe("Labels (optional)"),
+    // Advertised, not enforced (see advertisedString): the save check reports every problem at once.
+    name: advertisedString("Item name. Required. At most 200 characters."),
+    entity_key: advertisedString(
+      "Optional stable id for this real-world entity (for example host:contoso-01). Letters, digits and . _ : / - ; at most 120 characters.",
+    ),
+    labels: z.unknown().optional().meta({
+      type: "array",
+      items: { type: "string" },
+      description: "Optional labels: at most 20, each at most 40 characters. Stored lower case.",
+    }),
   };
   if (summaryIsDerived(schema)) {
     if (!isPlainGeneral(schema)) {
-      shape.summary = z
-        .string()
-        .trim()
-        .max(160)
-        .optional()
-        .describe("Optional one-line summary (list/search excerpt). Derived from the body when omitted");
+      shape.summary = advertisedString(
+        "Optional one-line summary (list/search excerpt), at most 160 characters. Derived from the body when omitted",
+      );
     }
   } else {
-    shape.summary = z
-      .string()
-      .trim()
-      .min(1)
-      .max(160)
-      .describe("Required one-line summary (list/search excerpt)");
+    shape.summary = advertisedString("One-line summary (list/search excerpt). Required. At most 160 characters.");
   }
   for (const field of schema.fields) {
     shape[field.key] = mcpZodForField(field);
   }
   // Legacy Policy alias — optional, only when this library has a policy field.
   if (schema.fields.some((field) => field.key === "policy")) {
-    shape.rule = z
-      .string()
-      .max(20_000)
-      .optional()
-      .describe("Deprecated alias for policy; prefer policy");
+    shape.rule = advertisedString("Deprecated alias for policy; prefer policy");
   }
   return shape;
 }
@@ -399,14 +398,18 @@ export function mcpWriteToolDescription(
   const head =
     writeMode === "direct"
       ? kind === "create"
-        ? "Add a library item. This library is Review Unlock — the item is live immediately. Set entity_key for the real-world entity: if an item with that entity_key already exists, it is updated instead (fields you leave out keep their value). Give a stable name, a one-line summary, and useful labels."
-        : "Update one library item by id after list_items found it (prefer entity_key). Fields you leave out keep their current value; pass replace: true to replace the whole item. This library is Review Unlock — the saved version is live immediately. Keep entity_key and name stable."
+        ? "Add an item; Review Unlock, so it is live immediately. Set entity_key for the real-world entity: if an item with that entity_key already exists, it is updated instead. Give a stable name, a one-line summary, and useful labels."
+        : "Update one item by id (find it with list_items, prefer entity_key). Fields you leave out keep their current value; replace: true replaces the whole item. Review Unlock: live immediately."
       : kind === "create"
-        ? "Add a library item as a draft (Pending). Not visible to readers or Reader keys until a human Publishes it in the publisher UI. Optional entity_key is a stable id: if an item with that entity_key already exists, it is updated instead (fields you leave out keep their value)."
-        : "Update one library item by id. Fields you leave out keep their current value; pass replace: true to replace the whole item. Saves as draft: if published, the edit is Pending until a human Publishes it, and Readers keep the published version.";
+        ? "Add an item as a Pending draft; readers see it only after a human Publishes. If an item with the optional entity_key already exists, it is updated instead."
+        : "Update one item by id. Fields you leave out keep their current value; replace: true replaces the whole item. Saves as Pending; readers keep the published version until a human Publishes.";
   const summaryBit = summaryIsDerived(schema) ? "" : ", summary";
   const shape = schema.custom ? "custom" : schema.starter;
-  return `${head} This library uses the ${shape} schema. Send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}. Optional: entity_key, labels. Do not invent fields. To add a field, propose_field after the human confirms — they Approve in the publisher. Use only when the human asked.`;
+  return `${head} ${shape} schema: send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}; optional entity_key, labels. Do not invent fields. Every problem comes back in one answer.`;
+}
+
+function isRealDate(value: unknown): boolean {
+  return typeof value === "string" && isoDate("Date").safeParse(value).success;
 }
 
 function isoDate(label: string) {
@@ -477,6 +480,9 @@ function unexpectedFields(schema: LibrarySchema, input: ItemWriteInput): string[
     extras.push("body");
   }
   const issues: string[] = [];
+  if (input.labels !== undefined && !Array.isArray(input.labels)) {
+    issues.push("labels must be an array of strings, for example [\"vpn\", \"security\"].");
+  }
   if (extras.length > 0) issues.push(`Unknown field(s): ${[...new Set(extras)].join(", ")}.`);
   return issues;
 }
@@ -525,6 +531,10 @@ export function itemForLibrarySchema(
 
   // Every problem is collected and returned together, not just the first.
   const issues = unexpectedFields(schema, input);
+  if (input.entity_key !== undefined) {
+    const key = entityKeySchema.safeParse(input.entity_key);
+    if (!key.success) issues.push(issueLines(key.error.issues).join(" "));
+  }
   const failed = (more: string[]) => ({
     ok: false as const,
     message: `${[...issues, ...more].join(" ")} ${schemaFieldMessage(schema)}`.trim(),
@@ -536,7 +546,6 @@ export function itemForLibrarySchema(
       name: input.name,
       body: input.body ?? "",
       labels: normalizeLabels(input.labels),
-      entity_key: input.entity_key,
     });
     if (!parsed.success) return failed(issueLines(parsed.error.issues));
     if (issues.length > 0) return failed([]);
@@ -573,11 +582,10 @@ export function itemForLibrarySchema(
     const raw = payload as Record<string, unknown>;
     if (
       schema.starter === "policy" &&
-      typeof raw.review_date === "string" &&
-      typeof raw.effective_date === "string" &&
-      /^\d{4}-\d{2}-\d{2}$/.test(raw.review_date.trim()) &&
-      /^\d{4}-\d{2}-\d{2}$/.test(raw.effective_date.trim()) &&
-      raw.review_date.trim() < raw.effective_date.trim()
+      // Only compare two real dates; a bad date already has its own message.
+      isRealDate(raw.review_date) &&
+      isRealDate(raw.effective_date) &&
+      (raw.review_date as string).trim() < (raw.effective_date as string).trim()
     ) {
       lines.push("Review date must be on or after the effective date.");
     }

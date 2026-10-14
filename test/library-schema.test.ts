@@ -105,8 +105,11 @@ test("MCP create_item tool schema is per-library (dynamic)", () => {
   assert.equal(procedure.includes("purpose"), false);
 
   const policyTool = mcpCreateItemInputSchema(schemaForStarter("policy"));
-  const bad = policyTool.safeParse({ name: "X", summary: "Y", steps: "1. no" });
-  assert.equal(bad.success, false);
+  // The tool schema lets foreign keys through; the save check refuses them by name.
+  assert.equal(policyTool.safeParse({ name: "X", summary: "Y", steps: "1. no" }).success, true);
+  const bad = itemForLibrary(schemaForStarter("policy"), { name: "X", summary: "Y", steps: "1. no" });
+  assert.equal(bad.ok, false);
+  assert.match(bad.ok ? "" : bad.message, /Unknown field\(s\): steps/);
 
   const desc = mcpWriteToolDescription(schemaForStarter("procedure"), "create");
   assert.match(desc, /procedure schema/);

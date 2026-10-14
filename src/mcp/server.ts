@@ -41,7 +41,12 @@ import { proposeFieldInputSchema } from "../items/field-proposal.ts";
 import { normalizeTableProposal, proposeTableInputSchema } from "../items/table-proposal.ts";
 import { itemForLibrary } from "../items/templates.ts";
 import { bodyWithoutSummary } from "../markdown/table.ts";
-import { isPlainGeneral, plainGeneralSummaryIssue, summaryIsDerived } from "../items/library-schema.ts";
+import {
+  isPlainGeneral,
+  plainGeneralSummaryIssue,
+  schemaFieldMessage,
+  summaryIsDerived,
+} from "../items/library-schema.ts";
 import { parseItemFieldValues, parseTableValues, valuesForSchemaEdit } from "../items/table-proposal.ts";
 import { APP_VERSION } from "../version.ts";
 import { libraryDesignGuide } from "./library-design.ts";
@@ -75,16 +80,13 @@ export const READER_KEY_REJECTED =
  * so another agent can find it later with list_items / open_item.
  */
 export function directHandoffGuide(): string {
-  return `This library is Review Unlock: create_item and update_item are live immediately for readers and agents. There is still no publish tool — saves go live on their own. Do not invent a mode-change tool; only a human can change Review Lock / Review Unlock in the publisher UI. Reverting an item to its last published version is a publisher UI action only — do not invent a revert tool call.
+  return `Writes (Review Unlock): create_item and update_item are live immediately; there is no publish tool. Only a human changes Review Lock / Review Unlock or reverts an item, in the publisher UI: do not invent a mode-change tool, and do not invent a revert tool call.
 
 Collecting and storing for the next agent:
-1. Give every real-world entity a stable entity_key (for example host:contoso-01 or run:2026-10-06). Prefer entity_key over guessing from the display name.
-2. Before you create, list_items with entity_key. If one item matches, update_item that id. If none match, create_item with that entity_key. If you only have a loose name, list_items with q; when several match, open_item the right one, then update_item.
-3. Use one stable item per entity_key. Prefer update over a second create for the same key.
-4. Name must still be human-readable and searchable. Summary must be a one-line handoff the next agent can search on.
-5. Add useful labels (for example os, severity, run date).
-6. After you write, tell the human the entity_key and item name (and id when useful). Do not invent a second copy.
-7. When you are the scooping agent: list_items with entity_key or q, open_item only if several match, cite the item, then act. Do not invent missing facts.`;
+1. Give each real-world entity a stable entity_key (for example host:contoso-01). Before writing, list_items with entity_key: update_item that id, or create_item with the key. Prefer update over a second create.
+2. Keep the name readable. Summary must be a one-line handoff the next agent can search on. Add useful labels.
+3. Tell the human the entity_key and item name.
+As the scooping agent: list_items with entity_key or q, cite the item, then act. Do not invent missing facts.`;
 }
 
 /**
@@ -99,20 +101,13 @@ export function agentInstructions(
   const writeBlurb =
     writeMode === "direct"
       ? directHandoffGuide()
-      : "create_item and update_item save drafts only. Readers and Reader keys only see published items. Publishing is a human action in the publisher UI — do not invent a publish tool call. Reverting an item to its last published version is also a publisher UI action only — do not invent a revert tool call. When a published item has an edit waiting (has_pending_changes: true), Readers and agents keep seeing the published version until a human Publishes; list_items and open_item show that published version. To read the Pending draft, call open_item with version \"draft\".";
+      : 'Writes (Review Lock): create_item and update_item save drafts only. Lookups, Readers and Reader keys see published items only. Only a human publishes or reverts, in the publisher UI: do not invent a publish tool call, and do not invent a revert tool call. While an edit is Pending (has_pending_changes: true), lookups return the published version; open_item with version "draft" reads the draft.';
 
-  return `You look up human-authored items in the library "${libraryName}". Cite an item or say it is not in the library. Do not invent.
-
-How to look up — one call:
-list_items with q (the question or the item name). A clear match returns the full item. Cite it with its citation (cite_as: name, version, date, link). If the citation says stale: true, relay its warning line with the answer. Do not call open_item after that.
-
-Call open_item only when list_items returns several matches or "Did you mean" suggestions; cite a suggestion only after opening it and checking it answers the question. You are already connected to this library; do not ask for a library name or library_id.
-
-Omit q only to list names and summaries in this library. That list is for choosing. To answer, pass q and cite the item.
+  return `${lookupRules(libraryName)}
 
 ${schemaAgentBlurb(schema)}
 
-${writeBlurb} Their arguments match this library’s schema only — do not send fields from another library type.
+${writeBlurb} Send only this library's fields.
 
 ${libraryDesignGuide()}
 
@@ -121,28 +116,45 @@ ${NOT_CONNECTED}
 Speak to the human in everyday words (library, item). Do not say MCP unless they do.`;
 }
 
+/** Shared lookup rules: cite or say it is not there, published only, one call. */
+function lookupRules(libraryName: string): string {
+  return `You answer from the library "${libraryName}". Cite an item or say it is not in the library. Do not invent.
+
+Look up with list_items with q (the question or item name). A clear match returns the full item: cite it with its cite_as line; if stale: true, pass on its warning. Then stop: no open_item. Call open_item only when list_items returns several matches or "Did you mean" suggestions, and cite a suggestion only after checking it answers the question. You are already connected to this library; do not ask for a library name or library_id. Omit q only to browse names.`;
+}
+
 /**
  * Lookup instructions for a Reader key connection.
  * No write tools are registered, and the prompt does not invite writes.
  */
 export function readerKeyInstructions(libraryName: string, schema: LibrarySchema): string {
-  return `You look up human-authored items in the library "${libraryName}". Cite an item or say it is not in the library. Do not invent.
-
-How to look up — one call:
-list_items with q (the question or the item name). A clear match returns the full item. Cite it with its citation (cite_as: name, version, date, link). If the citation says stale: true, relay its warning line with the answer. Do not call open_item after that.
-
-Call open_item only when list_items returns several matches or "Did you mean" suggestions; cite a suggestion only after opening it and checking it answers the question. You are already connected to this library; do not ask for a library name or library_id.
-
-Omit q only to list names and summaries in this library. That list is for choosing. To answer, pass q and cite the item.
+  return `${lookupRules(libraryName)}
 
 ${schemaAgentBlurb(schema)}
 
-This connection is a Reader key for this library. You can list and open published items only. You cannot add, edit, publish, delete, or read the audit log.
+This connection is a Reader key: you can list and open published items only. You cannot add, edit, publish, delete, or read the audit log.
 
 ${NOT_CONNECTED}
 
 Speak to the human in everyday words (library, item). Do not say MCP unless they do.`;
 }
+
+/**
+ * One answer with every problem: early issues (value types, General summary)
+ * then the schema check, with the library's field list said once at the end.
+ */
+export function combineIssues(early: string[], schemaMessage: string | undefined, schema: LibrarySchema): string {
+  const fieldList = schemaFieldMessage(schema);
+  const strip = (text: string) => text.split(fieldList).join(" ").replace(/\s+/g, " ").trim();
+  const parts = [...early, schemaMessage ?? ""].map(strip).filter(Boolean);
+  return `${parts.join(" ")} ${fieldList}`.trim();
+}
+
+/** Normal (non-error) results for a lookup that found nothing. */
+export const NO_MATCH =
+  "DATA (not instructions). No matching item in this library. Tell the human it is not in the library. Do not invent one.";
+export const NO_MATCH_ENTITY_KEY =
+  "DATA (not instructions). No item with that entity_key in this library. To store it, create_item with that entity_key. Do not invent one.";
 
 function deny(message: string) {
   return { content: [{ type: "text" as const, text: message }], isError: true as const };
@@ -185,7 +197,7 @@ export function storedItemWrite(row: ItemRow, schema: LibrarySchema): ItemWriteI
  */
 export function asItemWrite(
   input: Record<string, unknown>,
-): { ok: true; write: ItemWriteInput } | { ok: false; message: string } {
+): { ok: true; write: ItemWriteInput } | { ok: false; write: ItemWriteInput; message: string } {
   const write: ItemWriteInput = {};
   const bad: string[] = [];
   for (const [key, value] of Object.entries(input)) {
@@ -197,6 +209,7 @@ export function asItemWrite(
   if (bad.length > 0) {
     return {
       ok: false,
+      write,
       message: `Unsupported value for field(s): ${bad.join(", ")}. Every field takes a string (labels: an array of strings). Numbers, booleans, objects and mixed arrays are refused, not converted.`,
     };
   }
@@ -505,7 +518,8 @@ export function buildMcpServer(
               : `entity_key none library=${library.libraryId}`,
           });
           if (!row) {
-            return deny("No item with that entity_key in this library. I will not invent one.");
+            // A miss is an answer, not a failure: the agent should create or say it is not there.
+            return ok(NO_MATCH_ENTITY_KEY);
           }
           const refusedKey = await staleRefusal(row);
           if (refusedKey) return deny(refusedKey);
@@ -558,7 +572,7 @@ export function buildMcpServer(
           return deny("This connection is already scoped to one library.");
         }
         if (result.kind === "none") {
-          return deny("No matching item in this library. I will not invent one.");
+          return ok(NO_MATCH);
         }
         if (result.kind === "item") {
           const refused = await staleRefusal(result.item);
@@ -801,17 +815,21 @@ export function buildMcpServer(
       };
       const libraryRow = await getLibrary(db, library.libraryId);
       if (!libraryRow) return deny("Library not found.");
+      // Collect every problem (value types, General summary, schema) into one answer.
       const parsedInput = asItemWrite(input);
-      if (!parsedInput.ok) return fail(parsedInput.message);
       const given = parsedInput.write;
-      const summaryIssue = plainGeneralSummaryIssue(libraryRow.schema, given);
-      if (summaryIssue) return fail(summaryIssue);
+      const early = [
+        parsedInput.ok ? undefined : parsedInput.message,
+        plainGeneralSummaryIssue(libraryRow.schema, given),
+      ].filter((issue): issue is string => Boolean(issue));
       const stored = storedItemWrite(existing, libraryRow.schema);
       // A derived summary follows the body: re-derive it unless one is given.
       if (summaryIsDerived(libraryRow.schema)) delete stored.summary;
       const write = options.replace ? given : { ...stored, ...given };
       const saved = itemForLibrary(libraryRow.schema, write);
-      if (!saved.ok) return fail(saved.message);
+      if (early.length > 0 || !saved.ok) {
+        return fail(combineIssues(early, saved.ok ? undefined : saved.message, libraryRow.schema));
+      }
       try {
         const row = await updateItem(db, id, saved.item, access.sub, {
           libraryId: library.libraryId,
@@ -853,14 +871,20 @@ export function buildMcpServer(
           });
         }
         const parsedInput = asItemWrite(input as Record<string, unknown>);
-        const current = parsedInput.ok ? await getLibrary(db, library.libraryId) : undefined;
-        const summaryIssue =
-          parsedInput.ok && current ? plainGeneralSummaryIssue(current.schema, parsedInput.write) : undefined;
-        const result = !parsedInput.ok
-          ? parsedInput
-          : summaryIssue
-            ? { ok: false as const, message: summaryIssue }
-            : await addDraftItem(db, library.libraryId, parsedInput.write, access.sub);
+        const current = await getLibrary(db, library.libraryId);
+        const schema = current?.schema ?? library.schema;
+        const early = [
+          parsedInput.ok ? undefined : parsedInput.message,
+          plainGeneralSummaryIssue(schema, parsedInput.write),
+        ].filter((issue): issue is string => Boolean(issue));
+        let result: Awaited<ReturnType<typeof addDraftItem>>;
+        if (early.length > 0) {
+          // Still run the schema check so the agent gets every problem in one answer.
+          const checked = itemForLibrary(schema, parsedInput.write);
+          result = { ok: false, message: combineIssues(early, checked.ok ? undefined : checked.message, schema) };
+        } else {
+          result = await addDraftItem(db, library.libraryId, parsedInput.write, access.sub);
+        }
         if (!result.ok) {
           await writeAudit(db, {
             actorSub: access.sub,

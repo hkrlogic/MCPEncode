@@ -1,6 +1,7 @@
 /** Approving an optional field must not break the agent writes that worked before it. */
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { z } from "zod/v4";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import {
   approveFieldProposal,
@@ -120,7 +121,10 @@ test("itemForLibrarySchema: extended General derives summary from the body", asy
 
 test("Policy library still requires a summary (unchanged)", () => {
   const schema = schemaForStarter("policy");
-  const parsed = mcpCreateItemInputSchema(schema).safeParse({ name: "Password Standard" });
-  assert.equal(parsed.success, false);
-  assert.ok(parsed.error?.issues.some((issue) => issue.path[0] === "summary"));
+  // The tool schema advertises it as required; the save check enforces it.
+  const shape = z.toJSONSchema(mcpCreateItemInputSchema(schema)) as { properties: Record<string, { description?: string }> };
+  assert.match(shape.properties.summary?.description ?? "", /Required/);
+  const saved = itemForLibrarySchema(schema, { name: "Password Standard" });
+  assert.equal(saved.ok, false);
+  assert.match(saved.ok ? "" : saved.message, /Summary is required/);
 });
