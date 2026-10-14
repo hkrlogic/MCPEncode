@@ -70,25 +70,28 @@ export function noticeMessage(notice: string | undefined, _status?: ItemStatus):
     return "Review-by date saved.";
   }
   if (notice === "created") {
-    return "Item saved as Pending. Publish it when it is ready for the kiosk.";
+    return "Item saved as Pending. Readers and agents see it once you Publish.";
   }
   if (notice === "created_live") {
     return "Item saved and live. Readers and agents can see it now.";
   }
-  if (notice === "pending") {
-    return "Moved to Pending. It is hidden from the kiosk until you Publish again.";
+  if (notice === "edit_pending") {
+    return "Edit saved as Pending. Readers and agents keep the published version until you Publish this edit.";
+  }
+  if (notice === "unpublished" || notice === "pending") {
+    return "Unpublished. Readers and agents no longer see this item. It is in Pending until you Publish again.";
   }
   if (notice === "saved_live") {
     return "Saved and live. Readers and agents see this version now.";
   }
   if (notice === "published") {
-    return "Published. Readers and the kiosk can see this item.";
+    return "Published. Readers and agents can see this item.";
   }
   if (notice === "archived") {
-    return "Archived. Hidden from the kiosk and from Pending.";
+    return "Archived. Hidden from readers, agents and Pending.";
   }
   if (notice === "restored") {
-    return "Restored to Pending. Publish when it is ready for the kiosk.";
+    return "Restored to Pending. Readers and agents see it once you Publish.";
   }
   if (notice === "canceled") {
     return "Publish request canceled. This item is back to the last published version.";
@@ -255,7 +258,13 @@ export function itemListMarkup(
           <span class="item-name-row">
             <span class="item-name">${esc(row.name)}</span>
             ${showStatus ? statusBadge(row.status) : ""}
-            ${showStatus && row.status === "draft" && row.has_pending_changes ? `<span class="tag" title="Agents still see the published version">Published copy live</span>` : ""}
+            ${
+              row.status === "draft" && row.has_pending_changes
+                ? showStatus
+                  ? `<span class="tag" title="Agents still see the published version">Published copy live</span>`
+                  : `<span class="tag" title="Readers and agents see the published version until you Publish this edit">Edit pending</span>`
+                : ""
+            }
           </span>
           ${summaryInReview || !row.summary ? "" : `<span class="excerpt">${esc(row.summary)}</span>`}
           ${row.review ? reviewMarkup(row.review, "list") : ""}
@@ -330,7 +339,7 @@ export type AppShell = {
   /** Left pane lists Settings items instead of libraries. */
   settingsMode?: boolean;
   /** Which Settings item is current. */
-  settingsActive?: "accounts" | "apps";
+  settingsActive?: "accounts" | "apps" | "audit";
 };
 
 /**
@@ -406,6 +415,15 @@ function settingsSidebar(shell: AppShell): string {
         </a>
       </li>`
     : "";
+  const auditActive = shell.settingsActive === "audit";
+  const audit = `<li>
+        <a class="sidebar-lib${auditActive ? " is-active" : ""}" href="/audit"${auditActive ? ' aria-current="page"' : ""}>
+          <span class="sidebar-lib-text">
+            <span class="sidebar-lib-name">Audit log</span>
+            <span class="sidebar-lib-meta">Who did what</span>
+          </span>
+        </a>
+      </li>`;
   return `
     <aside class="lib-sidebar" aria-label="Settings">
       <div class="sidebar-head">
@@ -417,6 +435,7 @@ function settingsSidebar(shell: AppShell): string {
         <ul class="sidebar-libs">
           ${accounts}
           ${apps}
+          ${audit}
           <li>
             <a class="sidebar-lib" href="/logout">
               <span class="sidebar-lib-text">
@@ -439,12 +458,17 @@ function librarySidebar(shell: AppShell): string {
       }><span aria-hidden="true">+</span></a>`
     : "";
 
+  // An SA sees unclaimed libraries once, under Unclaimed, not twice.
+  const orphanIds = new Set((shell.orphans ?? []).map((row) => row.id));
+  const claimed = shell.libraries.filter((row) => !orphanIds.has(row.id));
   const libraryRows =
-    shell.libraries.length === 0
+    claimed.length === 0 && orphanIds.size > 0
+      ? ""
+      : claimed.length === 0
       ? `<p class="sidebar-empty">${
           shell.canAddLibrary ? "No libraries yet." : "No libraries assigned."
         }</p>`
-      : `<ul class="sidebar-libs">${shell.libraries.map((row) => librarySidebarRow(shell, row)).join("")}</ul>`;
+      : `<ul class="sidebar-libs">${claimed.map((row) => librarySidebarRow(shell, row)).join("")}</ul>`;
 
   const orphans =
     shell.orphans && shell.orphans.length > 0
@@ -490,7 +514,7 @@ function librarySidebarRow(shell: AppShell, row: ShellLibrary): string {
     row.writeMode && isLibraryWriteMode(row.writeMode) ? shellWriteModeLabel(row.writeMode) : "";
   const items =
     typeof row.itemCount === "number"
-      ? `<span class="sidebar-lib-count">${row.itemCount}<span class="sr-only"> items</span></span>`
+      ? `<span class="sidebar-lib-count">${row.itemCount}<span class="sr-only"> ${row.itemCount === 1 ? "item" : "items"}</span></span>`
       : "";
   const pending =
     typeof row.pendingCount === "number" && row.pendingCount > 0
@@ -551,6 +575,7 @@ function shellCurrentLabel(shell: AppShell): string {
   if (shell.settingsMode) {
     if (shell.settingsActive === "accounts") return "Accounts";
     if (shell.settingsActive === "apps") return "Apps";
+    if (shell.settingsActive === "audit") return "Audit log";
     return "Settings";
   }
   if (shell.addingShelf) return "Add shelf";
@@ -641,6 +666,7 @@ export function layout(input: {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${esc(input.title)}</title>
   ${input.csrf ? `<meta name="csrf-token" content="${esc(input.csrf)}">` : ""}
+  <link rel="icon" type="image/svg+xml" href="${staticUrl("favicon.svg")}">
   <link rel="stylesheet" href="${staticUrl("styles.css")}">
   ${input.extraHead ?? ""}
 </head>

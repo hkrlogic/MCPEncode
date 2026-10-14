@@ -6,7 +6,7 @@ import { accountStore } from "./db/accounts.ts";
 import { openDatabase } from "./db/client.ts";
 import { postgresIdpStore, postgresKnownGoodStore } from "./db/idp-store.ts";
 import { writeAudit } from "./db/audit.ts";
-import { getLibrary } from "./db/queries.ts";
+import { getLibrary, getLibraryAccess } from "./db/queries.ts";
 import { createApp } from "./http/app.ts";
 import { loadAuthServer } from "./http/discovery.ts";
 
@@ -21,6 +21,7 @@ async function main(): Promise<void> {
         store: postgresIdpStore(db, config.sessionSecret),
         knownGoodStore: postgresKnownGoodStore(db),
         libraryName: async (id) => (await getLibrary(db, id))?.name,
+        libraryRole: async (id, sub) => (await getLibraryAccess(db, id, sub))?.role,
         audit: (event) => writeAudit(db, event),
       })
     : undefined;

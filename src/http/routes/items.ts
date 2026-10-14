@@ -1,4 +1,6 @@
 /** Item view/edit/update, publish gate, delete, files, and /notes redirects. */
+import { bodyWithoutSummary } from "../../markdown/table.ts";
+import { humanItemMessage } from "../../items/library-schema.ts";
 import type express from "express";
 import type { Request, Response } from "express";
 import { accessForLibrary, can, type Access } from "../../auth/rbac.ts";
@@ -154,7 +156,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       : item.procedure
         ? { control: procedureControl(item.procedure), parts: procedureBody(item.procedure) }
         : undefined;
-    const html = structured ? "" : await renderMarkdown(item.body);
+    const html = structured ? "" : await renderMarkdown(bodyWithoutSummary(item.body, item.summary));
     const control = structured?.control;
     const sections = structured
       ? await Promise.all(
@@ -351,7 +353,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
           csrf: access.csrf,
           item,
           library,
-          error: parsed.error.issues[0]?.message ?? "Invalid item",
+          error: humanItemMessage(parsed.error.issues[0]?.message ?? "Invalid item", library.schema),
           shell,
         }),
       );
@@ -382,7 +384,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
         );
         return;
       }
-      const message = error instanceof Error ? error.message : "Could not save item.";
+      const message = humanItemMessage(error instanceof Error ? error.message : "Could not save item.", library.schema);
       res.status(400).send(
         editPage({
           access: libraryAccess,
@@ -410,7 +412,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       library.writeMode === "direct"
         ? "saved_live"
         : wasPublished
-          ? "pending"
+          ? "edit_pending"
           : "";
     res.redirect(`/items/${row.id}${notice ? `?notice=${notice}` : ""}`);
   });
@@ -472,7 +474,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       action === "publish"
         ? "published"
         : action === "unpublish"
-          ? "pending"
+          ? "unpublished"
           : action === "archive"
             ? "archived"
             : "restored";
@@ -614,7 +616,7 @@ export function registerItemRoutes(app: express.Express, ctx: AppRouteContext): 
       libraryId,
       detail: req.params.id,
     });
-    res.redirect(libraryId ? `/libraries/${libraryId}` : "/");
+    res.redirect(libraryId ? `/libraries/${libraryId}${removed ? "?deleted=item" : ""}` : "/");
   });
 
   app.get("/notes/:id/edit", (req, res) => {

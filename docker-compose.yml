@@ -3,6 +3,10 @@
 # Credentials come from .env (run scripts/init-env.sh first). Postgres reads the
 # password only when this volume is first created.
 #
+# Postgres 18 keeps its data in a versioned subdirectory, so the volume is
+# mounted at /var/lib/postgresql (not .../data). Upgrading from the old
+# Postgres 16 volume (postgres_data)? See "Postgres 16 to 18" in docs/deploy.md.
+#
 #   docker compose up -d --build     # app + Postgres
 #   docker compose up -d postgres    # Postgres only, for npm start during development
 services:
@@ -15,7 +19,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (run scripts/init-env.sh)}
       POSTGRES_DB: ${POSTGRES_DATABASE:-mcpencode}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres18_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -49,4 +53,4 @@ services:
         condition: service_healthy
 
 volumes:
-  postgres_data:
+  postgres18_data:

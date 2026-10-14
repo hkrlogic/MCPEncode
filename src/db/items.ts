@@ -576,7 +576,7 @@ export async function publishItems(
 }
 
 /**
- * Make a draft visible to readers and the kiosk.
+ * Make a draft visible to readers and agents.
  * Copies working fields into published_snapshot; keeps the prior snapshot for Revert.
  */
 export async function publishItem(

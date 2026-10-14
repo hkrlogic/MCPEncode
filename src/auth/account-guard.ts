@@ -12,7 +12,13 @@
 import type { AccountStore } from "./accounts.ts";
 import type { Role } from "./rbac.ts";
 
-export type AccountCheck = { allowed: true; role: Role } | { allowed: false };
+/**
+ * `disabled`: the account is disabled or gone; an SA must act.
+ * `signed_out`: the credential predates a sign-out everywhere or a password
+ * reset; signing in again fixes it.
+ */
+export type AccountDenial = "disabled" | "signed_out";
+export type AccountCheck = { allowed: true; role: Role } | { allowed: false; reason: AccountDenial };
 
 /**
  * Returns the account's current standing, or `allowed: false` when it is
@@ -24,10 +30,10 @@ export type AccountGuard = (sub: string, issuedAt?: number) => Promise<AccountCh
 export function createAccountGuard(accounts: AccountStore): AccountGuard {
   return async (sub, issuedAt) => {
     const account = await accounts.findById(sub);
-    if (!account || account.disabled) return { allowed: false };
+    if (!account || account.disabled) return { allowed: false, reason: "disabled" };
     const revokedAt = account.sessionsRevokedAt ?? 0;
     if (revokedAt > 0 && (issuedAt === undefined || issuedAt * 1000 < revokedAt)) {
-      return { allowed: false };
+      return { allowed: false, reason: "signed_out" };
     }
     return { allowed: true, role: account.role };
   };

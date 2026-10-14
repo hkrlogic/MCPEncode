@@ -115,6 +115,20 @@ export function splitSummaryAndTable(source: string): {
 }
 
 /** Put Summary first so list/search excerpts stay useful. */
+/**
+ * Documents store the summary as the body's first paragraph. Pages and agents
+ * already show the summary on its own, so drop that paragraph when it is the
+ * summary, instead of printing it twice.
+ */
+export function bodyWithoutSummary(body: string, summary: string | null | undefined): string {
+  const lead = (summary ?? "").trim();
+  const text = body.replaceAll("\r\n", "\n").trim();
+  if (!lead || !text.startsWith(lead)) return body;
+  const rest = text.slice(lead.length);
+  if (rest !== "" && !/^\s*\n\s*\n/.test(rest)) return body;
+  return rest.trim();
+}
+
 export function combineSummaryAndBody(summary: string, body: string): string {
   const lead = summary.trim();
   const rest = body.trim();

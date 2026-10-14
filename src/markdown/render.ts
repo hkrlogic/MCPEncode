@@ -55,7 +55,7 @@ export function htmlToMarkdown(html: string): string {
   return turndown.turndown(cleaned).trim();
 }
 
-/** Wire text for one item. Kiosk and agents parse name / labels / summary / body. File bytes are not included. */
+/** Wire text for one item. Readers and agents parse name / labels / summary / body. File bytes are not included. */
 export function labeledItemData(item: {
   id: string;
   library_id?: string;

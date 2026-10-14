@@ -26,7 +26,9 @@ export function librariesPage(input: {
   shelves?: AppShell["shelves"];
   username?: string;
   roleLabel?: string;
+  notice?: string;
 }): string {
+  const flash = input.notice ? `<p class="notice" role="status">${esc(input.notice)}</p>` : "";
   const canAdd = can(input.access, "libraries.create");
   const shell: AppShell = {
     libraries: input.libraries,
@@ -77,7 +79,7 @@ export function librariesPage(input: {
         csrf: input.csrf,
         access: input.access,
         shell,
-        body: `
+        body: `${flash}
       <div class="empty-pane empty-pane-start">
         <h1>No libraries yet</h1>
         <p class="empty-pane-lead">Add a library to get started.</p>
@@ -93,7 +95,7 @@ export function librariesPage(input: {
       csrf: input.csrf,
       access: input.access,
       shell,
-      body: `
+      body: `${flash}
       <div class="empty-pane empty-pane-start">
         <p class="home-kicker">Reader</p>
         <h1>No libraries assigned</h1>
@@ -114,7 +116,7 @@ export function librariesPage(input: {
       csrf: input.csrf,
       access: input.access,
       shell,
-      body: `
+      body: `${flash}
       <div class="empty-pane home-pane">
         <header class="home-head">
           <h1>Libraries</h1>
@@ -139,7 +141,7 @@ export function librariesPage(input: {
     csrf: input.csrf,
     access: input.access,
     shell,
-    body: `
+    body: `${flash}
       <div class="empty-pane empty-pane-start home-idle">
         <h1>${esc(idleTitle)}</h1>
         <p class="empty-pane-lead">${esc(idleLead)}</p>
@@ -259,7 +261,7 @@ function fieldProposalPanel(input: { library: LibraryRow; csrf: string }): strin
       <h2 id="field-proposal-heading">Field waiting for approval</h2>
       <p class="hint">An agent proposed this optional field. Approving adds it to items in this library. Existing fields stay as they are. Old items simply will not have a value for it.</p>
       <p class="proposal-name"><strong>${esc(proposal.label)}</strong> · ${esc(columnTypeLabel(proposal.type))} · Optional</p>
-      ${proposal.proposedBy ? `<p class="hint">Proposed by <code>${esc(proposal.proposedBy)}</code>${when ? ` · ${esc(when)}` : ""}</p>` : ""}
+      ${proposal.proposedBy ? `<p class="hint">Proposed by <strong>${esc(proposal.proposedBy)}</strong>${when ? ` · ${esc(when)}` : ""}</p>` : ""}
       <div class="proposal-actions">
         <form method="post" action="/libraries/${esc(input.library.id)}/field/approve">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
@@ -273,7 +275,7 @@ function fieldProposalPanel(input: { library: LibraryRow; csrf: string }): strin
     </section>`;
 }
 
-/** Publishers only. Readers and the kiosk never receive this block. */
+/** Publishers only. Readers and Reader keys never receive this block. */
 function tableProposalPanel(input: {
   library: LibraryRow;
   csrf: string;
@@ -324,9 +326,9 @@ function tableProposalPanel(input: {
   return `
     <section class="table-proposal" aria-labelledby="table-proposal-heading">
       <h2 id="table-proposal-heading">Table waiting for approval</h2>
-      <p class="hint">An agent proposed this table. Readers and the kiosk cannot see it. Approving makes these columns the fields for items in this library. That can happen only while the library has no items.</p>
+      <p class="hint">An agent proposed this table. Readers and agents cannot see it. Approving makes these columns the fields for items in this library. That can happen only while the library has no items.</p>
       <p class="proposal-name"><strong>${esc(proposal.name)}</strong></p>
-      ${proposal.proposedBy ? `<p class="hint">Proposed by <code>${esc(proposal.proposedBy)}</code>${when ? ` · ${esc(when)}` : ""}</p>` : ""}
+      ${proposal.proposedBy ? `<p class="hint">Proposed by <strong>${esc(proposal.proposedBy)}</strong>${when ? ` · ${esc(when)}` : ""}</p>` : ""}
       <table class="proposal-columns">
         <thead><tr><th>Column</th><th>Type</th><th></th></tr></thead>
         <tbody>${columns}</tbody>
@@ -504,6 +506,14 @@ function readerKeyWhen(ms: number | null | undefined): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * The URL a Reader key uses: /libraries/<id>/mcp with no Connect token. Built
+ * from the (masked) Connect URL so no secret is needed to show it.
+ */
+export function readerMcpUrl(connectUrl: string): string {
+  return connectUrl.replace(/\/mcp(\/.*)?$/, "/mcp");
+}
+
 /** Publisher control for the one Reader key on this library. Readers do not see it. */
 function readerKeyPanel(input: {
   library: LibraryRow;
@@ -526,9 +536,9 @@ function readerKeyPanel(input: {
         <code class="mcp-link" id="reader-key">${esc(reveal)}</code>
         <button type="button" class="btn mcp-copy" data-copy="#reader-key">Copy</button>
       </div>
-      <p class="mcp-panel-note">In LibreChat, use the Connect link as the server URL, send the header below, and set requiresOAuth to false.</p>
+      <p class="mcp-panel-note">In LibreChat (or any MCP client that can send headers), use this library's MCP URL below, send the Authorization header, and set requiresOAuth to false. The Connect link is not needed.</p>
       <pre class="reader-key-config" id="reader-key-config">${esc(`type: streamable-http
-url: ${input.connectUrl ?? "<your Connect link — rotate Connect to get a new one>"}
+url: ${readerMcpUrl(input.mcpUrl)}
 requiresOAuth: false
 headers:
   Authorization: Bearer ${reveal}`)}</pre>`
@@ -559,9 +569,9 @@ headers:
            <button class="btn" type="submit">Create Reader key</button>
          </form>`;
   const note = reveal
-    ? "Anyone with this key can read published items in this library. If it leaks, rotate it. It cannot change items."
+    ? "Anyone with this key can read published items in this library. If it leaks, rotate the Reader key. It cannot change items."
     : active
-      ? "The key itself is not shown again. Rotate it if you did not copy it, or if it leaks. It cannot change items or read the audit log."
+      ? `The key itself is not shown again. Rotate the Reader key if you did not copy it, or if it leaks (this does not change the Connect link). Shared agents use ${readerMcpUrl(input.mcpUrl)} with the key as a Bearer token. It cannot change items or read the audit log.`
       : "The key is shown once. It can list and open published items only.";
   return `<details class="mcp-menu"${reveal ? " open" : ""}>
     <summary class="text-summary">Reader key</summary>
@@ -676,6 +686,7 @@ export function libraryPage(input: {
              <input type="hidden" name="csrf" value="${esc(input.csrf)}">
              <button type="submit">Rotate connect link</button>
            </form>
+           <a class="menu-link" href="/audit?library=${esc(input.library.id)}">Audit log</a>
            <form class="menu-form" method="post" action="/libraries/${esc(input.library.id)}/copy"
                  data-confirm="${confirmText(
                    `Copy the template for “${input.library.name}” into a new empty library? Items and Access are not copied.`,
@@ -726,7 +737,11 @@ export function libraryPage(input: {
        </details>`
     : "";
 
-  const published = input.items.filter((row) => row.status === "published");
+  // Live items: published, or published with an edit waiting in Pending (the
+  // published copy stays live, so it belongs on the Items tab too).
+  const published = input.items.filter(
+    (row) => row.status === "published" || (row.status === "draft" && row.has_pending_changes === true),
+  );
   const pending = input.items.filter((row) => row.status === "draft");
   const archived = input.items.filter((row) => row.status === "archived");
   const searching = Boolean(input.q?.trim());
@@ -740,8 +755,8 @@ export function libraryPage(input: {
     input.publishedCount && Number(input.publishedCount) > 0
       ? `<p class="notice" role="status">${esc(
           Number(input.publishedCount) === 1
-            ? "1 item published. It is live for readers and the kiosk."
-            : `${input.publishedCount} items published. They are live for readers and the kiosk.`,
+            ? "1 item published. It is live for readers and agents."
+            : `${input.publishedCount} items published. They are live for readers and agents.`,
         )}</p>`
       : "";
 
@@ -755,7 +770,7 @@ export function libraryPage(input: {
   const pendingHint =
     input.library.writeMode === "direct"
       ? `Not live right now. In ${writeModeLabel("direct")}, saving an item makes it live again.`
-      : "Drafts waiting to be published. Each row shows what changed. Not visible to the kiosk.";
+      : "Drafts waiting to be published. Each row shows what changed. New items are hidden from readers and agents; for edits, they keep the published version.";
   const pendingPanel =
     pending.length === 0
       ? `
@@ -791,7 +806,7 @@ export function libraryPage(input: {
   const archivesPanel = `
     <section class="library-items" aria-labelledby="archives-heading">
       <h2 id="archives-heading" class="sr-only">Archives</h2>
-      <p class="hint library-tab-hint">Hidden from the kiosk and from Pending.</p>
+      <p class="hint library-tab-hint">Hidden from readers, agents and Pending.</p>
       ${rowsOrEmpty(input.library, archived, "No archived items.", false, false, searching)}
     </section>`;
 
@@ -867,10 +882,10 @@ export function libraryPage(input: {
         <div class="mcp-panel-head">
           <p class="mcp-panel-kicker">This library</p>
           <h2 class="mcp-panel-title">Connect link</h2>
-          <p class="mcp-panel-lead">Paste into Cursor or the kiosk. Each person still signs in. For a shared agent, use a Reader key.</p>
+          <p class="mcp-panel-lead">Paste into Cursor, Claude or another MCP client. Each person still signs in. For a shared agent, use a Reader key.</p>
         </div>
         ${connectBox}
-        <p class="mcp-panel-note">If this link leaks, rotate it. People on Access stay. Rotating Connect does not change the Reader key.</p>
+        ${canWrite ? `<p class="mcp-panel-note">If this link leaks, rotate it. People on Access stay. Rotating Connect does not change the Reader key.</p>` : ""}
       </div>
     </details>`;
 

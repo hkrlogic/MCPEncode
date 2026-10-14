@@ -174,4 +174,42 @@ Treat backups as secret: Connect tokens are stored in plain text (see [known lim
 
 ## Postgres version
 
-PostgreSQL 16 is the documented version (Compose and CI use it). The app and test suite are also verified on PostgreSQL 17.
+Compose runs **PostgreSQL 18**. CI runs the test suite on PostgreSQL 16, and the app is also verified on 17 and 18. Any of 16–18 works for an external database.
+
+### Postgres 16 to 18 (Compose)
+
+Postgres 18's image stores data in a versioned subdirectory and refuses a volume mounted at `/var/lib/postgresql/data`. Compose therefore mounts a **new** volume, `postgres18_data`, at `/var/lib/postgresql`. The old `postgres_data` volume (Postgres 16 data) is left untouched, but **it is not read by Postgres 18**: if you simply pull and run `docker compose up`, the app starts on an empty database and asks for a setup code. Your data is still in the old volume. Choose one:
+
+**A. Move the data to Postgres 18 (recommended).** Dump with the old version, restore into the new one:
+
+```bash
+# 1. Stop the app, start the OLD Postgres 16 on the old volume, and dump it
+set -a; . ./.env; set +a
+docker compose stop app
+docker run -d --name pg16-old -v mcpencode_postgres_data:/var/lib/postgresql/data postgres:16
+sleep 5
+docker exec pg16-old pg_dump -U "${POSTGRES_USER:-mcpencode}" -Fc "${POSTGRES_DATABASE:-mcpencode}" > mcpencode-pg16.dump
+docker rm -f pg16-old
+# 2. Start Postgres 18 on the new volume and restore
+docker compose up -d postgres
+docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --clean --if-exists' < mcpencode-pg16.dump
+# 3. Start the app and check /healthz; sign in with your existing account
+docker compose up -d --build
+# 4. Only when everything is there: docker volume rm mcpencode_postgres_data
+```
+
+(The volume name is `<project>_postgres_data`; `docker volume ls` shows it. If you ran the app on the new volume before restoring, start from an empty one: `docker compose down`, `docker volume rm mcpencode_postgres18_data`, then step 2.)
+
+**B. Stay on Postgres 16 for now.** Add a `docker-compose.override.yml` next to `docker-compose.yml`:
+
+```yaml
+services:
+  postgres:
+    image: postgres:16
+    volumes: !override
+      - postgres_data:/var/lib/postgresql/data
+volumes:
+  postgres_data:
+```
+
+`pg_upgrade --link` also works if you prefer an in-place upgrade; dump and restore is simpler and the database is small.

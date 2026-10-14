@@ -21,6 +21,7 @@ import { cspWithFormAction, formActionSource } from "../http/security-headers.ts
 import type { AccountStore } from "./accounts.ts";
 import {
   hashRefreshToken,
+  hostRefused,
   memoryIdpStore,
   newClientId,
   newRefreshToken,
@@ -81,6 +82,12 @@ function scopeFor(realmRole: string): string {
   return realmRole === "mpos-editor" ? "openid mcpencode:edit mcpencode:sa" : "openid mcpencode:readonly";
 }
 
+/** Scope in the token response: for a library link, a Publisher there also has edit. */
+export function grantedScope(realmRole: string, libraryRole: "publisher" | "reader" | undefined): string {
+  if (realmRole === "mpos-editor") return scopeFor(realmRole);
+  return libraryRole === "publisher" ? "openid mcpencode:readonly mcpencode:edit" : scopeFor(realmRole);
+}
+
 type VerifyKey = Awaited<ReturnType<typeof importJWK>>;
 
 export type EmbeddedIdp = {
@@ -120,6 +127,11 @@ export type EmbeddedIdpOptions = {
   store?: IdpStore;
   /** Library name for the consent page. */
   libraryName?: (libraryId: string) => Promise<string | undefined>;
+  /**
+   * The account's role on a library (from Access), or undefined with no access.
+   * Used to refuse consent early and to report the granted scope honestly.
+   */
+  libraryRole?: (libraryId: string, sub: string) => Promise<"publisher" | "reader" | undefined>;
   /** Audit log writer (audit_events in production). */
   audit?: (event: IdpAuditEvent) => Promise<void>;
 };
@@ -231,6 +243,7 @@ function loginPage(input: {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${title} · MCPEncode</title>
+  <link rel="icon" type="image/svg+xml" href="${staticUrl("favicon.svg")}">
   <link rel="stylesheet" href="${staticUrl("styles.css")}">
 </head>
 <body>
@@ -279,6 +292,7 @@ function simplePage(title: string, body: string): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)} · MCPEncode</title>
+  <link rel="icon" type="image/svg+xml" href="${staticUrl("favicon.svg")}">
   <link rel="stylesheet" href="${staticUrl("styles.css")}">
 </head>
 <body>
@@ -311,6 +325,15 @@ function hostWaitingPage(host: string): string {
     "Waiting for approval",
     `<p>${escapeHtml(hostNotApprovedText(host))}</p>
      <p><strong>Waiting for your site admin to approve this app.</strong> Once they have, start the connection again from the app.</p>`,
+  );
+}
+
+/** Signed in, but the account is not on this library's Access list. */
+function noLibraryAccessPage(username: string, library: string): string {
+  return simplePage(
+    "No access to this library",
+    `<p>Your account <strong>${escapeHtml(username)}</strong> is signed in, but it does not have access to <strong>${escapeHtml(library)}</strong>.</p>
+     <p>Ask a publisher on that library to add you under <strong>Access</strong>, then connect again from the app.</p>`,
   );
 }
 
@@ -358,6 +381,7 @@ function consentPage(input: {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Allow access? · MCPEncode</title>
+  <link rel="icon" type="image/svg+xml" href="${staticUrl("favicon.svg")}">
   <link rel="stylesheet" href="${staticUrl("styles.css")}">
 </head>
 <body>
@@ -502,15 +526,15 @@ export async function createEmbeddedIdp(
     async decide({ host: rawHost, decision, by }) {
       const host = rawHost.trim().toLowerCase();
       if (!isApprovableHostname(host)) return { ok: false, message: "That is not a hostname that can be approved." };
-      const status = decision === "approve" ? "approved" : "denied";
+      const status = decision === "approve" ? "approved" : decision === "revoke" ? "revoked" : "denied";
       const record = await store.decideHost({ host, status, by, now: Date.now() });
       // Denying or revoking ends every refresh chain of clients that return to this host.
-      const revokedTokens = status === "denied" ? await store.revokeHostTokens(host) : 0;
+      const revokedTokens = hostRefused(status) ? await store.revokeHostTokens(host) : 0;
       await audit({
         actorSub: by,
         tool: `callback_host.${decision}`,
         success: true,
-        detail: `host=${host}${status === "denied" ? ` revoked_refresh_tokens=${revokedTokens}` : ""}`,
+        detail: `host=${host}${hostRefused(status) ? ` revoked_refresh_tokens=${revokedTokens}` : ""}`,
       });
       console.log(`Callback host ${host} ${status} by ${by}.`);
       return { ok: true, record, revokedTokens };
@@ -626,6 +650,12 @@ export async function createEmbeddedIdp(
     res.redirect(next.toString());
   }
 
+  async function roleOnResource(resource: string, sub: string): Promise<"publisher" | "reader" | undefined> {
+    const libraryId = resourceLibraryId(resource, config);
+    if (!libraryId || !options?.libraryRole) return undefined;
+    return options.libraryRole(libraryId, sub).catch(() => undefined);
+  }
+
   async function libraryLabel(resource: string): Promise<string> {
     const libraryId = resourceLibraryId(resource, config);
     if (!libraryId) return "your MCPEncode account";
@@ -718,10 +748,10 @@ export async function createEmbeddedIdp(
         const host = typeof entry === "string" ? approvableCallbackHost(entry) : undefined;
         if (host) {
           const known = await store.findHost(host);
-          if (known?.status === "denied") {
+          if (hostRefused(known?.status)) {
             res.status(400).json({
               error: "invalid_redirect_uri",
-              error_description: `The callback host ${host} was denied by this site's admin.`,
+              error_description: `The callback host ${host} was ${known?.status === "revoked" ? "revoked" : "denied"} by this site's admin.`,
               callback_host: host,
             });
             return;
@@ -857,7 +887,7 @@ export async function createEmbeddedIdp(
           maxPending: maxPendingHosts,
         });
         logRefusal(host, client.clientId, client.kind === "registered" && client.selfDeclared ? client.name : "");
-        if ((await store.findHost(host))?.status === "denied") {
+        if (hostRefused((await store.findHost(host))?.status)) {
           res.status(403).send(hostDeniedPage(host));
           return undefined;
         }
@@ -1042,6 +1072,17 @@ export async function createEmbeddedIdp(
       record: Omit<PendingConsent, "browserKey" | "expiresAt">,
       username: string,
     ): Promise<void> {
+      // A library sign-in for someone who is not on its Access list would only
+      // fail later at the MCP endpoint; say so now, before Allow.
+      const libraryId = resourceLibraryId(record.resource, config);
+      if (libraryId && record.role !== "sa" && options?.libraryRole) {
+        const role = await options.libraryRole(libraryId, record.sub).catch(() => undefined);
+        if (!role) {
+          res.setHeader("Cache-Control", "no-store");
+          res.status(403).send(noLibraryAccessPage(username, await libraryLabel(record.resource)));
+          return;
+        }
+      }
       const consentId = await rememberConsent(res, record);
       res.setHeader("Cache-Control", "no-store");
       // Allow and Deny redirect to the callback; Chrome checks form-action on that redirect.
@@ -1199,7 +1240,7 @@ export async function createEmbeddedIdp(
         token_type: "Bearer",
         expires_in: 900,
         refresh_token: refreshToken,
-        scope: scopeFor(record.realmRole),
+        scope: grantedScope(record.realmRole, await roleOnResource(record.resource, record.sub)),
       });
     });
 
@@ -1262,7 +1303,7 @@ export async function createEmbeddedIdp(
         token_type: "Bearer",
         expires_in: 900,
         refresh_token: refreshToken,
-        scope: scopeFor(realmRole),
+        scope: grantedScope(realmRole, await roleOnResource(record.resource, record.sub)),
       });
     }
 

@@ -47,7 +47,12 @@ export type SigningKeyRecord = {
   createdAt: number;
 };
 
-export type CallbackHostStatus = "pending" | "approved" | "denied";
+export type CallbackHostStatus = "pending" | "approved" | "denied" | "revoked";
+
+/** Denied and revoked hosts both refuse sign-in; the label in Settings → Apps differs. */
+export function hostRefused(status: CallbackHostStatus | undefined): boolean {
+  return status === "denied" || status === "revoked";
+}
 
 /** A remote https callback host a site admin approves or denies (migration 017). */
 export type CallbackHostRecord = {
