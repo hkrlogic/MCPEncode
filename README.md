@@ -8,7 +8,7 @@ MCPEncode keeps the facts your IT team's AI agents rely on (help desk runbooks, 
 
 - **Citations with version.** Every answer names the published version, date, publisher and link, so you can see where an answer came from.
 - **Freshness.** Policy and Procedure items get a review-by date 90 days after each publish; publishers can set one on any item. Agents relay a warning naming the owner when an item is past review. A **Review queue** lists what is due, with one-click **Still accurate**.
-- **Aliases.** "We got phished" finds the Incident Response runbook. Agents can suggest labels and aliases with `suggest_labels`; a person approves them like any other edit.
+- **Search words as labels.** Label the Incident Response runbook "phished" and "We got phished" finds it. Agents suggest labels with `suggest_labels`; a person approves them like any other edit.
 
 **Status:** Early (0.2). Issues welcome; please open one before a large pull request.
 
@@ -45,14 +45,14 @@ The client opens a browser: sign in, then **Allow** on the consent page. That co
 
 ## Screenshots
 
-All data below is fictional demo content (`npm run seed-demo`). Left to right: the Libraries home; a published security Policy; a Pending edit (agents keep the published version); approving hosted apps; the **Review queue** for help desk runbooks; an agent's **label and alias suggestion** waiting for review; a runbook with its **review-by date** and **aliases**; the consent page.
+All data below is fictional demo content (`npm run seed-demo`). Left to right: the Libraries home; a published security Policy; a Pending edit (agents keep the published version); approving hosted apps; the **Review queue** for help desk runbooks; an agent's **label suggestion** waiting for review; a runbook with its **review-by date** and labels; the consent page.
 
 | | |
 | --- | --- |
 | <img src="docs/assets/landing.png" alt="Libraries list with demo Libraries for IT policies, help desk runbooks, customer support, a biology course, product docs, HR and sales" width="440" /> | <img src="docs/assets/item.png" alt="A published Policy Item with owner, version and effective date" width="440" /> |
 | <img src="docs/assets/pending-changes.png" alt="An Item with a Pending edit: banner says agents still see the published version, with a diff of what changed" width="440" /> | <img src="docs/assets/apps.png" alt="Settings, Apps: one hosted app waiting for approval and one approved" width="440" /> |
-| <img src="docs/assets/review-queue.png" alt="Review queue for Help Desk Runbooks: Account Lockout overdue, Incident Response Runbook due next week, each with Still accurate" width="440" /> | <img src="docs/assets/label-suggestion.png" alt="An agent's suggested labels and aliases for the Incident Response Runbook, Pending for a person to Publish or Cancel" width="440" /> |
-| <img src="docs/assets/item-freshness.png" alt="VPN Troubleshooting runbook with its review-by date, Still accurate button and aliases (remote access, office network, work from home)" width="440" /> | <img src="docs/assets/consent.png" alt="Allow access page asking whether an app may use this account for one Library" width="440" /> |
+| <img src="docs/assets/review-queue.png" alt="Review queue for Help Desk Runbooks: Account Lockout overdue, Incident Response Runbook due next week, each with Still accurate" width="440" /> | <img src="docs/assets/label-suggestion.png" alt="An agent's suggested labels for the Incident Response Runbook, Pending for a person to Publish or Cancel" width="440" /> |
+| <img src="docs/assets/item-freshness.png" alt="VPN Troubleshooting runbook with its review-by date, Still accurate button and search labels" width="440" /> | <img src="docs/assets/consent.png" alt="Allow access page asking whether an app may use this account for one Library" width="440" /> |
 
 ## Known limitations
 

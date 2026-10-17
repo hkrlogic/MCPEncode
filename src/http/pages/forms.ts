@@ -63,19 +63,6 @@ export function captureEditor(body: string, summaryRequired: boolean): string {
   return `${summaryField(split.summary, summaryRequired)}${descriptionMarkup(split.description)}${tableMarkup(split.table ?? EMPTY_TABLE)}`;
 }
 
-/**
- * Other words people use for this item. Search matches them like labels, so
- * "we got phished" finds an item named Incident Response.
- */
-export function aliasesField(value: string): string {
-  return `
-        <label>Aliases
-          <input name="aliases" value="${esc(value)}" placeholder="phished, phishing, suspicious email" autocomplete="off">
-          <span class="hint">Other words people search for. Comma-separated. Search matches them like labels.</span>
-        </label>
-  `;
-}
-
 export function itemFields(input: {
   name: string;
   labels: string;

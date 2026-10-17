@@ -6,7 +6,7 @@ import { canRevertToPublished, revertPlan } from "../../db/queries.ts";
 import { fileKindLabel, formatFileSize, MAX_FILES_PER_ITEM } from "../../items/files.ts";
 import { isPlainGeneral } from "../../items/library-schema.ts";
 import { valuesForSchemaEdit } from "../../items/table-proposal.ts";
-import { aliasesField, itemFields, schemaItemFields } from "./forms.ts";
+import { itemFields, schemaItemFields } from "./forms.ts";
 import { writeModeLabel } from "./schema-choice.ts";
 import {
   actionsMenuSummary,
@@ -120,7 +120,6 @@ export function addItemPage(input: {
         values: {},
       })
     : itemFields({ name: "", labels: "", body: "", summaryRequired: true });
-  const fieldsWithAliases = `${fields}${aliasesField("")}`;
   const liveHint =
     input.library.writeMode === "direct"
       ? `This library is ${writeModeLabel("direct")} — saving makes the item live immediately.`
@@ -149,7 +148,7 @@ export function addItemPage(input: {
         ${input.error ? `<p class="error" role="alert">${esc(input.error)}</p>` : ""}
         <form method="post" action="/libraries/${esc(input.library.id)}/items" class="capture">
           <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-          ${fieldsWithAliases}
+          ${fields}
           <button class="btn" type="submit">Add item</button>
         </form>
       </section>
@@ -249,7 +248,6 @@ export function itemPage(input: {
          </div>
        </details>`;
   const labels = input.item.labels.map((label) => `<span class="tag">${esc(label)}</span>`).join("");
-  const aliases = (input.item.aliases ?? []).map((alias) => esc(alias)).join(", ");
   const flash = noticeMessage(input.notice, status);
   const review = itemReviewBlock(input.item, input.library.schema);
   const unlockHint =
@@ -317,7 +315,6 @@ export function itemPage(input: {
               : ""
           }
           ${labels ? `<p class="meta">${labels}</p>` : ""}
-          ${aliases ? `<p class="meta">Also searched as: ${aliases}</p>` : ""}
           ${input.freshness ?? ""}
         </header>
         ${review}
@@ -390,7 +387,6 @@ export function editPage(input: {
                   summaryRequired: false,
                 })
           }
-          ${aliasesField((input.item.aliases ?? []).join(", "))}
           <button class="btn" type="submit">Save</button>
         </form>
       </section>

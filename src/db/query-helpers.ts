@@ -11,7 +11,6 @@ export type SqlItem = {
   name: string;
   entity_key: string | null;
   labels: string | string[];
-  aliases?: string | string[] | null;
   summary: string;
   body: string;
   details: string | null;
@@ -33,11 +32,11 @@ export type SqlItem = {
  * pull the full-text document blob over the wire.
  */
 export const ITEM_COLUMNS =
-  "id, library_id, name, entity_key, labels, aliases, summary, body, details, status, published_snapshot, previous_published_snapshot, published_live, created_by, updated_by, created_at, updated_at";
+  "id, library_id, name, entity_key, labels, summary, body, details, status, published_snapshot, previous_published_snapshot, published_live, created_by, updated_by, created_at, updated_at";
 
 /** Same shape from the items_live view (what Readers and agents see). */
 export const LIVE_ITEM_COLUMNS =
-  "id, library_id, name, entity_key, labels, aliases, summary, body, details, status, published_snapshot, previous_published_snapshot, has_pending_changes, created_by, updated_by, created_at, updated_at";
+  "id, library_id, name, entity_key, labels, summary, body, details, status, published_snapshot, previous_published_snapshot, has_pending_changes, created_by, updated_by, created_at, updated_at";
 
 /**
  * Readers always read items_live: a Pending edit on a live item shows its
@@ -93,7 +92,6 @@ export function itemDiffersFromSnapshot(
   item: {
     name: string;
     labels: string[];
-    aliases?: string[];
     summary: string;
     body: string;
     details: string | null;
@@ -103,7 +101,6 @@ export function itemDiffersFromSnapshot(
   return (
     item.name !== snapshot.name ||
     !labelsEqual(item.labels, snapshot.labels) ||
-    !labelsEqual(item.aliases ?? [], snapshot.aliases ?? []) ||
     item.summary !== snapshot.summary ||
     item.body !== snapshot.body ||
     (item.details ?? "") !== (snapshot.details ?? "")
@@ -128,7 +125,6 @@ export function revertPlan(item: {
   previous_published_snapshot: PublishedSnapshot | null;
   name: string;
   labels: string[];
-  aliases?: string[];
   summary: string;
   body: string;
   details: string | null;
@@ -156,7 +152,6 @@ export function canRevertToPublished(item: {
   previous_published_snapshot: PublishedSnapshot | null;
   name: string;
   labels: string[];
-  aliases?: string[];
   summary: string;
   body: string;
   details: string | null;
@@ -173,7 +168,6 @@ export function previousSnapshotAfterPublish(
   next: {
     name: string;
     labels: string[];
-    aliases?: string[];
     summary: string;
     body: string;
     details: string | null;
@@ -198,9 +192,6 @@ export function parsePublishedSnapshot(raw: string | null | undefined): Publishe
       labels: Array.isArray(row.labels)
         ? row.labels.filter((entry): entry is string => typeof entry === "string")
         : [],
-      aliases: Array.isArray(row.aliases)
-        ? row.aliases.filter((entry): entry is string => typeof entry === "string")
-        : [],
       summary: row.summary,
       body: row.body,
       details: typeof row.details === "string" ? row.details : null,
@@ -214,7 +205,6 @@ export function parsePublishedSnapshot(raw: string | null | undefined): Publishe
 export function snapshotFromItem(item: {
   name: string;
   labels: string[];
-  aliases?: string[];
   summary: string;
   body: string;
   details: string | null;
@@ -223,7 +213,6 @@ export function snapshotFromItem(item: {
   const snapshot: PublishedSnapshot = {
     name: item.name,
     labels: item.labels,
-    aliases: item.aliases ?? [],
     summary: item.summary,
     body: item.body,
     details: item.details,
@@ -240,7 +229,6 @@ export function toItem(row: SqlItem): ItemRow {
     name: row.name,
     entity_key: typeof row.entity_key === "string" && row.entity_key ? row.entity_key : null,
     labels: parseLabels(row.labels),
-    aliases: parseLabels(row.aliases ?? []),
     summary: row.summary,
     body: row.body,
     status: asStatus(row.status),

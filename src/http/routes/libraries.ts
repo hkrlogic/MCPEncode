@@ -41,7 +41,6 @@ import { libraryInputSchema } from "../../items/schema.ts";
 import { writeModeLabel } from "../pages/schema-choice.ts";
 import {
   formString,
-  formAliases,
   formToItemWrite,
   postedCustomFields,
   libraryTemplateFromForm,
@@ -1234,7 +1233,6 @@ export function registerLibraryRoutes(app: express.Express, ctx: AppRouteContext
       ctxLib.library.id,
       formToItemWrite(req.body, ctxLib.library.schema),
       access.sub,
-      { aliases: formAliases(req.body) },
     );
     if (!result.ok) {
       const shell = await publisherShell(db, access);
