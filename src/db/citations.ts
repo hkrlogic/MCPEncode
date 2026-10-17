@@ -24,7 +24,12 @@ export type Citation = {
   warning?: string;
   /** Set (true) only when the library refuses stale items to agents. */
   strict_freshness?: true;
+  /** Revision of the working row (what update_item replaces). Internal; not sent as part of the citation. */
+  revision: number;
 };
+
+/** What agents receive: the line to quote, plus review_by when set and warning when stale. */
+export type CitationWire = { cite_as: string; review_by?: string; warning?: string };
 
 type CitationRow = {
   id: string;
@@ -37,6 +42,7 @@ type CitationRow = {
   review_by: string | null;
   strict_freshness: boolean | null;
   details: string | null;
+  revision: number | string;
 };
 
 function policyOwner(details: string | null): string | null {
@@ -87,7 +93,7 @@ export async function citationsFor(
     `SELECT live.id, live.name, l.name AS library_name, i.published_version,
             a.username AS published_by_name, i.published_snapshot,
             live.updated_at AS live_updated_at, i.review_by::text AS review_by,
-            l.strict_freshness, live.details
+            l.strict_freshness, live.details, i.updated_at AS revision
      FROM items_live live
      JOIN items i ON i.id = live.id
      JOIN libraries l ON l.id = live.library_id
@@ -116,6 +122,7 @@ export async function citationsFor(
       review_by: row.review_by,
       stale,
       owner,
+      revision: Number(row.revision),
     };
     if (stale) {
       citation.warning = `Past its review date (${row.review_by}); it may be out of date. Tell the user, and suggest checking with ${owner ?? "the library owner"}.`;
@@ -126,19 +133,27 @@ export async function citationsFor(
   return out;
 }
 
-/** Plain-text block appended to a full item in MCP output. */
+/** Compact citation for JSON results (lists, search_shelf). */
+export function citationWire(citation: Citation | undefined): CitationWire | null {
+  if (!citation) return null;
+  return {
+    cite_as: citation.cite_as,
+    ...(citation.review_by ? { review_by: citation.review_by } : {}),
+    ...(citation.warning ? { warning: citation.warning } : {}),
+  };
+}
+
+/**
+ * Plain-text lines appended to a full item in MCP output: cite_as always,
+ * review_by only when set, warning only when stale. cite_as already carries
+ * the version, publish date, publisher and URL.
+ */
 export function citationLines(citation: Citation | undefined): string[] {
   if (!citation) return ["citation: none — this item is not published; do not cite it"];
+  const wire = citationWire(citation) as CitationWire;
   return [
-    "citation:",
-    `  version: ${citation.version}`,
-    `  published_at: ${citation.published_at}`,
-    `  updated_at: ${citation.updated_at}`,
-    citation.published_by ? `  published_by: ${citation.published_by}` : "",
-    citation.url ? `  url: ${citation.url}` : "",
-    `  cite_as: ${citation.cite_as}`,
-    `  review_by: ${citation.review_by ?? "none"}`,
-    `  stale: ${citation.stale}`,
-    citation.warning ? `  warning: ${citation.warning}` : "",
-  ].filter((line) => line !== "");
+    `cite_as: ${wire.cite_as}`,
+    ...(wire.review_by ? [`review_by: ${wire.review_by}`] : []),
+    ...(wire.warning ? [`warning: ${wire.warning}`] : []),
+  ];
 }

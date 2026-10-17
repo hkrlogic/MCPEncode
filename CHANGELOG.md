@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Simplify: shorter citations, fewer fields (#44)
+
+- **Citations are one line:** a full item now ends with `cite_as`, plus `review_by` only when the item has a review-by date and `warning` only when it is past it. The separate `version`, `published_at`, `updated_at`, `published_by`, `url` and `stale` lines are gone: `cite_as` already carries the version, publish day, publisher and URL. JSON results (lists, `search_shelf`) carry the same keys in `citation`. On the demo VPN runbook the block went from 444 to about 230 characters (roughly 110 → 55 tokens per item).
+- **No `version: published|draft` field** on Publisher results: `status` and `has_pending_changes` already say it. `revision` stays, as an opaque token for `expected_revision`. The `open_item` `version` argument is unchanged.
+- **One citation query per item:** the citation query now also reads the revision, so a single-item answer no longer runs a separate citation query for strict mode and another read for the revision.
+
 ### Polish: agent answers
 
 - **One round of write errors:** `create_item` and `update_item` no longer stop at the tool's own argument check. Wrong types, missing required fields, unknown fields, bad dates and versions, bad labels and entity keys all come back in one message. The argument list still advertises types, required fields and limits.
