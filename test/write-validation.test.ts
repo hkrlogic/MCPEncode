@@ -60,7 +60,6 @@ const policy = {
   owner: "Ops",
   version: "1.0",
   effective_date: "2026-01-01",
-  review_date: "2027-01-01",
   purpose: "Keep hosts patched",
   scope: "All servers",
   policy: "Patch monthly",
@@ -197,12 +196,10 @@ test("every validation problem is reported at once", () => {
   assert.doesNotMatch(human, /Do not invent fields/);
 });
 
-test("review date before effective date is still reported, alongside other issues", () => {
-  const alone = itemForLibrarySchema("policy", { ...policy, review_date: "2025-01-01" });
-  assert.equal(alone.ok, false);
-  assert.match(alone.ok ? "" : alone.message, /Review date must be on or after the effective date/);
-  const both = itemForLibrarySchema("policy", { ...policy, review_date: "2025-01-01", owner: "" });
-  assert.match(both.ok ? "" : both.message, /Owner is required.*Review date must be on or after/s);
+test("review_date is no longer a Policy field (review_by is the only review date)", () => {
+  const sent = itemForLibrarySchema("policy", { ...policy, review_date: "2027-01-01" });
+  assert.equal(sent.ok, false);
+  assert.match(sent.ok ? "" : sent.message, /Unknown field\(s\): review_date/);
 });
 
 test("migration 024 normalizes stored labels and published copies without a new publish", async () => {

@@ -4,20 +4,12 @@
  * an item changes no content, no revision and no citation version.
  */
 import type { Database } from "./types.ts";
-import type { LibraryRow } from "./models.ts";
 import { allRows, getRow } from "./query-helpers.ts";
 
-/** Default and fallback review period. */
-export const DEFAULT_REVIEW_DAYS = 90;
+/** Review period: Policy and Procedure items get publish day + this on every publish; Still accurate moves any item this far. */
+export const REVIEW_DAYS = 90;
 /** The queue shows items due within this many days, and overdue ones. */
 export const REVIEW_QUEUE_DAYS = 14;
-export const REVIEW_DAYS_MAX = 3650;
-
-/** Effective days for a library: its setting, else 90 for Policy/Procedure, else off (0). */
-export function reviewDaysFor(library: Pick<LibraryRow, "template" | "reviewDays">): number {
-  if (library.reviewDays != null) return library.reviewDays;
-  return library.template === "policy" || library.template === "procedure" ? DEFAULT_REVIEW_DAYS : 0;
-}
 
 /** UTC calendar day, YYYY-MM-DD. */
 export function todayIso(now = Date.now()): string {
@@ -35,54 +27,32 @@ export function isIsoDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-export async function setLibraryFreshness(
-  db: Database,
-  libraryId: string,
-  settings: { reviewDays: number | null; strict: boolean },
-  actorSub: string,
-): Promise<boolean> {
-  const days =
-    settings.reviewDays == null ? null : Math.min(Math.max(Math.trunc(settings.reviewDays), 0), REVIEW_DAYS_MAX);
-  const rows = await allRows<{ id: string }>(
-    db,
-    `UPDATE libraries SET review_days = ?, strict_freshness = ?, updated_by = ?, updated_at = ?
-     WHERE id = ? RETURNING id`,
-    days,
-    settings.strict,
-    actorSub,
-    Date.now(),
-    libraryId,
-  );
-  return rows.length > 0;
-}
-
 /** Items with a live published copy. */
 const HAS_LIVE_COPY =
   "published_snapshot IS NOT NULL AND (status = 'published' OR (status = 'draft' AND published_live))";
 
 /**
  * "Still accurate": a person re-confirms the published copy. Moves review_by
- * to today + the library period (90 days when the library has none) and
+ * to today + 90 days and
  * records who confirmed. Content, revision and citation version do not change.
  */
 export async function confirmStillAccurate(
   db: Database,
-  library: Pick<LibraryRow, "id" | "template" | "reviewDays">,
+  libraryId: string,
   itemId: string,
   actorSub: string,
 ): Promise<{ reviewBy: string } | undefined> {
-  const days = reviewDaysFor(library) || DEFAULT_REVIEW_DAYS;
   const row = await getRow<{ review_by: string }>(
     db,
     `UPDATE items SET review_by = ?::date + ?::int, reviewed_at = ?, reviewed_by = ?
      WHERE id = ? AND library_id = ? AND ${HAS_LIVE_COPY}
      RETURNING review_by::text AS review_by`,
     todayIso(),
-    days,
+    REVIEW_DAYS,
     Date.now(),
     actorSub,
     itemId,
-    library.id,
+    libraryId,
   );
   return row ? { reviewBy: row.review_by } : undefined;
 }

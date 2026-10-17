@@ -64,7 +64,6 @@ export type ItemWriteInput = {
   approved_by?: string;
   version?: string;
   effective_date?: string;
-  review_date?: string;
   purpose?: string;
   scope?: string;
   policy?: string;
@@ -101,7 +100,6 @@ function policyStarterFields(): SchemaFieldDef[] {
     { key: "approved_by", label: "Approved by", type: "text", required: false, kind: "control", max: 200 },
     { key: "version", label: "Version", type: "version", required: true, kind: "control", max: 20 },
     { key: "effective_date", label: "Effective date", type: "date", required: true, kind: "control" },
-    { key: "review_date", label: "Review date", type: "date", required: true, kind: "control" },
     { key: "purpose", label: "Purpose", type: "longtext", required: true, kind: "body", max: 8_000 },
     { key: "scope", label: "Scope", type: "longtext", required: true, kind: "body", max: 8_000 },
     { key: "policy", label: "Policy", type: "longtext", required: true, kind: "body", max: 20_000 },
@@ -408,10 +406,6 @@ export function mcpWriteToolDescription(
   return `${head} ${shape} schema: send name${summaryBit}${fieldList ? `, ${fieldList}` : ""}; optional entity_key, labels. Do not invent fields. Every problem comes back in one answer.`;
 }
 
-function isRealDate(value: unknown): boolean {
-  return typeof value === "string" && isoDate("Date").safeParse(value).success;
-}
-
 function isoDate(label: string) {
   return z
     .string()
@@ -578,26 +572,12 @@ export function itemForLibrarySchema(
 
   const parsed = z.object(shape).safeParse(payload);
   if (!parsed.success) {
-    const lines = issueLines(parsed.error.issues);
-    const raw = payload as Record<string, unknown>;
-    if (
-      schema.starter === "policy" &&
-      // Only compare two real dates; a bad date already has its own message.
-      isRealDate(raw.review_date) &&
-      isRealDate(raw.effective_date) &&
-      (raw.review_date as string).trim() < (raw.effective_date as string).trim()
-    ) {
-      lines.push("Review date must be on or after the effective date.");
-    }
-    return failed(lines);
+    return failed(issueLines(parsed.error.issues));
   }
   if (issues.length > 0) return failed([]);
 
   if (schema.starter === "policy") {
     const data = parsed.data as Record<string, string> & { name: string; summary: string; labels: string[] };
-    if (data.review_date && data.effective_date && data.review_date < data.effective_date) {
-      return failed(["Review date must be on or after the effective date."]);
-    }
     const details = Object.fromEntries(
       schema.fields.map((field) => [field.key, data[field.key] ?? ""]),
     );

@@ -9,7 +9,6 @@ import { createItem, createLibrary, getLibrary, publishItem } from "../src/db/qu
 import type { Database } from "../src/db/types.ts";
 import { declareUtf8, withUtf8 } from "../src/http/utf8-charset.ts";
 import {
-  itemForLibrarySchema,
   mcpCreateItemInputSchema,
   mcpUpdateItemInputSchema,
   mcpWriteToolDescription,
@@ -63,7 +62,6 @@ test("a bad create_item reports every problem in one answer, including non-strin
       purpose: "",
       version: "v2",
       effective_date: "2026-13-01",
-      review_date: "2026-01-01",
       scope: "x",
       policy: "x",
       colour: "blue",
@@ -84,8 +82,6 @@ test("a bad create_item reports every problem in one answer, including non-strin
     ]) {
       assert.match(result.text, expected);
     }
-    // The effective date is invalid, so no misleading date-order message.
-    assert.doesNotMatch(result.text, /Review date must be on or after/);
     // The field list is said once, at the end.
     assert.equal(result.text.split("This library uses the policy schema").length - 1, 1);
   });
@@ -105,26 +101,6 @@ test("update_item with a wrong type and a schema problem reports both", async ()
     assert.match(result.text, /labels must be an array of strings/);
     assert.match(result.text, /Name is required/);
   });
-});
-
-test("date order is checked only when both dates are real", () => {
-  const base = {
-    name: "P",
-    summary: "S",
-    owner: "O",
-    version: "1.0",
-    purpose: "x",
-    scope: "x",
-    policy: "x",
-  };
-  const order = /Review date must be on or after the effective date/;
-  const both = itemForLibrarySchema("policy", { ...base, effective_date: "2026-05-01", review_date: "2026-01-01" });
-  assert.match(both.ok ? "" : both.message, order);
-  const badEffective = itemForLibrarySchema("policy", { ...base, effective_date: "2026-13-01", review_date: "2026-01-01" });
-  assert.doesNotMatch(badEffective.ok ? "" : badEffective.message, order);
-  const badReview = itemForLibrarySchema("policy", { ...base, effective_date: "2026-05-01", review_date: "2026-02-30" });
-  assert.match(badReview.ok ? "" : badReview.message, /Review date must be a real date/);
-  assert.doesNotMatch(badReview.ok ? "" : badReview.message, order);
 });
 
 test("a lookup with no match is a normal answer, not a tool error", async () => {

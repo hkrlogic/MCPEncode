@@ -9,7 +9,6 @@ const remoteAccess = {
   approved_by: "Security",
   version: "1.0",
   effective_date: "2026-09-01",
-  review_date: "2027-09-01",
   purpose: "Keep guest access on the company network limited.",
   scope: "Guests and the office network.",
   policy: "Guests use the gateway. No personal devices.",
@@ -21,7 +20,7 @@ const remoteAccess = {
 test("policy text uses the fixed labels and no extra fields", () => {
   const text = formatPolicy(remoteAccess);
   assert.match(text, /^Template: Policy\n/);
-  assert.match(text, /Owner: Office Lead\nApproved by: Security\nVersion: 1\.0\nEffective date: 2026-09-01\nReview date: 2027-09-01/);
+  assert.match(text, /Owner: Office Lead\nApproved by: Security\nVersion: 1\.0\nEffective date: 2026-09-01\n\nPurpose:/);
   assert.match(text, /Purpose:\nKeep guest access/);
   assert.match(text, /Scope:\nGuests and the office network\./);
   assert.match(text, /Policy:\nGuests use the gateway/);
@@ -58,7 +57,6 @@ test("a policy library stores the document fields, and a reader does not see the
     const opened = await getItem(db, created.id, { publishedOnly: false });
     assert.equal(opened?.policy?.owner, "Office Lead");
     assert.equal(opened?.policy?.version, "1.0");
-    assert.equal(opened?.policy?.review_date, "2027-09-01");
     assert.equal(opened?.policy?.purpose, remoteAccess.purpose);
     assert.match(opened?.body ?? "", /Template: Policy/);
     assert.equal(opened?.summary, "How guests reach the office network.");

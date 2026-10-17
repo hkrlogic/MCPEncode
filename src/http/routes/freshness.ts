@@ -1,15 +1,8 @@
-/** Owner review queue, freshness settings, Still accurate, and review-by edits. */
+/** Owner review queue, Still accurate, and review-by edits. */
 import type express from "express";
 import { can } from "../../auth/rbac.ts";
 import { getItem, writeAudit } from "../../db/queries.ts";
-import {
-  REVIEW_DAYS_MAX,
-  confirmStillAccurate,
-  isIsoDate,
-  reviewQueue,
-  setLibraryFreshness,
-  setReviewBy,
-} from "../../db/freshness.ts";
+import { confirmStillAccurate, isIsoDate, reviewQueue, setReviewBy } from "../../db/freshness.ts";
 import { formString, requireCsrf, sessionAccess } from "../helpers.ts";
 import { errorPage } from "../pages.ts";
 import { reviewQueuePage } from "../pages/freshness.ts";
@@ -55,27 +48,6 @@ export function registerFreshnessRoutes(app: express.Express, ctx: AppRouteConte
     );
   });
 
-  app.post("/libraries/:id/freshness", async (req, res) => {
-    const ok = await publisherFor(req, res, req.params.id, true);
-    if (!ok) return;
-    const raw = formString(req.body, "review_days").trim();
-    if (raw !== "" && !(/^\d{1,4}$/.test(raw) && Number(raw) <= REVIEW_DAYS_MAX)) {
-      res.redirect(`/libraries/${ok.library.id}/review?notice=invalid`);
-      return;
-    }
-    const reviewDays = raw === "" ? null : Number(raw);
-    const strict = formString(req.body, "strict_freshness") === "on";
-    const saved = await setLibraryFreshness(db, ok.library.id, { reviewDays, strict }, ok.access.sub);
-    await writeAudit(db, {
-      actorSub: ok.access.sub,
-      tool: "ui.set_freshness",
-      success: saved,
-      libraryId: ok.library.id,
-      detail: `${ok.library.id}:review_days=${reviewDays ?? "default"}:strict=${strict}`,
-    });
-    res.redirect(`/libraries/${ok.library.id}/review?notice=saved`);
-  });
-
   app.post("/items/:id/still-accurate", async (req, res) => {
     const item = await getItem(db, req.params.id, { publishedOnly: false });
     if (!item) {
@@ -84,7 +56,7 @@ export function registerFreshnessRoutes(app: express.Express, ctx: AppRouteConte
     }
     const ok = await publisherFor(req, res, item.library_id, true);
     if (!ok) return;
-    const result = await confirmStillAccurate(db, ok.library, item.id, ok.access.sub);
+    const result = await confirmStillAccurate(db, ok.library.id, item.id, ok.access.sub);
     await writeAudit(db, {
       actorSub: ok.access.sub,
       tool: "ui.still_accurate",

@@ -184,12 +184,14 @@ test("Story D — Documents item written before field add keeps body on edit see
   });
 });
 
-test("Story E — Policy guide grows once, then hits the 12-field cap", async () => {
+test("Story E — Policy guide grows twice, then hits the 12-field cap", async () => {
   await withTestDatabase(async (db) => {
     const library = await createLibrary(db, "Acceptable use", "sam", "policy");
-    assert.equal(library.schema.fields.length, 11);
+    assert.equal(library.schema.fields.length, 10);
 
     assert.equal((await proposeField(db, library.id, { label: "Audience", type: "longtext" }, "sam")).ok, true);
+    assert.equal((await approveFieldProposal(db, library.id, "sam")).ok, true);
+    assert.equal((await proposeField(db, library.id, { label: "Contact", type: "text" }, "sam")).ok, true);
     assert.equal((await approveFieldProposal(db, library.id, "sam")).ok, true);
     const live = await getLibrary(db, library.id);
     assert.equal(live?.schema.fields.length, MAX_LIBRARY_FIELDS);
@@ -207,7 +209,6 @@ test("Story E — Policy guide grows once, then hits the 12-field cap", async ()
         owner: "Legal",
         version: "1.0",
         effective_date: "2026-01-01",
-        review_date: "2027-01-01",
         purpose: "Set expectations",
         scope: "All staff",
         policy: "Do not share credentials.",

@@ -67,7 +67,7 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 - **Lengths:** name 200, summary 160, labels 40 each and at most 20. A field without its own limit uses one default per type (text 200, longtext 8,000, markdown 50,000), the same in the tool's argument list and in the save check.
 - **Labels** are stored trimmed, lower case and without duplicates, whether they come from an agent, the form or `suggest_labels`. Labels are free-form.
 - **Summary** on a plain General library comes from the body; an agent that sends `summary` there is told to put the text in `body`.
-- **Errors** list every problem in one message (with the library's field list), so an agent can fix them in one retry. The tool's argument list shows types, required fields and limits, but the save check enforces them, so a wrong type, a missing field and an unknown field all come back together. Review date versus effective date is compared only when both are real dates.
+- **Errors** list every problem in one message (with the library's field list), so an agent can fix them in one retry. The tool's argument list shows types, required fields and limits, but the save check enforces them, so a wrong type, a missing field and an unknown field all come back together.
 - **No match** from `list_items` (by `q` or `entity_key`) is a normal answer that says the item is not in the library, not a tool error.
 
 **How `list_items q=` searches.**
@@ -94,14 +94,12 @@ JSON results (lists, `search_shelf`) carry the same three keys in a `citation` o
 Never-published drafts say `citation: none`. Items published before this release start at version 1, with no recorded publisher.
 
 **Freshness.**
-- **Review-by date.** Each published item can have a review-by date, set on every publish (and on Review Unlock saves) to the publish day plus the library's review period.
-  - The period defaults to 90 days for Policy and Procedure libraries and is off for other types. Publishers change it under **Review → Freshness settings** (blank means the type default, 0 means off).
-  - Policy items use their own **Review date** field instead.
-  - A publisher can set or clear the date on the item page.
-  - The date lives outside the published copy (`items.review_by`). Changing it is not an edit: it does not go Pending, change the revision, or bump the citation version.
+- **Review-by date.** Each published item can have one review-by date (`items.review_by`), the only review date there is.
+  - Policy and Procedure libraries: every publish (and Review Unlock save) sets it to the publish day plus 90 days.
+  - Other libraries: no automatic date. A publisher sets or clears it on the item page, and later publishes keep it.
+  - The date lives outside the published copy. Changing it is not an edit: it does not go Pending, change the revision, or bump the citation version.
 - **Stale answers.** When the review-by date is before today (UTC), the citation adds a `warning` line naming who to ask (the Policy owner field, otherwise the publisher), which agents relay to the user.
-- **Strict mode** (per library, off by default). Items past review are not given as answers. `open_item` and a single-match `list_items` return a refusal telling the user who should review it and where. Lists and `search_shelf` leave those items out and add a `withheld` note.
-- **Review queue.** The library's **Review** tab lists published items due within 14 days or overdue. **Still accurate** re-confirms an item: review-by becomes today plus the period (90 days if the library has none), and who confirmed it and when are recorded and audit-logged (`ui.still_accurate`). Content and version stay the same.
+- **Review queue.** The library's **Review** tab lists published items due within 14 days or overdue. **Still accurate** re-confirms an item: review-by becomes today plus 90 days, and who confirmed it and when are recorded and audit-logged (`ui.still_accurate`). Content and version stay the same.
 
 **Edit conflicts.** Publisher results that return a full item (`open_item`, a single-match `list_items`, `create_item`, `update_item`) include `revision`, an opaque token. Pass it back as `expected_revision` on `update_item`: if anyone saved the item since, nothing is saved and the tool returns a conflict with `current_revision`, so the agent can re-read and reapply. Without `expected_revision` the last save wins, as before. The web edit form does the same check and shows the latest copy when it fails.
 

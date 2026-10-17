@@ -44,11 +44,7 @@ type SqlLibrary = Omit<
   | "connectTokenLast4"
   | "readerKeyPrefix"
   | "readerKeyCreatedAt"
-  | "reviewDays"
-  | "strictFreshness"
 > & {
-  review_days?: number | string | null;
-  strict_freshness?: boolean | null;
   template?: string;
   write_mode?: string;
   connect_token_last4?: string | null;
@@ -84,8 +80,6 @@ function toLibrary(row: SqlLibrary): LibraryRow {
     readerKeyPrefix: row.reader_key_prefix || null,
     readerKeyCreatedAt: asMillis(row.reader_key_created_at),
     shelfId: row.shelf_id || null,
-    reviewDays: row.review_days == null || row.review_days === "" ? null : Number(row.review_days),
-    strictFreshness: row.strict_freshness === true,
     created_by: row.created_by,
     updated_by: row.updated_by,
     created_at: row.created_at,

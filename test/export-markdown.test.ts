@@ -84,7 +84,6 @@ test("policy item export uses control and body sections", () => {
         approved_by: "CISO",
         version: "1.0",
         effective_date: "2026-01-01",
-        review_date: "2027-01-01",
         purpose: "Keep systems safe.",
         scope: "All staff.",
         policy: "Do not share passwords.",

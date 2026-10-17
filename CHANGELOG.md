@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Simplify: one review date, no per-library freshness settings (#44)
+
+- **`review_by` is the only review date.** Policy items no longer have a **Review date** field (or its "on or after the effective date" check), so the Policy starter has 10 fields. Migration `025_single_review_date.sql` copies the published Review date into `review_by` where none was set, and removes `review_date` from Policy items (working row and both published copies, without counting as a new publish) and from Policy library schemas. "Still accurate" and the Policy page can no longer disagree. Agents that still send `review_date` get "Unknown field(s): review_date".
+- **Fixed review period.** Policy and Procedure libraries get publish day + 90 days on every publish. Other libraries get no automatic date; a publisher sets one per item on the item page. The **Freshness settings** form (review days, strict mode), `POST /libraries/:id/freshness`, `libraries.review_days`, `libraries.strict_freshness` and the `library_review_days` / `item_review_by_for` SQL functions are gone.
+- **No strict mode.** Stale items are still answered, with the `warning` line naming who to ask; no refusals or `withheld` notes.
+- Removed the unused `policyItemSchema` and `policyItemFields` (an older Policy form).
+- Demo seed: Help Desk Runbooks (a General library) sets review-by dates per item.
+
 ### Simplify: shorter citations, fewer fields (#44)
 
 - **Citations are one line:** a full item now ends with `cite_as`, plus `review_by` only when the item has a review-by date and `warning` only when it is past it. The separate `version`, `published_at`, `updated_at`, `published_by`, `url` and `stale` lines are gone: `cite_as` already carries the version, publish day, publisher and URL. JSON results (lists, `search_shelf`) carry the same keys in `citation`. On the demo VPN runbook the block went from 444 to about 230 characters (roughly 110 → 55 tokens per item).
