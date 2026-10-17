@@ -37,7 +37,7 @@
     "jspreadsheet-ce": "^5.0.4",
     "marked": "^18.1.0",
     "pg": "^8.23.1",
-    "sanitize-html": "^2.17.7",
+    "sanitize-html": "^2.18.0",
     "turndown": "^7.2.4",
     "zod": "^4.6.5"
   },
@@ -47,7 +47,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.5",
     "@types/pg": "^8.23.1",
-    "@types/sanitize-html": "^2.16.1",
+    "@types/sanitize-html": "^2.16.2",
     "@types/turndown": "^5.0.6",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
