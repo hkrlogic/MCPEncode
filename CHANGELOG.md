@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Simplify: aliases are labels (#44)
+
+- **One list.** Search already matched and ranked aliases exactly like labels, so "phished" or "suspicious email" is now simply a label. Migration `026_aliases_into_labels.sql` appends each item's aliases to its labels (lower case, no duplicates; the working row and both published copies, without counting as a new publish), then drops `items.aliases` and the `items_live.aliases` column. Nothing is cut: an item that ends up over the 20-label limit keeps every word, and its next edit asks for fewer.
+- **`suggest_labels` keeps working** with `add_labels` / `remove_labels` (plus `reason`, `expected_revision`); `add_aliases` and `remove_aliases` are gone. Item output has no `aliases:` line, the edit form no Aliases field, the item page no "Also searched as" line, and Markdown export no Aliases line.
+
 ### Simplify: one review date, no per-library freshness settings (#44)
 
 - **`review_by` is the only review date.** Policy items no longer have a **Review date** field (or its "on or after the effective date" check), so the Policy starter has 10 fields. Migration `025_single_review_date.sql` copies the published Review date into `review_by` where none was set, and removes `review_date` from Policy items (working row and both published copies, without counting as a new publish) and from Policy library schemas. "Still accurate" and the Policy page can no longer disagree. Agents that still send `review_date` get "Unknown field(s): review_date".

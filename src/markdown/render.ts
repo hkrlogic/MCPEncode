@@ -62,8 +62,6 @@ export function labeledItemData(item: {
   entity_key?: string | null;
   name: string;
   labels: string[];
-  /** Search aliases. Printed only when the item has some. */
-  aliases?: string[];
   summary?: string;
   body: string;
   files?: { name: string; content_type: string; byte_size: number }[];
@@ -95,7 +93,6 @@ export function labeledItemData(item: {
     item.revision === undefined ? "" : `revision: ${item.revision}`,
     `name: ${item.name}`,
     `labels: ${item.labels.join(", ") || "(none)"}`,
-    item.aliases && item.aliases.length > 0 ? `aliases: ${item.aliases.join(", ")}` : "",
     item.summary ? `summary: ${item.summary}` : "",
     "body:",
     item.body,

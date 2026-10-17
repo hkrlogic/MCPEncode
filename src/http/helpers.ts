@@ -108,12 +108,6 @@ export function csrfHeader(req: Request): string {
   return typeof value === "string" ? value : "";
 }
 
-/** Aliases from a form, or undefined when the form has no aliases field (keep stored). */
-export function formAliases(body: unknown): string[] | undefined {
-  if (!body || typeof body !== "object" || !("aliases" in body)) return undefined;
-  return parseLabelField(formString(body, "aliases"));
-}
-
 export function requireCsrf(req: Request, csrf: string): boolean {
   const provided = formString(req.body, "csrf") || csrfHeader(req);
   return tokensMatch(provided, csrf);

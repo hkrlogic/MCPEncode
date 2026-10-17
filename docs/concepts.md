@@ -9,8 +9,8 @@ Use exactly these words in UI text, docs and code. Do not invent synonyms (vault
 | Word | Meaning |
 | --- | --- |
 | **Library** | A named set of items with one schema, one Connect link and one Access list. There are many libraries, not one global pile. |
-| **Item** | One entry in a library: name, labels, aliases, summary, and a markdown body or template fields. |
-| **Aliases** | Other words people use for an item ("phished", "suspicious email"). Search matches them like labels. Not shown as tags. |
+| **Item** | One entry in a library: name, labels, summary, and a markdown body or template fields. |
+| **Labels** | Free-form tags: categories ("security") and the other words people search with ("phished", "suspicious email"). |
 | **Publish** | A person approves an item. Readers and Reader keys only ever see published items. |
 | **Connect link** | A library's MCP address, with a secret token. One link reaches one library. The token is stored only as a SHA-256 hash, so the full link is shown once; to get a new one, rotate it. |
 | **Reader** / **Publisher** | Per-library roles, granted under **Access**. |
@@ -55,7 +55,7 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 | `search_shelf` | Reader+ | Published summaries across the library's shelf |
 | `create_item` | Publisher | Save: Pending (Review Lock) or published (Review Unlock). With an `entity_key` that already exists in the library, updates that item instead (upsert). |
 | `update_item` | Publisher | Change an item. Fields you leave out keep their value; `replace: true` replaces the whole item (omitted optional fields are cleared). Unknown fields are refused. |
-| `suggest_labels` | Publisher | Add or remove labels and aliases on a **published** item without touching its text: Pending for a person to approve (Review Lock) or live at once (Review Unlock) |
+| `suggest_labels` | Publisher | Add or remove labels on a **published** item without touching its text: Pending for a person to approve (Review Lock) or live at once (Review Unlock) |
 | `delete_item` | Site admin | Hard-delete an item (Publishers archive instead) |
 | `create_library` | Site admin | Create a library, optionally with a proposed table |
 | `propose_table` / `propose_field` | Publisher | Design a library; a person approves the schema. After approval the tools pick up the new field on the next request; there is no need to reconnect. |
@@ -71,17 +71,17 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 - **No match** from `list_items` (by `q` or `entity_key`) is a normal answer that says the item is not in the library, not a tool error.
 
 **How `list_items q=` searches.**
-1. Every word must match (name, labels and aliases, summary, then body; the full-text index applies English stemming). Aliases score exactly like labels.
+1. Every word must match (name, labels, summary, then body; the full-text index applies English stemming).
 2. If nothing matches every word, any word may match. A clear winner that matched on its name or labels, and on most of the words, is returned as the one answer. Weaker candidates come back as **"Did you mean"** suggestions, which the agent must open and check before citing.
-3. Still nothing: words that appear nowhere in the library's names, summaries, labels or aliases are corrected to the closest library word (1–2 typos), and steps 1–2 run again.
+3. Still nothing: words that appear nowhere in the library's names, summaries or labels are corrected to the closest library word (1–2 typos), and steps 1–2 run again.
 
-A word that is only a label several items share (for example `runbook`) returns those items as a list, not one of them as "the" answer. Questions with no word in common with the library are still refused. `search_shelf` falls back from the exact phrase to "every word somewhere in name, summary, labels or aliases".
+A word that is only a label several items share (for example `runbook`) returns those items as a list, not one of them as "the" answer. Questions with no word in common with the library are still refused. `search_shelf` falls back from the exact phrase to "every word somewhere in name, summary or labels".
 
-**Aliases and label suggestions.** Each item has an editable **Aliases** field (comma-separated, lower case, up to 20 of 40 characters). Aliases are part of the published copy, so changing them is an ordinary edit: under Review Lock it goes Pending and Readers keep searching the published aliases until Publish. Agents fix search misses with `suggest_labels` (`add_labels`, `remove_labels`, `add_aliases`, `remove_aliases`, optional `reason` and `expected_revision`):
+**Label suggestions.** Labels double as search words: label an incident runbook "phished" and "we think we got phished" finds it. Agents fix search misses with `suggest_labels` (`add_labels`, `remove_labels`, optional `reason` and `expected_revision`):
 - It only works on published items (including ones with a Pending edit, which it joins). Name, summary and body are never changed; use `update_item` for drafts.
-- **Review Lock:** the item goes Pending. "What changed" lists **Labels** and **Aliases** before and after. A person approves with **Publish** or rejects with **Cancel**, which restores the published labels and aliases.
+- **Review Lock:** the item goes Pending. "What changed" lists **Labels** before and after. A person approves with **Publish** or rejects with **Cancel**, which restores the published labels.
 - **Review Unlock:** the change is live at once.
-- Readers and Reader keys do not get the tool. Every call is audit-logged as `suggest_labels` (item id, resulting labels and aliases, reason). Approve and reject are logged by the existing publish and cancel events.
+- Readers and Reader keys do not get the tool. Every call is audit-logged as `suggest_labels` (item id, resulting labels, reason). Approve and reject are logged by the existing publish and cancel events.
 - Citations follow the published copy: the version moves only when a suggestion is published (or saved under Review Unlock).
 
 **Citations.** Every published item that `list_items`, `open_item` or `search_shelf` returns carries a citation for its **published** copy (never a Pending draft). A full item ends with:
