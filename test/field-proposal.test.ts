@@ -98,7 +98,6 @@ test("approve field works on policy libraries and reject clears the wait", async
       owner: "IT",
       version: "1.0",
       effective_date: "2026-01-01",
-      review_date: "2027-01-01",
       purpose: "Protect remote access",
       scope: "All staff",
       policy: "Use the company VPN.",
@@ -145,10 +144,11 @@ test("cannot propose a field while a table is waiting, and vice versa", async ()
 test("propose_field fails at the 12-field cap", async () => {
   await withTestDatabase(async (db) => {
     const library = await createLibrary(db, "Full", "alice", "policy");
-    // Policy starter has 11 fields; one add-on fills the cap.
-    const first = await proposeField(db, library.id, { label: "Audience", type: "text" }, "alice");
-    assert.equal(first.ok, true);
-    assert.equal((await approveFieldProposal(db, library.id, "alice")).ok, true);
+    // Policy starter has 10 fields; two add-ons fill the cap.
+    for (const label of ["Audience", "Contact"]) {
+      assert.equal((await proposeField(db, library.id, { label, type: "text" }, "alice")).ok, true);
+      assert.equal((await approveFieldProposal(db, library.id, "alice")).ok, true);
+    }
     const live = await getLibrary(db, library.id);
     assert.equal(live?.schema.fields.length, MAX_LIBRARY_FIELDS);
     const blocked = await proposeField(db, library.id, { label: "Extra", type: "text" }, "alice");

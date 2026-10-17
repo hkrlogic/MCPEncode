@@ -1,5 +1,6 @@
-/** Review-by dates, stale citations, strict mode, the review queue and Still accurate. */
+/** Review-by dates, stale citations, the review queue and Still accurate. */
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import type { AuthInfo } from "@modelcontextprotocol/server";
 import { citationsFor } from "../src/db/citations.ts";
@@ -7,9 +8,7 @@ import {
   confirmStillAccurate,
   isPastReview,
   itemFreshness,
-  reviewDaysFor,
   reviewQueue,
-  setLibraryFreshness,
   setReviewBy,
   todayIso,
 } from "../src/db/freshness.ts";
@@ -61,12 +60,7 @@ async function runbookLibrary(db: Database, template: "general" | "procedure" = 
   return { libraryId: library.id, id: row.id };
 }
 
-test("type defaults: 90 days for Policy and Procedure, off for General; library setting overrides", async () => {
-  assert.equal(reviewDaysFor({ template: "policy", reviewDays: null }), 90);
-  assert.equal(reviewDaysFor({ template: "procedure", reviewDays: null }), 90);
-  assert.equal(reviewDaysFor({ template: "general", reviewDays: null }), 0);
-  assert.equal(reviewDaysFor({ template: "general", reviewDays: 30 }), 30);
-  assert.equal(reviewDaysFor({ template: "policy", reviewDays: 0 }), 0);
+test("publish sets review-by to +90 days in Policy and Procedure libraries, none elsewhere", async () => {
   assert.equal(isPastReview(day(-1)), true);
   assert.equal(isPastReview(day(0)), false);
   assert.equal(isPastReview(null), false);
@@ -77,23 +71,30 @@ test("type defaults: 90 days for Policy and Procedure, off for General; library 
     const general = await runbookLibrary(db, "general");
     assert.equal((await itemFreshness(db, general.id))?.reviewBy, null);
 
-    // Configured default applies on the next publish.
-    await setLibraryFreshness(db, general.libraryId, { reviewDays: 30, strict: false }, "alice");
+    // A date set by hand on a General item survives the next publish.
+    await setReviewBy(db, general.libraryId, general.id, day(30));
     const row = await getItem(db, general.id, { publishedOnly: false });
     assert.ok(row);
     await updateItem(db, general.id, { name: row.name, body: `${row.body} Then reconnect.`, labels: [] }, "alice");
     await publishItem(db, general.id, "alice");
     assert.equal((await itemFreshness(db, general.id))?.reviewBy, day(30));
+
+    // Libraries have no review period or strict-mode columns any more.
+    const columns = (await db.all(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'libraries' AND column_name IN ('review_days', 'strict_freshness')",
+    )) as unknown[];
+    assert.equal(columns.length, 0);
   });
 });
 
-test("Policy items reuse their own Review date", async () => {
+test("Policy items: review_by is the only review date; the owner field names who to ask", async () => {
   await withTestDatabase(async (db) => {
     const library = await createLibrary(db, "Policies", "alice", "policy");
-    const details = JSON.stringify({ owner: "CISO", effective_date: "2026-01-01", review_date: "2027-03-31", policy: "Use MFA." });
+    assert.ok(!library.schema.fields.some((field) => field.key === "review_date"), "no Review date field");
+    const details = JSON.stringify({ owner: "CISO", effective_date: "2026-01-01", policy: "Use MFA." });
     const row = await createItem(db, { name: "MFA", body: "Use MFA.", labels: [], details }, "alice", library.id);
     await publishItem(db, row.id, "alice");
-    assert.equal((await itemFreshness(db, row.id))?.reviewBy, "2027-03-31");
+    assert.equal((await itemFreshness(db, row.id))?.reviewBy, day(90));
     await setReviewBy(db, library.id, row.id, day(-3));
     const citation = (await citationsFor(db, [row.id])).get(row.id);
     assert.equal(citation?.owner, "CISO", "owner comes from the Policy owner field");
@@ -119,41 +120,16 @@ test("stale items carry review_by and a warning in list_items, open_item and cit
   });
 });
 
-test("strict mode refuses stale items and points to the owner; fresh items still answer", async () => {
+test("stale items are still answered, with the warning (no strict mode)", async () => {
   await withTestDatabase(async (db) => {
     const { libraryId, id } = await runbookLibrary(db, "procedure");
-    const other = await createItem(db, { name: "VPN Client Install", body: "Install the client.", labels: [] }, "alice", libraryId);
-    await publishItem(db, other.id, "alice");
     await setReviewBy(db, libraryId, id, day(-1));
-    await setLibraryFreshness(db, libraryId, { reviewDays: null, strict: true }, "alice");
-
     const open = await call(db, libraryId, "reader", "open_item", { id });
-    assert.equal(open.isError, true);
-    assert.match(open.text, /^Refused: "VPN Troubleshooting" is past its review date/);
-    assert.match(open.text, /ask the library owner to review it \(http:\/\/app\.test\/items\//);
-
+    assert.equal(open.isError, false);
+    assert.match(open.text, /warning: Past its review date/);
     const single = await call(db, libraryId, "reader", "list_items", { q: "vpn troubleshooting" });
-    assert.equal(single.isError, true);
-    assert.match(single.text, /^Refused/);
-
-    // A list keeps the fresh item and says one was withheld.
-    const list = await call(db, libraryId, "reader", "list_items", { q: "vpn" });
-    if (!list.isError && list.text.startsWith("{")) {
-      const parsed = JSON.parse(list.text);
-      assert.ok(parsed.items.every((item: { id: string }) => item.id !== id));
-    } else {
-      assert.match(list.text, /VPN Client Install/);
-    }
-
-    // Publishers reading the draft are not refused; published reads are.
-    assert.equal((await call(db, libraryId, "publisher", "open_item", { id, version: "draft" })).isError, false);
-    assert.equal((await call(db, libraryId, "publisher", "open_item", { id })).isError, true);
-
-    // Strict off: answered again, with the warning.
-    await setLibraryFreshness(db, libraryId, { reviewDays: null, strict: false }, "alice");
-    const relaxed = await call(db, libraryId, "reader", "open_item", { id });
-    assert.equal(relaxed.isError, false);
-    assert.match(relaxed.text, /warning: Past its review date/);
+    assert.equal(single.isError, false);
+    assert.doesNotMatch(single.text, /Refused|withheld/);
   });
 });
 
@@ -181,7 +157,7 @@ test("review queue lists due and overdue items; Still accurate clears it without
 
     const before = await getItem(db, id, { publishedOnly: false });
     const versionBefore = (await citationsFor(db, [id])).get(id)?.version;
-    const confirmed = await confirmStillAccurate(db, library, id, "dana");
+    const confirmed = await confirmStillAccurate(db, libraryId, id, "dana");
     assert.equal(confirmed?.reviewBy, day(90));
     const after = await getItem(db, id, { publishedOnly: false });
     assert.equal(after?.updated_at, before?.updated_at, "revision unchanged");
@@ -195,6 +171,42 @@ test("review queue lists due and overdue items; Still accurate clears it without
 
     // Drafts that were never published cannot be confirmed.
     const draft = await createItem(db, { name: "Draft", body: "x", labels: [] }, "alice", libraryId);
-    assert.equal(await confirmStillAccurate(db, library, draft.id, "dana"), undefined);
+    assert.equal(await confirmStillAccurate(db, libraryId, draft.id, "dana"), undefined);
+  });
+});
+
+test("migration 025 moves Policy review dates into review_by and drops the field without a new publish", async () => {
+  await withTestDatabase(async (db) => {
+    const library = await createLibrary(db, "Policies", "alice", "policy");
+    const schema = { ...library.schema, fields: [...library.schema.fields, { key: "review_date", label: "Review date", type: "date", required: true, kind: "control" }] };
+    await db.run("UPDATE libraries SET schema = ?::jsonb WHERE id = ?", JSON.stringify(schema), library.id);
+    const make = async (name: string) => {
+      const details = JSON.stringify({ owner: "CISO", effective_date: "2026-01-01", review_date: "2027-03-31", policy: "Use MFA." });
+      const row = await createItem(db, { name, body: "Use MFA.", labels: [], details }, "alice", library.id);
+      await publishItem(db, row.id, "alice");
+      const snap = JSON.parse(((await db.get("SELECT published_snapshot FROM items WHERE id = ?", row.id)) as { published_snapshot: string }).published_snapshot);
+      snap.details = details;
+      await db.run("UPDATE items SET published_snapshot = ?, details = ? WHERE id = ?", JSON.stringify(snap), details, row.id);
+      return row.id;
+    };
+    const unset = await make("Unset");
+    const confirmed = await make("Confirmed");
+    await db.run("UPDATE items SET review_by = NULL WHERE id = ?", unset);
+    await setReviewBy(db, library.id, confirmed, day(40));
+    const versions = async () =>
+      (await db.all("SELECT id, published_version FROM items WHERE library_id = ? ORDER BY id", library.id)) as unknown[];
+    const before = await versions();
+
+    await db.exec(await readFile(new URL("../migrations/025_single_review_date.sql", import.meta.url), "utf8"));
+
+    assert.equal((await itemFreshness(db, unset))?.reviewBy, "2027-03-31", "stated date moved into review_by");
+    assert.equal((await itemFreshness(db, confirmed))?.reviewBy, day(40), "an existing review_by wins");
+    const row = (await db.get("SELECT details, published_snapshot FROM items WHERE id = ?", unset)) as { details: string; published_snapshot: string };
+    assert.equal(JSON.parse(row.details).review_date, undefined);
+    assert.equal(JSON.parse(JSON.parse(row.published_snapshot).details).review_date, undefined);
+    assert.equal(JSON.parse(row.details).owner, "CISO");
+    assert.deepEqual(await versions(), before, "not a new publish");
+    const lib = await getLibrary(db, library.id);
+    assert.ok(!lib?.schema.fields.some((field) => field.key === "review_date"));
   });
 });

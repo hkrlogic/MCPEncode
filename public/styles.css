@@ -2355,8 +2355,6 @@ mark.diff-ins {
 .inline-form { display: inline-flex; align-items: center; gap: 0.5rem; margin: 0; }
 .freshness { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin: 0.5rem 0; }
 .freshness .meta { margin: 0; }
-label.checkbox { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; font-weight: 500; }
-label.checkbox input { width: auto; margin: 0; }
 
 /* Settings → Audit log */
 .audit-filter { display: flex; gap: 0.75rem; align-items: end; margin: 0 0 1rem; }

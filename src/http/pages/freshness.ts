@@ -1,7 +1,7 @@
 /** Owner review queue and the per-item freshness block. */
 import type { Access } from "../../auth/rbac.ts";
 import type { ReviewQueueRow } from "../../db/freshness.ts";
-import { DEFAULT_REVIEW_DAYS, REVIEW_QUEUE_DAYS, isPastReview, reviewDaysFor } from "../../db/freshness.ts";
+import { REVIEW_DAYS, REVIEW_QUEUE_DAYS, isPastReview } from "../../db/freshness.ts";
 import type { LibraryRow } from "../../db/models.ts";
 import { esc, layout, type AppShell } from "./layout.ts";
 
@@ -19,8 +19,6 @@ function when(ms: number | null): string {
 
 const NOTICES: Record<string, string> = {
   confirmed: "Confirmed. The review-by date moved forward; the content and its version did not change.",
-  saved: "Freshness settings saved.",
-  invalid: "Review days must be a whole number from 0 to 3650, or blank for the default.",
 };
 
 export function reviewQueuePage(input: {
@@ -32,7 +30,6 @@ export function reviewQueuePage(input: {
   shell?: AppShell;
 }): string {
   const lib = input.library;
-  const days = reviewDaysFor(lib);
   const notice = input.notice && NOTICES[input.notice] ? `<p class="notice" role="status">${esc(NOTICES[input.notice])}</p>` : "";
   const rows = input.queue
     .map(
@@ -47,8 +44,6 @@ export function reviewQueuePage(input: {
       </li>`,
     )
     .join("");
-  const defaultLabel =
-    lib.template === "policy" || lib.template === "procedure" ? `${DEFAULT_REVIEW_DAYS} days` : "off";
   return layout({
     title: `Review · ${lib.name}`,
     csrf: input.csrf,
@@ -60,23 +55,8 @@ export function reviewQueuePage(input: {
       <section class="panel">
         <h1>Review queue</h1>
         ${notice}
-        <p class="hint">Published items due for review within ${REVIEW_QUEUE_DAYS} days, or overdue. <strong>Still accurate</strong> re-confirms an item and moves its review-by date ${days || DEFAULT_REVIEW_DAYS} days from today without changing its content or version.</p>
+        <p class="hint">Published items due for review within ${REVIEW_QUEUE_DAYS} days, or overdue. <strong>Still accurate</strong> re-confirms an item and moves its review-by date ${REVIEW_DAYS} days from today without changing its content or version. ${lib.template === "policy" || lib.template === "procedure" ? `Each publish sets it to ${REVIEW_DAYS} days out.` : "Set a date on an item page to track it here."}</p>
         ${rows ? `<ul class="review-queue">${rows}</ul>` : `<p class="empty">Nothing is due for review in the next ${REVIEW_QUEUE_DAYS} days.</p>`}
-      </section>
-      <section class="panel">
-        <h2>Freshness settings</h2>
-        <form method="post" action="/libraries/${esc(lib.id)}/freshness" class="capture">
-          <input type="hidden" name="csrf" value="${esc(input.csrf)}">
-          <label>Review every (days)
-            <input name="review_days" inputmode="numeric" value="${lib.reviewDays == null ? "" : esc(String(lib.reviewDays))}" placeholder="Default: ${esc(defaultLabel)}">
-            <span class="hint">Sets each item's review-by date on publish. Blank = default for this library type (${esc(defaultLabel)}); 0 = off. Policy items use their own Review date.</span>
-          </label>
-          <label class="checkbox">
-            <input type="checkbox" name="strict_freshness" value="on"${lib.strictFreshness ? " checked" : ""}>
-            Strict mode: agents are refused items past their review date and told to ask the owner
-          </label>
-          <button class="btn" type="submit">Save</button>
-        </form>
       </section>`,
   });
 }

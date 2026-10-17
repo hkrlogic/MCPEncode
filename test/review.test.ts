@@ -73,7 +73,6 @@ test("a policy edit names the fact and skips the generated description", () => {
     approved_by: "",
     version: "1.0",
     effective_date: "2026-01-01",
-    review_date: "2027-01-01",
     purpose: "Keep the lobby staffed.",
     scope: "Front desk",
     policy: "Someone is at the desk during open hours.",

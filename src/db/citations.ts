@@ -14,7 +14,7 @@ export type Citation = {
   published_by: string | null;
   url: string | null;
   cite_as: string;
-  /** Review-by date of the published copy (YYYY-MM-DD), or null when the library does not track it. */
+  /** Review-by date of the published copy (YYYY-MM-DD), or null when it has none. */
   review_by: string | null;
   /** True when review_by is before today: the item may be out of date. */
   stale: boolean;
@@ -22,8 +22,6 @@ export type Citation = {
   owner: string | null;
   /** Short line for the agent to relay to the user. Only when stale. */
   warning?: string;
-  /** Set (true) only when the library refuses stale items to agents. */
-  strict_freshness?: true;
   /** Revision of the working row (what update_item replaces). Internal; not sent as part of the citation. */
   revision: number;
 };
@@ -40,7 +38,6 @@ type CitationRow = {
   published_snapshot: string | null;
   live_updated_at: number | string;
   review_by: string | null;
-  strict_freshness: boolean | null;
   details: string | null;
   revision: number | string;
 };
@@ -93,7 +90,7 @@ export async function citationsFor(
     `SELECT live.id, live.name, l.name AS library_name, i.published_version,
             a.username AS published_by_name, i.published_snapshot,
             live.updated_at AS live_updated_at, i.review_by::text AS review_by,
-            l.strict_freshness, live.details, i.updated_at AS revision
+            live.details, i.updated_at AS revision
      FROM items_live live
      JOIN items i ON i.id = live.id
      JOIN libraries l ON l.id = live.library_id
@@ -127,7 +124,6 @@ export async function citationsFor(
     if (stale) {
       citation.warning = `Past its review date (${row.review_by}); it may be out of date. Tell the user, and suggest checking with ${owner ?? "the library owner"}.`;
     }
-    if (row.strict_freshness === true) citation.strict_freshness = true;
     out.set(row.id, citation);
   }
   return out;

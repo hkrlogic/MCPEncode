@@ -23,7 +23,6 @@ export const POLICY_FIELDS = [
   { key: "approved_by", label: "Approved by", kind: "control", required: false },
   { key: "version", label: "Version", kind: "control", required: true },
   { key: "effective_date", label: "Effective date", kind: "control", required: true },
-  { key: "review_date", label: "Review date", kind: "control", required: true },
   { key: "purpose", label: "Purpose", kind: "body", required: true },
   { key: "scope", label: "Scope", kind: "body", required: true },
   { key: "policy", label: "Policy", kind: "body", required: true },
@@ -34,58 +33,11 @@ export const POLICY_FIELDS = [
 
 export type PolicyFieldKey = (typeof POLICY_FIELDS)[number]["key"];
 
-const isoDate = (label: string) =>
-  z
-    .string()
-    .trim()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, `${label} must be YYYY-MM-DD`)
-    .refine((value) => {
-      const [year, month, day] = value.split("-").map(Number);
-      const date = new Date(Date.UTC(year, month - 1, day));
-      return (
-        date.getUTCFullYear() === year &&
-        date.getUTCMonth() === month - 1 &&
-        date.getUTCDate() === day
-      );
-    }, `${label} must be a real date`);
-
-const optionalText = (max: number) => z.string().trim().max(max).default("");
-
-export const policyItemSchema = z
-  .object({
-    name: z.string().trim().min(1, "Name is required").max(200, "Name must be 200 characters or fewer"),
-    summary: z.string().trim().min(1, "Summary is required").max(160, "Summary must be 160 characters or fewer"),
-    owner: z.string().trim().min(1, "Owner is required").max(200, "Owner must be 200 characters or fewer"),
-    approved_by: optionalText(200),
-    version: z
-      .string()
-      .trim()
-      .min(1, "Version is required")
-      .max(20, "Version must be 20 characters or fewer")
-      .regex(/^\d+(\.\d+){0,2}$/, "Version must look like 1.0"),
-    effective_date: isoDate("Effective date"),
-    review_date: isoDate("Review date"),
-    purpose: z.string().trim().min(1, "Purpose is required").max(8_000, "Purpose is too long"),
-    scope: z.string().trim().min(1, "Scope is required").max(8_000, "Scope is too long"),
-    policy: z.string().trim().min(1, "Policy is required").max(20_000, "Policy is too long"),
-    responsibilities: optionalText(12_000),
-    exceptions: optionalText(8_000),
-    references: optionalText(8_000),
-    labels: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
-  })
-  .refine((value) => value.review_date >= value.effective_date, {
-    message: "Review date must be on or after the effective date",
-    path: ["review_date"],
-  });
-
-export type PolicyItemInput = z.infer<typeof policyItemSchema>;
-
 export type PolicyDetails = {
   owner: string;
   approved_by: string;
   version: string;
   effective_date: string;
-  review_date: string;
   purpose: string;
   scope: string;
   policy: string;
@@ -95,7 +47,7 @@ export type PolicyDetails = {
 };
 
 export const POLICY_FIELD_MESSAGE =
-  "This library is Policy. Send name, summary, owner, version (for example 1.0), effective_date (YYYY-MM-DD), review_date (YYYY-MM-DD), purpose, scope, and policy. Optional: approved_by, responsibilities, exceptions, references. Do not invent fields.";
+  "This library is Policy. Send name, summary, owner, version (for example 1.0), effective_date (YYYY-MM-DD), purpose, scope, and policy. Optional: approved_by, responsibilities, exceptions, references. Do not invent fields.";
 
 /** Canonical Policy text. Every label is always present so the field set stays closed. */
 export function formatPolicy(input: PolicyDetails): string {
@@ -223,7 +175,6 @@ export function parsePolicyDetails(raw: string | null | undefined): PolicyDetail
       approved_by: textField(record, "approved_by"),
       version: textField(record, "version"),
       effective_date,
-      review_date: textField(record, "review_date"),
       purpose: textField(record, "purpose"),
       scope: textField(record, "scope"),
       policy,

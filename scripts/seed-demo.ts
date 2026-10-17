@@ -24,7 +24,7 @@ function policy(name: string, labels: string, summary: string, fields: Record<st
     labels,
     summary,
     body: "",
-    fields: { owner: "Security Lead", approved_by: "IT Director", effective_date: "2026-07-01", review_date: "2027-07-01", ...fields },
+    fields: { owner: "Security Lead", approved_by: "IT Director", effective_date: "2026-07-01", ...fields },
   };
 }
 
@@ -46,8 +46,6 @@ type Lib = {
   archived?: Doc;
   pendingEdit?: { name: string; fields: Record<string, string> };
   readerKey?: boolean;
-  /** Review every N days (freshness). Unset = type default. */
-  reviewDays?: number;
   /** Review-by dates relative to today, so the Review queue has realistic entries. */
   reviewIn?: Record<string, number>;
 };
@@ -190,7 +188,6 @@ Actively exploited vulnerabilities are patched within 72 hours, outside the norm
     archived: policy("Legacy VPN Policy", "policy, retired", "Retired. Replaced by the Remote Access Policy.", {
       version: "1.2",
       effective_date: "2023-01-15",
-      review_date: "2024-01-15",
       purpose: "Rules for the old IPsec VPN.",
       scope: "Remote staff, 2023.",
       policy: "The IPsec VPN was decommissioned. See the Remote Access Policy.",
@@ -200,9 +197,15 @@ Actively exploited vulnerabilities are patched within 72 hours, outside the norm
   {
     name: "Help Desk Runbooks",
     mode: "reviewed",
-    reviewDays: 90,
-    // Account Lockout slipped past its review; Incident Response is due next week.
-    reviewIn: { "Account Lockout": -9, "Incident Response Runbook": 6 },
+    // General library: review-by dates are set per item. Account Lockout
+    // slipped past its review; Incident Response is due next week.
+    reviewIn: {
+      "Account Lockout": -9,
+      "Incident Response Runbook": 6,
+      "VPN Troubleshooting": 90,
+      "Printer Queue Reset": 90,
+      "New Laptop Setup": 90,
+    },
     items: [
       {
         name: "Incident Response Runbook",
@@ -447,9 +450,6 @@ for (const lib of LIBRARIES) {
     await post("/libraries", { name: lib.name, template: lib.template ?? "general", write_mode: lib.mode }),
     "libraries",
   );
-  if (lib.reviewDays !== undefined) {
-    await post(`/libraries/${libraryId}/freshness`, { review_days: String(lib.reviewDays) });
-  }
   const ids: Record<string, string> = {};
   for (const doc of lib.items) ids[doc.name] = await addItem(libraryId, doc);
   if (lib.mode === "reviewed") {
