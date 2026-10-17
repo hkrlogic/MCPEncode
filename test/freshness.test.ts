@@ -101,22 +101,21 @@ test("Policy items reuse their own Review date", async () => {
   });
 });
 
-test("stale items carry review_by, stale and a warning in list_items, open_item and citations", async () => {
+test("stale items carry review_by and a warning in list_items, open_item and citations", async () => {
   await withTestDatabase(async (db) => {
     const { libraryId, id } = await runbookLibrary(db, "procedure");
     const fresh = await call(db, libraryId, "reader", "open_item", { id });
-    assert.match(fresh.text, new RegExp(`^  review_by: ${day(90)}$`, "m"));
-    assert.match(fresh.text, /^ {2}stale: false$/m);
+    assert.match(fresh.text, new RegExp(`^review_by: ${day(90)}$`, "m"));
+    assert.doesNotMatch(fresh.text, /stale:/);
     assert.doesNotMatch(fresh.text, /warning:/);
 
     await setReviewBy(db, libraryId, id, day(-5));
     const answer = await call(db, libraryId, "reader", "list_items", { q: "vpn" });
     assert.equal(answer.isError, false);
-    assert.match(answer.text, /^ {2}stale: true$/m);
-    assert.match(answer.text, new RegExp(`^  warning: Past its review date \\(${day(-5)}\\); it may be out of date\\.`, "m"));
+    assert.match(answer.text, new RegExp(`^warning: Past its review date \\(${day(-5)}\\); it may be out of date\\.`, "m"));
     const browse = JSON.parse((await call(db, libraryId, "reader", "list_items", {})).text);
-    assert.equal(browse.items[0].citation.stale, true);
     assert.equal(browse.items[0].citation.review_by, day(-5));
+    assert.match(browse.items[0].citation.warning, /Past its review date/);
   });
 });
 

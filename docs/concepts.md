@@ -50,7 +50,7 @@ Each Connect link is one library. Tools offered depend on the caller's role in t
 | Tool | Who | Does |
 | --- | --- | --- |
 | `whoami` | anyone | Identity, library, role |
-| `list_items` | Reader+ | Look up by question (`q`) or browse. One clear match returns the full item. Returns the published version; Publisher connections also get `status` and `has_pending_changes`. |
+| `list_items` | Reader+ | Look up by question (`q`) or browse. One clear match returns the full item. Returns the published version; Publisher connections also get `status`, `has_pending_changes` and `revision`. |
 | `open_item` | Reader+ | Full item by id (published version). Publishers may pass `version: "draft"` to read a Pending edit. |
 | `search_shelf` | Reader+ | Published summaries across the library's shelf |
 | `create_item` | Publisher | Save: Pending (Review Lock) or published (Review Unlock). With an `entity_key` that already exists in the library, updates that item instead (upsert). |
@@ -84,12 +84,12 @@ A word that is only a label several items share (for example `runbook`) returns 
 - Readers and Reader keys do not get the tool. Every call is audit-logged as `suggest_labels` (item id, resulting labels and aliases, reason). Approve and reject are logged by the existing publish and cancel events.
 - Citations follow the published copy: the version moves only when a suggestion is published (or saved under Review Unlock).
 
-**Citations.** Every published item that `list_items`, `open_item` or `search_shelf` returns carries a citation for its **published** copy (never a Pending draft):
-- `version`: counts publishes, Review Unlock saves and Reverts.
-- `published_at` and `updated_at` (ISO 8601).
-- `published_by`: the account username, when known.
-- `url`: the item page under `PUBLIC_BASE_URL`.
-- `cite_as`: a ready string, for example `"VPN Troubleshooting" (Help Desk Runbooks), version 3, published 2026-10-13 by dana.publisher. https://…/items/<id> [item <id> v3]`.
+**Citations.** Every published item that `list_items`, `open_item` or `search_shelf` returns carries a citation for its **published** copy (never a Pending draft). A full item ends with:
+- `cite_as`: always. A ready string with the version, publish day, publisher, item page URL and id, for example `"VPN Troubleshooting" (Help Desk Runbooks), version 3, published 2026-10-13 by dana.publisher. https://…/items/<id> [item <id> v3]`. The version counts publishes, Review Unlock saves and Reverts.
+- `review_by`: only when the item has a review-by date.
+- `warning`: only when the item is past its review date.
+
+JSON results (lists, `search_shelf`) carry the same three keys in a `citation` object.
 
 Never-published drafts say `citation: none`. Items published before this release start at version 1, with no recorded publisher.
 
@@ -99,11 +99,11 @@ Never-published drafts say `citation: none`. Items published before this release
   - Policy items use their own **Review date** field instead.
   - A publisher can set or clear the date on the item page.
   - The date lives outside the published copy (`items.review_by`). Changing it is not an edit: it does not go Pending, change the revision, or bump the citation version.
-- **Stale answers.** Citations include `review_by` and `stale` (true when the date is before today, UTC). A stale item also gets a `warning` line naming the `owner` (the Policy owner field, otherwise the publisher), which agents relay to the user.
+- **Stale answers.** When the review-by date is before today (UTC), the citation adds a `warning` line naming who to ask (the Policy owner field, otherwise the publisher), which agents relay to the user.
 - **Strict mode** (per library, off by default). Items past review are not given as answers. `open_item` and a single-match `list_items` return a refusal telling the user who should review it and where. Lists and `search_shelf` leave those items out and add a `withheld` note.
 - **Review queue.** The library's **Review** tab lists published items due within 14 days or overdue. **Still accurate** re-confirms an item: review-by becomes today plus the period (90 days if the library has none), and who confirmed it and when are recorded and audit-logged (`ui.still_accurate`). Content and version stay the same.
 
-**Edit conflicts.** Publisher results that return a full item (`open_item`, a single-match `list_items`, `create_item`, `update_item`) include `revision`. Pass it back as `expected_revision` on `update_item`: if anyone saved the item since, nothing is saved and the tool returns a conflict with `current_revision`, so the agent can re-read and reapply. Without `expected_revision` the last save wins, as before. The web edit form does the same check and shows the latest copy when it fails.
+**Edit conflicts.** Publisher results that return a full item (`open_item`, a single-match `list_items`, `create_item`, `update_item`) include `revision`, an opaque token. Pass it back as `expected_revision` on `update_item`: if anyone saved the item since, nothing is saved and the tool returns a conflict with `current_revision`, so the agent can re-read and reapply. Without `expected_revision` the last save wins, as before. The web edit form does the same check and shows the latest copy when it fails.
 
 There is **no publish, approve, write-mode or revert tool.** Those stay with people in the web UI. Tool output labels item content as data, not instructions.
 

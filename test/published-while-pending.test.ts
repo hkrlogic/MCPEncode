@@ -187,11 +187,11 @@ test("MCP: Reader key sees the published copy; editors see status and can ask fo
     const editorOpen = await call(editor, "open_item", { id: item.id });
     assert.match(editorOpen, /status: published/);
     assert.match(editorOpen, /has_pending_changes: true/);
-    assert.match(editorOpen, /version: published/);
+    assert.doesNotMatch(editorOpen, /^version:/m, "status already says published");
+    assert.match(editorOpen, /^revision: \d+$/m);
     assert.match(editorOpen, /Use the company VPN/);
     const editorDraft = await call(editor, "open_item", { id: item.id, version: "draft" });
     assert.match(editorDraft, /status: draft/);
-    assert.match(editorDraft, /version: draft/);
     assert.match(editorDraft, /zebrafish/);
     const editorList = JSON.parse(await call(editor, "list_items", {})) as {
       items: { status: string; has_pending_changes: boolean }[];

@@ -85,24 +85,23 @@ async function vpnRunbook(db: Database) {
   return { library, item };
 }
 
-test("Reader open_item carries version, dates, publisher, URL and cite_as", async () => {
+test("Reader open_item ends with one cite_as line carrying version, date, publisher and URL", async () => {
   await withTestDatabase(async (db) => {
     const { library, item } = await vpnRunbook(db);
     const text = await call(await server(db, library.id, "reader"), "open_item", { id: item.id });
-    assert.match(text, /^citation:$/m);
-    assert.match(text, /^ {2}version: 1$/m);
-    assert.match(text, /^ {2}published_at: \d{4}-\d{2}-\d{2}T/m);
-    assert.match(text, /^ {2}updated_at: \d{4}-\d{2}-\d{2}T/m);
-    assert.match(text, /^ {2}published_by: dana\.publisher$/m);
     const lines = text.split("\n");
-    assert.ok(lines.includes(`  url: ${BASE}/items/${item.id}`), "url line");
-    const citeAs = lines.find((line) => line.startsWith("  cite_as: "));
+    const citeAs = lines.find((line) => line.startsWith("cite_as: "));
     assert.ok(citeAs, "cite_as line");
     assert.match(
       citeAs,
-      /^ {2}cite_as: "VPN Troubleshooting" \(Help Desk Runbooks\), version 1, published \d{4}-\d{2}-\d{2} by dana\.publisher\. /,
+      /^cite_as: "VPN Troubleshooting" \(Help Desk Runbooks\), version 1, published \d{4}-\d{2}-\d{2} by dana\.publisher\. /,
     );
     assert.ok(citeAs.endsWith(` ${BASE}/items/${item.id} [item ${item.id} v1]`), citeAs);
+    // The separate fields cite_as already carries are not repeated.
+    for (const dropped of ["citation:", "  version:", "  published_at:", "  updated_at:", "  published_by:", "  url:", "stale:"]) {
+      assert.ok(!lines.some((line) => line.startsWith(dropped)), `no ${dropped} line`);
+    }
+    assert.doesNotMatch(text, /^review_by:/m, "no review_by line when the library does not track it");
   });
 });
 
@@ -114,13 +113,13 @@ test("version counts publishes; a Pending edit keeps citing the published versio
     const reader = await server(db, library.id, "reader");
     const pending = await call(reader, "open_item", { id: item.id });
     assert.match(pending, /TCP fallback profile/);
-    assert.match(pending, /^ {2}version: 1$/m, "Readers still cite v1 while the edit is Pending");
+    assert.match(pending, /^cite_as: .*, version 1, /m, "Readers still cite v1 while the edit is Pending");
 
     await tick();
     await publishItem(db, item.id, DANA);
     const published = await call(reader, "open_item", { id: item.id });
     assert.match(published, /TCP 443 fallback/);
-    assert.match(published, /^ {2}version: 2$/m);
+    assert.match(published, /^cite_as: .*, version 2, /m);
   });
 });
 
@@ -133,10 +132,11 @@ test("never-published drafts say not to cite; list and lookup results carry cita
     assert.match(draftText, /citation: none — this item is not published; do not cite it/);
 
     const browse = JSON.parse(await call(publisher, "list_items", {})) as {
-      items: { id: string; citation: { version: number; cite_as: string } | null }[];
+      items: { id: string; citation: { cite_as: string } | null }[];
     };
     const byId = new Map(browse.items.map((row) => [row.id, row.citation]));
-    assert.equal(byId.get(item.id)?.version, 1);
+    assert.match(byId.get(item.id)?.cite_as ?? "", /, version 1, /);
+    assert.deepEqual(Object.keys(byId.get(item.id) ?? {}), ["cite_as"], "only cite_as when there is no review date or warning");
     assert.equal(byId.get(draft.id), null);
 
     const lookup = await call(await server(db, library.id, "reader"), "list_items", { q: "vpn" });
@@ -153,11 +153,11 @@ test("search_shelf hits carry the citation of the published copy", async () => {
     await setLibraryShelf(db, library.id, shelf.shelf.id, DANA);
     const reader = await server(db, library.id, "reader");
     const result = JSON.parse(await call(reader, "search_shelf", { q: "VPN" })) as {
-      hits: { item_id: string; citation: { version: number; url: string } }[];
+      hits: { item_id: string; citation: { cite_as: string } }[];
     };
     assert.equal(result.hits[0]?.item_id, item.id);
-    assert.equal(result.hits[0]?.citation.version, 1);
-    assert.equal(result.hits[0]?.citation.url, `${BASE}/items/${item.id}`);
+    assert.match(result.hits[0]?.citation.cite_as ?? "", /, version 1, /);
+    assert.ok(result.hits[0]?.citation.cite_as.includes(`${BASE}/items/${item.id}`));
   });
 });
 
